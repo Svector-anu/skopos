@@ -121,32 +121,99 @@ export default function AppPage() {
     }
   }
 
+  const QUICK_ACTIONS = [
+    { label: "Bridge ETH", prompt: "bridge 0.1 ETH from ethereum to base" },
+    { label: "Swap USDC", prompt: "swap 100 USDC to ETH on arbitrum" },
+    { label: "Move to Polygon", prompt: "move 50 USDC from base to polygon" },
+    { label: "Send to Optimism", prompt: "bridge 0.05 ETH from ethereum to optimism" },
+    { label: "Swap on Base", prompt: "swap 10 USDC to ETH on base" },
+  ];
+
   return (
-    <main className="h-screen bg-black flex items-center justify-center p-4">
-      <div className="w-full flex flex-col overflow-hidden" style={{ maxWidth: 480, height: "min(720px, 100%)", border: "1px solid rgba(255,255,255,0.08)", background: "#080808" }}>
-      {/* Top bar */}
-      <div className="shrink-0 flex items-center justify-between px-4 h-11 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-        <Link href="/" className="text-white/25 hover:text-white/50 transition-colors text-xs tracking-widest uppercase" style={MONO}>
-          ← back
-        </Link>
-        <span style={{ ...BEBAS, fontSize: "1.1rem", letterSpacing: "0.06em", color: "white" }}>
-          DELORA <span style={{ color: "#F5B800" }}>COPILOT</span>
-        </span>
-        <div className="flex items-center gap-2">
-          {ready && authenticated && address && (
+    <main className="h-screen bg-black flex items-center justify-center">
+      <div className="flex overflow-hidden" style={{ width: "min(900px, 100vw)", height: "min(700px, 100vh)", border: "1px solid rgba(255,255,255,0.08)" }}>
+
+        {/* Sidebar */}
+        <div className="flex flex-col shrink-0 border-r" style={{ width: 200, background: "#060606", borderColor: "rgba(255,255,255,0.06)" }}>
+          {/* Logo */}
+          <div className="px-4 h-11 flex items-center border-b shrink-0" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+            <Link href="/">
+              <span style={{ ...BEBAS, fontSize: "1rem", letterSpacing: "0.06em", color: "white" }}>
+                DELORA <span style={{ color: "#F5B800" }}>COPILOT</span>
+              </span>
+            </Link>
+          </div>
+
+          {/* New chat */}
+          <div className="px-3 pt-3 pb-2 shrink-0">
             <button
-              onClick={() => fundWallet({ address, options: { chain: mainnet } })}
-              className="text-xs tracking-widest uppercase transition-colors"
-              style={{ ...MONO, color: "rgba(245,184,0,0.6)", background: "transparent", cursor: "pointer" }}
+              onClick={() => setMessages([])}
+              className="w-full py-2 text-xs tracking-widest uppercase transition-colors text-left px-3"
+              style={{ ...MONO, background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.15)", color: "#F5B800", cursor: "pointer" }}
             >
-              fund
+              + new chat
             </button>
-          )}
+          </div>
+
+          {/* Quick actions */}
+          <div className="px-3 pt-2 flex flex-col gap-1 shrink-0">
+            <p className="text-xs px-1 pb-1" style={{ ...MONO, color: "rgba(255,255,255,0.2)", letterSpacing: "0.08em" }}>QUICK ACTIONS</p>
+            {QUICK_ACTIONS.map(({ label, prompt }) => (
+              <button
+                key={label}
+                onClick={() => submit(prompt)}
+                className="w-full text-left px-3 py-2 text-xs transition-colors"
+                style={{ ...MONO, color: "rgba(255,255,255,0.4)", background: "transparent", cursor: "pointer" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.75)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.4)")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Wallet section at bottom */}
+          <div className="mt-auto border-t px-3 py-3 flex flex-col gap-2" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+            {ready && authenticated && address ? (
+              <>
+                <p className="text-xs px-1" style={{ ...MONO, color: "rgba(255,255,255,0.2)", letterSpacing: "0.08em" }}>WALLET</p>
+                <button
+                  onClick={() => fundWallet({ address, options: { chain: mainnet } })}
+                  className="w-full text-left px-3 py-2 text-xs transition-colors"
+                  style={{ ...MONO, color: "rgba(245,184,0,0.6)", background: "transparent", cursor: "pointer" }}
+                >
+                  fund wallet
+                </button>
+                <button
+                  onClick={logout}
+                  className="w-full text-left px-3 py-2 text-xs transition-colors"
+                  style={{ ...MONO, color: "rgba(255,255,255,0.3)", background: "transparent", cursor: "pointer" }}
+                >
+                  {shortAddr(address)}
+                </button>
+              </>
+            ) : ready ? (
+              <button
+                onClick={login}
+                className="w-full text-left px-3 py-2 text-xs transition-colors"
+                style={{ ...MONO, color: "#F5B800", background: "transparent", cursor: "pointer" }}
+              >
+                connect wallet →
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Chat panel */}
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#080808" }}>
+        {/* Top bar */}
+        <div className="shrink-0 flex items-center justify-end px-4 h-11 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+          <div className="flex items-center gap-2">
           {ready && (
             authenticated ? (
-              <button onClick={logout} className="text-xs tracking-widest uppercase transition-colors" style={{ ...MONO, color: "rgba(255,255,255,0.3)", background: "transparent", cursor: "pointer" }}>
-                {address ? shortAddr(address) : "disconnect"}
-              </button>
+              <span className="text-xs" style={{ ...MONO, color: "rgba(255,255,255,0.2)" }}>
+                {address ? shortAddr(address) : ""}
+              </span>
             ) : (
               <button onClick={login} className="text-xs tracking-widest uppercase transition-colors" style={{ ...MONO, color: "#F5B800", background: "transparent", cursor: "pointer" }}>
                 connect →
@@ -254,7 +321,8 @@ export default function AppPage() {
           </button>
         </form>
       </div>
-      </div>
+      </div>{/* end chat panel */}
+      </div>{/* end outer wrapper */}
     </main>
   );
 }
