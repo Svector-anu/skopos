@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState } from "react";
 import Link from "next/link";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { usePrivy } from "@privy-io/react-auth";
 import {
   useAccount,
   useSendTransaction,
@@ -69,6 +69,7 @@ export default function AppPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const { address } = useAccount();
+  const { login, logout, authenticated, ready } = usePrivy();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -106,11 +107,25 @@ export default function AppPage() {
       </Link>
 
       <div className="absolute top-5 right-6">
-        <ConnectButton
-          showBalance={false}
-          chainStatus="none"
-          accountStatus="address"
-        />
+        {ready && (
+          authenticated ? (
+            <button
+              onClick={logout}
+              className="text-xs tracking-widest uppercase border px-3 py-1.5 transition-colors"
+              style={{ ...MONO, borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.4)", background: "transparent", cursor: "pointer" }}
+            >
+              {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "disconnect"}
+            </button>
+          ) : (
+            <button
+              onClick={login}
+              className="text-xs tracking-widest uppercase border px-3 py-1.5 transition-colors"
+              style={{ ...MONO, borderColor: "rgba(245,184,0,0.5)", color: "#F5B800", background: "transparent", cursor: "pointer" }}
+            >
+              connect →
+            </button>
+          )
+        )}
       </div>
 
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
@@ -184,7 +199,8 @@ export default function AppPage() {
 }
 
 function QuoteDisplay({ result }: { result: QuoteResult }) {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
+  const { login, authenticated } = usePrivy();
   const { intent, route, calldata, approval } = result;
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -293,10 +309,14 @@ function QuoteDisplay({ result }: { result: QuoteResult }) {
           >
             view tx →
           </a>
-        ) : !isConnected ? (
-          <div className="w-full flex justify-center py-1">
-            <ConnectButton label="connect wallet to execute" showBalance={false} chainStatus="none" />
-          </div>
+        ) : !authenticated ? (
+          <button
+            onClick={login}
+            className="w-full py-2.5 text-xs tracking-widest uppercase border transition-colors"
+            style={{ ...MONO, background: "transparent", borderColor: "rgba(245,184,0,0.5)", color: "#F5B800", cursor: "pointer" }}
+          >
+            connect to execute →
+          </button>
         ) : needsApproval ? (
           <button
             onClick={approve}
