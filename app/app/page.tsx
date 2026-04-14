@@ -74,28 +74,37 @@ export default function AppPage() {
           What do you want to do?
         </h1>
 
-        {/* Input */}
-        <div
-          className="w-full flex items-center gap-3 px-4 py-3"
-          style={{ background: "#0A0A0A", border: "1px solid rgba(255,255,255,0.12)" }}
-        >
-          <span className="text-sm shrink-0" style={{ color: "#F5B800", ...MONO }}>{">"}</span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="move 1 eth from ethereum to base"
-            className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/20"
+        <div className="w-full flex flex-col gap-0">
+          <div
+            className="w-full flex items-center gap-3 px-4 py-3"
+            style={{ background: "#0A0A0A", border: "1px solid rgba(255,255,255,0.12)" }}
+          >
+            <span className="text-sm shrink-0" style={{ color: "#F5B800", ...MONO }}>{">"}</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              placeholder="move 1 eth from ethereum to base"
+              className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/20"
+              style={MONO}
+            />
+            {loading && (
+              <span className="text-white/30 text-xs shrink-0 animate-pulse" style={MONO}>…</span>
+            )}
+          </div>
+
+          <button
+            onClick={submit}
+            disabled={loading || !value.trim()}
+            className="w-full py-2.5 text-xs tracking-widest uppercase transition-colors border-x border-b border-white/10 disabled:text-white/20 text-white/50 hover:text-white hover:border-white/30 disabled:cursor-not-allowed bg-transparent"
             style={MONO}
-          />
-          {loading && (
-            <span className="text-white/30 text-xs shrink-0 animate-pulse" style={MONO}>…</span>
-          )}
+          >
+            {loading ? "routing…" : "execute →"}
+          </button>
         </div>
 
-        {/* Result */}
         {result && (
           <div
             className="w-full"
@@ -117,7 +126,7 @@ export default function AppPage() {
 
         {!result && !loading && (
           <p className="text-xs text-white/20 text-center" style={MONO}>
-            press enter to execute
+            type a command and press enter or click execute
           </p>
         )}
       </div>
@@ -137,17 +146,33 @@ function QuoteDisplay({ result }: { result: QuoteResult }) {
   ];
 
   return (
-    <div className="px-4 py-3 flex flex-col gap-2">
-      {rows.map(([label, val]) => (
-        <div key={label} className="flex items-start gap-3">
-          <span className="text-xs w-16 shrink-0" style={{ ...MONO, color: "#F5B800" }}>
-            {label}
-          </span>
-          <span className="text-xs text-white/70" style={MONO}>
-            {val}
-          </span>
-        </div>
-      ))}
+    <div className="flex flex-col">
+      <div className="px-4 py-3 flex flex-col gap-2">
+        {rows.map(([label, val]) => (
+          <div key={label} className="flex items-start gap-3">
+            <span className="text-xs w-16 shrink-0" style={{ ...MONO, color: "#F5B800" }}>
+              {label}
+            </span>
+            <span className="text-xs text-white/70" style={MONO}>
+              {val}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div
+        className="px-4 py-3"
+        style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+      >
+        <button
+          disabled
+          className="w-full py-2.5 text-xs tracking-widest uppercase border border-white/10 text-white/25 cursor-not-allowed bg-transparent"
+          style={MONO}
+          title="Wallet connection coming in the next version"
+        >
+          connect wallet to execute →
+        </button>
+      </div>
     </div>
   );
 }
