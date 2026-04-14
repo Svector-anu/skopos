@@ -1,5 +1,7 @@
 const BASE = "https://api.delora.build";
 
+const PLACEHOLDER_ADDRESS = "0x0000000000000000000000000000000000000001";
+
 export interface DeloraToken {
   address: string;
   symbol: string;
@@ -9,30 +11,31 @@ export interface DeloraToken {
 }
 
 export interface DeloraQuote {
+  inputAmount?: string;
   outputAmount?: string;
-  destinationAmount?: string;
-  toAmount?: string;
-  transactionRequest?: {
-    to: string;
-    value: string;
-    data: string;
-    from?: string;
-    gasLimit?: string;
-  };
-  transaction?: {
+  adapter?: string;
+  calldata?: {
     to: string;
     value: string;
     data: string;
   };
-  tool?: string;
-  toolDetails?: { name: string; logoURI?: string };
-  feeCosts?: { name: string; amount: string; amountUSD: string }[];
-  gasCosts?: { amount: string; amountUSD: string }[];
-  estimate?: {
-    toAmount: string;
-    fromAmount: string;
-    feeCosts: { name: string; amount: string; amountUSD: string }[];
-    gasCosts: { amount: string; amountUSD: string }[];
+  fees?: {
+    total?: {
+      amount: string;
+      currencySymbol: string;
+      decimals: number;
+      amountUsd?: string;
+    };
+    breakdown?: {
+      type: string;
+      amount: string;
+      amountUsd: string;
+    }[];
+    totalUsd?: string;
+  };
+  gas?: {
+    maxFeePerGas?: string;
+    maxPriorityFeePerGas?: string;
   };
   [key: string]: unknown;
 }
@@ -57,6 +60,7 @@ export async function getQuote(params: {
   originCurrency: string;
   destinationCurrency: string;
   senderAddress?: string;
+  receiverAddress?: string;
 }): Promise<DeloraQuote> {
   const query = new URLSearchParams({
     originChainId: String(params.originChainId),
@@ -64,7 +68,8 @@ export async function getQuote(params: {
     amount: params.amount,
     originCurrency: params.originCurrency,
     destinationCurrency: params.destinationCurrency,
-    ...(params.senderAddress ? { senderAddress: params.senderAddress } : {}),
+    senderAddress: params.senderAddress ?? PLACEHOLDER_ADDRESS,
+    receiverAddress: params.receiverAddress ?? PLACEHOLDER_ADDRESS,
   });
 
   const res = await fetch(`${BASE}/v1/quotes?${query}`);

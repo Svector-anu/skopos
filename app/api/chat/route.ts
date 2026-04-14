@@ -100,23 +100,17 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Step 6: Format output amount
-  const rawOut =
-    quote.outputAmount ??
-    quote.destinationAmount ??
-    quote.toAmount ??
-    quote.estimate?.toAmount;
-
+  const rawOut = quote.outputAmount;
   const outputFormatted = rawOut
     ? (Number(rawOut) / 10 ** destDecimals).toFixed(6)
     : "unknown";
 
-  const tool = quote.tool ?? quote.toolDetails?.name ?? "best route";
+  const tool = quote.adapter ?? "best route";
 
-  const feesUSD =
-    quote.feeCosts?.[0]?.amountUSD ?? quote.estimate?.feeCosts?.[0]?.amountUSD;
-  const gasUSD =
-    quote.gasCosts?.[0]?.amountUSD ?? quote.estimate?.gasCosts?.[0]?.amountUSD;
+  const feeBreakdown = quote.fees?.breakdown ?? [];
+  const gasFee = feeBreakdown.find((f) => f.type === "gas");
+  const totalFeesUSD = quote.fees?.totalUsd ?? null;
+  const gasUSD = gasFee?.amountUsd ?? null;
 
   return NextResponse.json({
     type: "quote",
@@ -127,10 +121,10 @@ export async function POST(req: NextRequest) {
     route: {
       tool,
       outputAmount: outputFormatted,
-      feesUSD: feesUSD ?? null,
-      gasUSD: gasUSD ?? null,
+      feesUSD: totalFeesUSD,
+      gasUSD,
     },
-    calldata: quote.transactionRequest ?? quote.transaction ?? null,
+    calldata: quote.calldata ?? null,
     raw: quote,
   });
 }
