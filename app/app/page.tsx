@@ -2,7 +2,8 @@
 
 import { useRef, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useFundWallet } from "@privy-io/react-auth";
+import { mainnet } from "viem/chains";
 import {
   useAccount,
   useSendTransaction,
@@ -70,6 +71,7 @@ export default function AppPage() {
   const [result, setResult] = useState<Result | null>(null);
   const { address } = useAccount();
   const { login, logout, authenticated, ready } = usePrivy();
+  const { fundWallet } = useFundWallet();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -106,7 +108,16 @@ export default function AppPage() {
         ← back
       </Link>
 
-      <div className="absolute top-5 right-6">
+      <div className="absolute top-5 right-6 flex items-center gap-2">
+        {ready && authenticated && address && (
+          <button
+            onClick={() => fundWallet({ address, options: { chain: mainnet } })}
+            className="text-xs tracking-widest uppercase border px-3 py-1.5 transition-colors"
+            style={{ ...MONO, borderColor: "rgba(245,184,0,0.3)", color: "rgba(245,184,0,0.7)", background: "transparent", cursor: "pointer" }}
+          >
+            fund
+          </button>
+        )}
         {ready && (
           authenticated ? (
             <button
