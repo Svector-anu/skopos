@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Bebas_Neue, JetBrains_Mono } from "next/font/google";
 import { PageTransitionWrapper } from "@/components/shared/PageTransitionWrapper";
+import { Web3Provider } from "@/components/providers/Web3Provider";
 import "./globals.css";
 
 const bebasNeue = Bebas_Neue({
@@ -32,7 +33,9 @@ export default function RootLayout({
       className={`${bebasNeue.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="h-full bg-black text-white antialiased">
-        <PageTransitionWrapper>{children}</PageTransitionWrapper>
+        <Web3Provider>
+          <PageTransitionWrapper>{children}</PageTransitionWrapper>
+        </Web3Provider>
       </body>
     </html>
   );

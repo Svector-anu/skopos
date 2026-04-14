@@ -10,13 +10,12 @@ import { getToken, getQuote } from "@/lib/delora";
 import { parseIntent, getSuggestion } from "@/lib/parseIntent";
 
 export async function POST(req: NextRequest) {
-  const { message } = await req.json();
+  const { message, senderAddress } = await req.json();
 
   if (!message?.trim()) {
     return NextResponse.json({ error: "No message provided" }, { status: 400 });
   }
 
-  // Step 1: Parse intent
   const intent = parseIntent(message);
 
   if (!intent) {
@@ -28,7 +27,6 @@ export async function POST(req: NextRequest) {
 
   const destToken = intent.destinationToken;
 
-  // Step 2: Resolve chain IDs
   const originChainId = resolveChainId(intent.originChain);
   const destChainId = resolveChainId(intent.destinationChain);
 
@@ -40,7 +38,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Step 3: Resolve token addresses
   const originNativeSymbol = NATIVE_SYMBOLS[originChainId];
   const destNativeSymbol = NATIVE_SYMBOLS[destChainId];
 
@@ -80,10 +77,8 @@ export async function POST(req: NextRequest) {
     destDecimals = tokenData.decimals;
   }
 
-  // Step 4: Convert amount to smallest units
   const amountWei = toWei(intent.amount, originDecimals);
 
-  // Step 5: Get quote from Delora
   let quote;
   try {
     quote = await getQuote({
@@ -92,6 +87,8 @@ export async function POST(req: NextRequest) {
       amount: amountWei,
       originCurrency,
       destinationCurrency: destCurrency,
+      senderAddress: senderAddress ?? undefined,
+      receiverAddress: senderAddress ?? undefined,
     });
   } catch (err) {
     return NextResponse.json({
@@ -123,6 +120,11 @@ export async function POST(req: NextRequest) {
       outputAmount: outputFormatted,
       feesUSD: totalFeesUSD,
       gasUSD,
+    },
+    approval: isOriginNative ? null : {
+      tokenAddress: originCurrency,
+      spender: quote.calldata?.to ?? null,
+      amount: amountWei,
     },
     calldata: quote.calldata ?? null,
     raw: quote,
