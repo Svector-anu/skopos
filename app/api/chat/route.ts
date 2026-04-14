@@ -112,8 +112,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     type: "quote",
     intent: {
-      from: { chain: CHAIN_NAMES[originChainId], token: intent.token, amount: intent.amount },
-      to: { chain: CHAIN_NAMES[destChainId], token: destToken },
+      from: { chain: CHAIN_NAMES[originChainId], chainId: originChainId, token: intent.token, amount: intent.amount },
+      to: { chain: CHAIN_NAMES[destChainId], chainId: destChainId, token: destToken },
     },
     route: {
       tool,

@@ -6,6 +6,8 @@ import { usePrivy, useFundWallet } from "@privy-io/react-auth";
 import { mainnet } from "viem/chains";
 import {
   useAccount,
+  useChainId,
+  useSwitchChain,
   useSendTransaction,
   useWriteContract,
   useReadContract,
@@ -21,8 +23,8 @@ type ApprovalInfo = {
 type QuoteResult = {
   type: "quote";
   intent: {
-    from: { chain: string; token: string; amount: string };
-    to: { chain: string; token: string };
+    from: { chain: string; chainId: number; token: string; amount: string };
+    to: { chain: string; chainId: number; token: string };
   };
   route: {
     tool: string;
@@ -211,13 +213,19 @@ export default function AppPage() {
 
 function QuoteDisplay({ result }: { result: QuoteResult }) {
   const { address } = useAccount();
+  const chainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
   const { login, authenticated } = usePrivy();
   const { intent, route, calldata, approval } = result;
+
+  const originChainId = intent.from.chainId;
+  const onCorrectChain = chainId === originChainId;
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: approval?.tokenAddress as `0x${string}` | undefined,
     abi: ERC20_ABI,
     functionName: "allowance",
+    chainId: originChainId,
     args:
       address && approval
         ? [address, approval.spender as `0x${string}`]
@@ -257,22 +265,26 @@ function QuoteDisplay({ result }: { result: QuoteResult }) {
     ...(route.gasUSD ? [["gas", `~$${Number(route.gasUSD).toFixed(4)}`] as [string, string]] : []),
   ];
 
-  function approve() {
+  async function approve() {
     if (!approval) return;
+    if (!onCorrectChain) await switchChainAsync({ chainId: originChainId });
     writeContract({
       address: approval.tokenAddress as `0x${string}`,
       abi: ERC20_ABI,
       functionName: "approve",
       args: [approval.spender as `0x${string}`, BigInt(approval.amount)],
+      chainId: originChainId,
     });
   }
 
-  function execute() {
+  async function execute() {
     if (!calldata) return;
+    if (!onCorrectChain) await switchChainAsync({ chainId: originChainId });
     sendTransaction({
       to: calldata.to as `0x${string}`,
       value: BigInt(calldata.value || "0x0"),
       data: calldata.data as `0x${string}`,
+      chainId: originChainId,
     });
   }
 
