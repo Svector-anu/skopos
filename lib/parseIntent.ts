@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Groq from "groq-sdk";
 
 export interface ParsedIntent {
   originChain: string;
@@ -8,96 +8,126 @@ export interface ParsedIntent {
   destinationToken: string;
 }
 
-const client = new Anthropic();
+// ---------------------------------------------------------------------------
+// Layer 1: Regex (instant, free, covers ~90% of inputs)
+// ---------------------------------------------------------------------------
 
-const EXTRACT_TOOL: Anthropic.Tool = {
-  name: "extract_swap_intent",
-  description:
-    "Extract the cross-chain or same-chain swap/bridge intent from a user message. " +
-    "Only call this tool when the message clearly describes a token swap, bridge, or transfer. " +
-    "Do not call it for greetings, questions, or unrelated requests.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      originChain: {
-        type: "string",
-        description:
-          "The source blockchain name, lowercased. E.g. 'ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'avalanche', 'bsc', 'solana', 'monad', 'berachain', 'sonic', 'blast', 'scroll', 'linea'.",
-      },
-      destinationChain: {
-        type: "string",
-        description:
-          "The destination blockchain name, lowercased. Same format as originChain. If same-chain swap, identical to originChain.",
-      },
-      token: {
-        type: "string",
-        description:
-          "The token symbol to send, uppercased. E.g. 'ETH', 'USDC', 'USDT', 'WBTC', 'SOL'. Resolve common aliases: 'bitcoin' → 'WBTC', 'ether' → 'ETH'.",
-      },
-      amount: {
-        type: "string",
-        description:
-          "The numeric amount as a decimal string. E.g. '1', '0.5', '100'. Must be a concrete number — do not infer 'all' or 'half' without explicit context.",
-      },
-      destinationToken: {
-        type: "string",
-        description:
-          "The token to receive on the destination chain, uppercased. If not specified by the user, use the same value as 'token'.",
-      },
-    },
-    required: [
-      "originChain",
-      "destinationChain",
-      "token",
-      "amount",
-      "destinationToken",
-    ],
-  },
-};
-
-const SYSTEM = `You are a cross-chain swap intent parser for a DeFi copilot.
-Your job is to extract structured swap/bridge intent from user messages.
-Only call the extract_swap_intent tool when the message contains a clear swap or bridge request with a specific numeric amount.
-If the message is ambiguous, a greeting, a question about the product, or missing a concrete amount, do NOT call the tool — instead respond with a short helpful message.`;
-
-export async function parseIntent(
-  input: string
-): Promise<ParsedIntent | null> {
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 256,
-    system: SYSTEM,
-    tools: [EXTRACT_TOOL],
-    messages: [{ role: "user", content: input }],
-  });
-
-  const toolUse = response.content.find((b) => b.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") return null;
-
-  const input_data = toolUse.input as Record<string, string>;
-  return {
-    originChain: input_data.originChain,
-    destinationChain: input_data.destinationChain,
-    token: input_data.token,
-    amount: input_data.amount,
-    destinationToken: input_data.destinationToken,
+function normalizeToken(t: string): string {
+  const aliases: Record<string, string> = {
+    ether: "ETH", ethereum: "ETH", btc: "WBTC", bitcoin: "WBTC",
+    wrapped_bitcoin: "WBTC", sol: "SOL", matic: "POL", poly: "POL",
   };
+  const upper = t.toUpperCase();
+  return aliases[t.toLowerCase()] ?? upper;
 }
 
-export async function getSuggestion(input: string): Promise<string> {
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 128,
-    system:
-      "You are a helpful assistant for a cross-chain DeFi copilot. " +
-      "The user typed something that isn't a valid swap request. " +
-      "Give a single short sentence guiding them toward a valid command. " +
-      "Examples of valid commands: 'move 1 ETH from ethereum to base', 'swap 100 USDC from arbitrum to polygon'.",
-    messages: [{ role: "user", content: input }],
-  });
+function regexParse(input: string): ParsedIntent | null {
+  const s = input.trim();
 
-  const text = response.content.find((b) => b.type === "text");
-  return text?.type === "text"
-    ? text.text
-    : "Try: 'move 1 ETH from ethereum to base'";
+  // "move/bridge/send/transfer/swap/convert X TOKEN from ORIGIN to DEST"
+  const p1 = /(?:move|bridge|send|transfer|swap|convert)\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+from\s+([a-z][a-z\s]*?)\s+to\s+([a-z][a-z\s]*?)(?:\s*$|\s+(?:using|via|with))/i;
+  const m1 = p1.exec(s);
+  if (m1) {
+    const [, amount, token, origin, dest] = m1;
+    const tok = normalizeToken(token);
+    return { amount, token: tok, originChain: origin.trim().toLowerCase(), destinationChain: dest.trim().toLowerCase(), destinationToken: tok };
+  }
+
+  // "swap X TOKEN to DESTTOKEN from ORIGIN to DEST"
+  const p2 = /swap\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+to\s+([a-z]+)\s+from\s+([a-z][a-z\s]*?)\s+to\s+([a-z][a-z\s]*?)(?:\s*$)/i;
+  const m2 = p2.exec(s);
+  if (m2) {
+    const [, amount, token, destToken, origin, dest] = m2;
+    return { amount, token: normalizeToken(token), originChain: origin.trim().toLowerCase(), destinationChain: dest.trim().toLowerCase(), destinationToken: normalizeToken(destToken) };
+  }
+
+  // "swap X TOKEN to DESTTOKEN on CHAIN" (same-chain)
+  const p3 = /swap\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+(?:to|for)\s+([a-z]+)\s+on\s+([a-z][a-z\s]*?)(?:\s*$)/i;
+  const m3 = p3.exec(s);
+  if (m3) {
+    const [, amount, token, destToken, chain] = m3;
+    const c = chain.trim().toLowerCase();
+    return { amount, token: normalizeToken(token), originChain: c, destinationChain: c, destinationToken: normalizeToken(destToken) };
+  }
+
+  // "X TOKEN from ORIGIN to DEST" (no verb)
+  const p4 = /(\d+(?:\.\d+)?)\s+([a-z]+)\s+from\s+([a-z][a-z\s]*?)\s+to\s+([a-z][a-z\s]*?)(?:\s*$)/i;
+  const m4 = p4.exec(s);
+  if (m4) {
+    const [, amount, token, origin, dest] = m4;
+    const tok = normalizeToken(token);
+    return { amount, token: tok, originChain: origin.trim().toLowerCase(), destinationChain: dest.trim().toLowerCase(), destinationToken: tok };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Layer 2: Groq LLM fallback (free tier, ~200ms, handles edge cases)
+// ---------------------------------------------------------------------------
+
+let groqClient: Groq | null = null;
+
+function getGroq(): Groq | null {
+  if (!process.env.GROQ_API_KEY) return null;
+  if (!groqClient) groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return groqClient;
+}
+
+const GROQ_SYSTEM = `You are a DeFi intent parser. Extract swap/bridge intent from user messages into JSON.
+
+Return ONLY a JSON object matching this schema (no markdown, no explanation):
+{
+  "originChain": "string (chain name lowercased, e.g. ethereum, base, arbitrum)",
+  "destinationChain": "string (same format; equal to originChain for same-chain swaps)",
+  "token": "string (symbol uppercased, e.g. ETH, USDC, WBTC)",
+  "amount": "string (decimal number only, e.g. '1', '0.5', '100')",
+  "destinationToken": "string (symbol uppercased; same as token if not specified)"
+}
+
+Aliases: ether/ETH → ETH, bitcoin/btc → WBTC, mainnet → ethereum, arb → arbitrum, poly/matic → polygon, avax → avalanche, sol → solana.
+
+If the message is NOT a swap/bridge/transfer request, return: {"intent": null}`;
+
+async function groqParse(input: string): Promise<ParsedIntent | null> {
+  const groq = getGroq();
+  if (!groq) return null;
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      response_format: { type: "json_object" },
+      max_tokens: 128,
+      temperature: 0,
+      messages: [
+        { role: "system", content: GROQ_SYSTEM },
+        { role: "user", content: input },
+      ],
+    });
+
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (parsed.intent === null) return null;
+
+    const { originChain, destinationChain, token, amount, destinationToken } = parsed;
+    if (!originChain || !destinationChain || !token || !amount) return null;
+
+    return { originChain, destinationChain, token, amount, destinationToken: destinationToken ?? token };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export async function parseIntent(input: string): Promise<ParsedIntent | null> {
+  return regexParse(input) ?? await groqParse(input);
+}
+
+export async function getSuggestion(_input: string): Promise<string> {
+  return "Try: 'move 1 ETH from ethereum to base' or 'swap 100 USDC to ETH on arbitrum'";
 }
