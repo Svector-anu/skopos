@@ -122,9 +122,10 @@ export default function AppPage() {
   }
 
   return (
-    <main className="h-screen bg-black flex flex-col overflow-hidden">
+    <main className="h-screen bg-black flex items-center justify-center p-4">
+      <div className="w-full flex flex-col overflow-hidden" style={{ maxWidth: 480, height: "min(720px, 100%)", border: "1px solid rgba(255,255,255,0.08)", background: "#080808" }}>
       {/* Top bar */}
-      <div className="shrink-0 flex items-center justify-between px-5 h-12 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+      <div className="shrink-0 flex items-center justify-between px-4 h-11 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
         <Link href="/" className="text-white/25 hover:text-white/50 transition-colors text-xs tracking-widest uppercase" style={MONO}>
           ← back
         </Link>
@@ -252,6 +253,7 @@ export default function AppPage() {
             ↵
           </button>
         </form>
+      </div>
       </div>
     </main>
   );
