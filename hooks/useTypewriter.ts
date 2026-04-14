@@ -6,10 +6,10 @@ import { COMMANDS } from "@/lib/commands";
 type Phase =
   | "typing"
   | "typed-pause"
-  | "show-preview"
-  | "preview-in"
+  | "preview-mount"
+  | "preview-visible"
   | "preview-hold"
-  | "preview-out"
+  | "preview-fade"
   | "deleting"
   | "delete-pause";
 
@@ -25,8 +25,8 @@ const DELETING_SPEED_MS = 18;
 const TYPED_PAUSE_MS = 1200;
 const PREVIEW_HOLD_MS = 1800;
 const DELETE_PAUSE_MS = 400;
-const FADE_DURATION_MS = 300;
-const TRANSITION_TICK_MS = 20;
+const FADE_MS = 300;
+const PAINT_TICK_MS = 32;
 
 export function useTypewriter(): TypewriterState {
   const [displayText, setDisplayText] = useState("");
@@ -58,47 +58,47 @@ export function useTypewriter(): TypewriterState {
             setCharIndex((i) => i + 1);
           }, TYPING_SPEED_MS);
         } else {
-          setPhase("typed-pause");
+          timerRef.current = setTimeout(() => setPhase("typed-pause"), TYPED_PAUSE_MS);
         }
         break;
       }
 
       case "typed-pause": {
         timerRef.current = setTimeout(() => {
-          setPhase("show-preview");
-        }, TYPED_PAUSE_MS);
+          setShowPreview(true);
+          setPhase("preview-mount");
+        }, 0);
         break;
       }
 
-      case "show-preview": {
-        setShowPreview(true);
+      case "preview-mount": {
         timerRef.current = setTimeout(() => {
           setPreviewVisible(true);
-          setPhase("preview-in");
-        }, TRANSITION_TICK_MS);
+          setPhase("preview-visible");
+        }, PAINT_TICK_MS);
         break;
       }
 
-      case "preview-in": {
+      case "preview-visible": {
         timerRef.current = setTimeout(() => {
           setPhase("preview-hold");
-        }, FADE_DURATION_MS);
+        }, FADE_MS);
         break;
       }
 
       case "preview-hold": {
         timerRef.current = setTimeout(() => {
           setPreviewVisible(false);
-          setPhase("preview-out");
+          setPhase("preview-fade");
         }, PREVIEW_HOLD_MS);
         break;
       }
 
-      case "preview-out": {
+      case "preview-fade": {
         timerRef.current = setTimeout(() => {
           setShowPreview(false);
           setPhase("deleting");
-        }, FADE_DURATION_MS);
+        }, FADE_MS);
         break;
       }
 
@@ -109,7 +109,7 @@ export function useTypewriter(): TypewriterState {
             setCharIndex((i) => i - 1);
           }, DELETING_SPEED_MS);
         } else {
-          setPhase("delete-pause");
+          timerRef.current = setTimeout(() => setPhase("delete-pause"), 0);
         }
         break;
       }

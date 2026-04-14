@@ -74,35 +74,44 @@ export default function AppPage() {
           What do you want to do?
         </h1>
 
-        <div
-          className="w-full flex items-center gap-3 px-4 py-3"
-          style={{ background: "#0A0A0A", border: "1px solid rgba(255,255,255,0.12)" }}
+        <form
+          onSubmit={(e) => { e.preventDefault(); submit(); }}
+          className="w-full flex flex-col gap-3"
         >
-          <span className="text-sm shrink-0" style={{ color: "#F5B800", ...MONO }}>{">"}</span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="move 1 eth from ethereum to base"
-            className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/20"
-            style={MONO}
-          />
-          {loading ? (
-            <span className="text-white/30 text-xs shrink-0 animate-pulse" style={MONO}>…</span>
-          ) : (
-            value.trim() && (
-              <button
-                onClick={submit}
-                className="text-xs shrink-0 px-3 py-1 border border-white/20 text-white/50 hover:text-white hover:border-white/40 transition-colors"
-                style={MONO}
-              >
-                run
-              </button>
-            )
-          )}
-        </div>
+          <div
+            className="w-full flex items-center gap-3 px-4 py-3"
+            style={{ background: "#0A0A0A", border: "1px solid rgba(255,255,255,0.12)" }}
+          >
+            <span className="text-sm shrink-0" style={{ color: "#F5B800", ...MONO }}>{">"}</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="move 1 eth from ethereum to base"
+              className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/20"
+              style={MONO}
+            />
+            {loading && (
+              <span className="text-white/30 text-xs shrink-0 animate-pulse" style={MONO}>routing…</span>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={!value.trim() || loading}
+            className="w-full py-2.5 text-xs tracking-widest uppercase border transition-colors"
+            style={{
+              ...MONO,
+              background: "transparent",
+              borderColor: value.trim() && !loading ? "rgba(245,184,0,0.5)" : "rgba(255,255,255,0.1)",
+              color: value.trim() && !loading ? "#F5B800" : "rgba(255,255,255,0.2)",
+              cursor: value.trim() && !loading ? "pointer" : "not-allowed",
+            }}
+          >
+            {loading ? "routing…" : "get quote →"}
+          </button>
+        </form>
 
         {result && (
           <div
@@ -121,12 +130,6 @@ export default function AppPage() {
               </div>
             )}
           </div>
-        )}
-
-        {!result && !loading && (
-          <p className="text-xs text-white/20 text-center" style={MONO}>
-            press enter or click run
-          </p>
         )}
       </div>
     </main>
@@ -160,18 +163,17 @@ function QuoteDisplay({ result }: { result: QuoteResult }) {
       </div>
 
       <button
-        disabled={!calldata}
+        disabled
         className="w-full py-2.5 text-xs tracking-widest uppercase border transition-colors"
         style={{
           ...MONO,
-          borderColor: calldata ? "rgba(245,184,0,0.4)" : "rgba(255,255,255,0.1)",
-          color: calldata ? "#F5B800" : "rgba(255,255,255,0.2)",
-          cursor: calldata ? "not-allowed" : "not-allowed",
           background: "transparent",
+          borderColor: calldata ? "rgba(245,184,0,0.35)" : "rgba(255,255,255,0.08)",
+          color: calldata ? "rgba(245,184,0,0.5)" : "rgba(255,255,255,0.15)",
+          cursor: "not-allowed",
         }}
-        title="Wallet connection coming in Phase 3"
       >
-        {calldata ? "execute → (connect wallet to sign)" : "no calldata available"}
+        {calldata ? "execute → connect wallet to sign" : "no route available"}
       </button>
     </div>
   );
