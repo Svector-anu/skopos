@@ -1,3 +1,5 @@
+import Anthropic from "@anthropic-ai/sdk";
+
 export interface ParsedIntent {
   originChain: string;
   destinationChain: string;
@@ -6,100 +8,96 @@ export interface ParsedIntent {
   destinationToken: string;
 }
 
-const AMOUNT_RE = /(\d+(?:\.\d+)?)/;
-const TOKEN_RE = /([A-Za-z]{2,10})/;
+const client = new Anthropic();
 
-// Supported token symbols (for matching)
-const KNOWN_TOKENS = new Set([
-  "ETH", "WETH", "USDC", "USDT", "DAI", "WBTC", "BTC",
-  "BNB", "MATIC", "POL", "AVAX", "SOL", "OP", "ARB",
-  "LINK", "UNI", "AAVE", "MKR", "SNX", "CRV", "GRT",
-  "LDO", "RPL", "RETH", "CBETH", "STETH", "WSTETH",
-  "PEPE", "SHIB", "DOGE", "MON", "BERA", "S", "MNT",
-  "CELO", "CRO", "HYPE", "METIS", "XPL",
-]);
+const EXTRACT_TOOL: Anthropic.Tool = {
+  name: "extract_swap_intent",
+  description:
+    "Extract the cross-chain or same-chain swap/bridge intent from a user message. " +
+    "Only call this tool when the message clearly describes a token swap, bridge, or transfer. " +
+    "Do not call it for greetings, questions, or unrelated requests.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      originChain: {
+        type: "string",
+        description:
+          "The source blockchain name, lowercased. E.g. 'ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'avalanche', 'bsc', 'solana', 'monad', 'berachain', 'sonic', 'blast', 'scroll', 'linea'.",
+      },
+      destinationChain: {
+        type: "string",
+        description:
+          "The destination blockchain name, lowercased. Same format as originChain. If same-chain swap, identical to originChain.",
+      },
+      token: {
+        type: "string",
+        description:
+          "The token symbol to send, uppercased. E.g. 'ETH', 'USDC', 'USDT', 'WBTC', 'SOL'. Resolve common aliases: 'bitcoin' → 'WBTC', 'ether' → 'ETH'.",
+      },
+      amount: {
+        type: "string",
+        description:
+          "The numeric amount as a decimal string. E.g. '1', '0.5', '100'. Must be a concrete number — do not infer 'all' or 'half' without explicit context.",
+      },
+      destinationToken: {
+        type: "string",
+        description:
+          "The token to receive on the destination chain, uppercased. If not specified by the user, use the same value as 'token'.",
+      },
+    },
+    required: [
+      "originChain",
+      "destinationChain",
+      "token",
+      "amount",
+      "destinationToken",
+    ],
+  },
+};
 
-function normalizeToken(t: string): string {
-  return t.toUpperCase();
+const SYSTEM = `You are a cross-chain swap intent parser for a DeFi copilot.
+Your job is to extract structured swap/bridge intent from user messages.
+Only call the extract_swap_intent tool when the message contains a clear swap or bridge request with a specific numeric amount.
+If the message is ambiguous, a greeting, a question about the product, or missing a concrete amount, do NOT call the tool — instead respond with a short helpful message.`;
+
+export async function parseIntent(
+  input: string
+): Promise<ParsedIntent | null> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 256,
+    system: SYSTEM,
+    tools: [EXTRACT_TOOL],
+    messages: [{ role: "user", content: input }],
+  });
+
+  const toolUse = response.content.find((b) => b.type === "tool_use");
+  if (!toolUse || toolUse.type !== "tool_use") return null;
+
+  const input_data = toolUse.input as Record<string, string>;
+  return {
+    originChain: input_data.originChain,
+    destinationChain: input_data.destinationChain,
+    token: input_data.token,
+    amount: input_data.amount,
+    destinationToken: input_data.destinationToken,
+  };
 }
 
-// Parses: "move/bridge/swap/send/transfer X TOKEN from CHAIN to CHAIN"
-// Also:   "swap X TOKEN to TOKEN on CHAIN"
-// Also:   "swap X TOKEN to TOKEN from CHAIN to CHAIN"
-export function parseIntent(input: string): ParsedIntent | null {
-  const s = input.trim().toLowerCase();
+export async function getSuggestion(input: string): Promise<string> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 128,
+    system:
+      "You are a helpful assistant for a cross-chain DeFi copilot. " +
+      "The user typed something that isn't a valid swap request. " +
+      "Give a single short sentence guiding them toward a valid command. " +
+      "Examples of valid commands: 'move 1 ETH from ethereum to base', 'swap 100 USDC from arbitrum to polygon'.",
+    messages: [{ role: "user", content: input }],
+  });
 
-  // Pattern 1: "... X TOKEN from ORIGIN to DEST"
-  const p1 = /(?:move|bridge|send|transfer|swap|convert)\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+from\s+([a-z\s]+?)\s+to\s+([a-z\s]+?)(?:\s*$|\s+(?:using|via|with))/i;
-  const m1 = p1.exec(s);
-  if (m1) {
-    const [, amount, token, origin, dest] = m1;
-    return {
-      amount,
-      token: normalizeToken(token),
-      originChain: origin.trim(),
-      destinationChain: dest.trim(),
-      destinationToken: normalizeToken(token),
-    };
-  }
-
-  // Pattern 2: "swap X TOKEN to DESTTOKEN from ORIGIN to DEST"
-  const p2 = /swap\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+to\s+([a-z]+)\s+from\s+([a-z\s]+?)\s+to\s+([a-z\s]+?)(?:\s*$)/i;
-  const m2 = p2.exec(s);
-  if (m2) {
-    const [, amount, token, destToken, origin, dest] = m2;
-    return {
-      amount,
-      token: normalizeToken(token),
-      originChain: origin.trim(),
-      destinationChain: dest.trim(),
-      destinationToken: normalizeToken(destToken),
-    };
-  }
-
-  // Pattern 3: "swap X TOKEN to DESTTOKEN on CHAIN" (same chain swap)
-  const p3 = /swap\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+(?:to|for)\s+([a-z]+)\s+on\s+([a-z\s]+?)(?:\s*$)/i;
-  const m3 = p3.exec(s);
-  if (m3) {
-    const [, amount, token, destToken, chain] = m3;
-    return {
-      amount,
-      token: normalizeToken(token),
-      originChain: chain.trim(),
-      destinationChain: chain.trim(),
-      destinationToken: normalizeToken(destToken),
-    };
-  }
-
-  // Pattern 4: "X TOKEN from ORIGIN to DEST" (no verb)
-  const p4 = /(\d+(?:\.\d+)?)\s+([a-z]+)\s+from\s+([a-z\s]+?)\s+to\s+([a-z\s]+?)(?:\s*$)/i;
-  const m4 = p4.exec(s);
-  if (m4) {
-    const [, amount, token, origin, dest] = m4;
-    return {
-      amount,
-      token: normalizeToken(token),
-      originChain: origin.trim(),
-      destinationChain: dest.trim(),
-      destinationToken: normalizeToken(token),
-    };
-  }
-
-  return null;
+  const text = response.content.find((b) => b.type === "text");
+  return text?.type === "text"
+    ? text.text
+    : "Try: 'move 1 ETH from ethereum to base'";
 }
-
-// Suggests what format to use when parsing fails
-export function getSuggestion(input: string): string {
-  const hasAmount = AMOUNT_RE.test(input);
-  const hasToken = [...KNOWN_TOKENS].some((t) =>
-    input.toUpperCase().includes(t)
-  );
-
-  if (!hasAmount) return "Include an amount, e.g. '1 ETH' or '100 USDC'";
-  if (!hasToken) return "Include a token symbol, e.g. ETH, USDC, USDT";
-  return "Try: 'move 1 ETH from ethereum to base' or 'swap 100 USDC from arbitrum to polygon'";
-}
-
-// Suppress unused import warning
-void AMOUNT_RE;
-void TOKEN_RE;

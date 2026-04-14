@@ -16,12 +16,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No message provided" }, { status: 400 });
   }
 
-  const intent = parseIntent(message);
+  const intent = await parseIntent(message);
 
   if (!intent) {
     return NextResponse.json({
       type: "text",
-      text: getSuggestion(message),
+      text: await getSuggestion(message),
     });
   }
 
