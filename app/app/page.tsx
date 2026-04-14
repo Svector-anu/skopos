@@ -74,35 +74,34 @@ export default function AppPage() {
           What do you want to do?
         </h1>
 
-        <div className="w-full flex flex-col gap-0">
-          <div
-            className="w-full flex items-center gap-3 px-4 py-3"
-            style={{ background: "#0A0A0A", border: "1px solid rgba(255,255,255,0.12)" }}
-          >
-            <span className="text-sm shrink-0" style={{ color: "#F5B800", ...MONO }}>{">"}</span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="move 1 eth from ethereum to base"
-              className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/20"
-              style={MONO}
-            />
-            {loading && (
-              <span className="text-white/30 text-xs shrink-0 animate-pulse" style={MONO}>…</span>
-            )}
-          </div>
-
-          <button
-            onClick={submit}
-            disabled={loading || !value.trim()}
-            className="w-full py-2.5 text-xs tracking-widest uppercase transition-colors border-x border-b border-white/10 disabled:text-white/20 text-white/50 hover:text-white hover:border-white/30 disabled:cursor-not-allowed bg-transparent"
+        <div
+          className="w-full flex items-center gap-3 px-4 py-3"
+          style={{ background: "#0A0A0A", border: "1px solid rgba(255,255,255,0.12)" }}
+        >
+          <span className="text-sm shrink-0" style={{ color: "#F5B800", ...MONO }}>{">"}</span>
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="move 1 eth from ethereum to base"
+            className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/20"
             style={MONO}
-          >
-            {loading ? "routing…" : "execute →"}
-          </button>
+          />
+          {loading ? (
+            <span className="text-white/30 text-xs shrink-0 animate-pulse" style={MONO}>…</span>
+          ) : (
+            value.trim() && (
+              <button
+                onClick={submit}
+                className="text-xs shrink-0 px-3 py-1 border border-white/20 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+                style={MONO}
+              >
+                run
+              </button>
+            )
+          )}
         </div>
 
         {result && (
@@ -126,7 +125,7 @@ export default function AppPage() {
 
         {!result && !loading && (
           <p className="text-xs text-white/20 text-center" style={MONO}>
-            type a command and press enter or click execute
+            press enter or click run
           </p>
         )}
       </div>
@@ -135,7 +134,7 @@ export default function AppPage() {
 }
 
 function QuoteDisplay({ result }: { result: QuoteResult }) {
-  const { intent, route } = result;
+  const { intent, route, calldata } = result;
 
   const rows: [string, string][] = [
     ["route", `${intent.from.chain} → ${route.tool} → ${intent.to.chain}`],
@@ -146,8 +145,8 @@ function QuoteDisplay({ result }: { result: QuoteResult }) {
   ];
 
   return (
-    <div className="flex flex-col">
-      <div className="px-4 py-3 flex flex-col gap-2">
+    <div className="px-4 py-3 flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         {rows.map(([label, val]) => (
           <div key={label} className="flex items-start gap-3">
             <span className="text-xs w-16 shrink-0" style={{ ...MONO, color: "#F5B800" }}>
@@ -160,19 +159,20 @@ function QuoteDisplay({ result }: { result: QuoteResult }) {
         ))}
       </div>
 
-      <div
-        className="px-4 py-3"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+      <button
+        disabled={!calldata}
+        className="w-full py-2.5 text-xs tracking-widest uppercase border transition-colors"
+        style={{
+          ...MONO,
+          borderColor: calldata ? "rgba(245,184,0,0.4)" : "rgba(255,255,255,0.1)",
+          color: calldata ? "#F5B800" : "rgba(255,255,255,0.2)",
+          cursor: calldata ? "not-allowed" : "not-allowed",
+          background: "transparent",
+        }}
+        title="Wallet connection coming in Phase 3"
       >
-        <button
-          disabled
-          className="w-full py-2.5 text-xs tracking-widest uppercase border border-white/10 text-white/25 cursor-not-allowed bg-transparent"
-          style={MONO}
-          title="Wallet connection coming in the next version"
-        >
-          connect wallet to execute →
-        </button>
-      </div>
+        {calldata ? "execute → (connect wallet to sign)" : "no calldata available"}
+      </button>
     </div>
   );
 }
