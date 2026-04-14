@@ -44,13 +44,16 @@ export async function getToken(
   chainId: number,
   symbol: string
 ): Promise<DeloraToken | null> {
-  const res = await fetch(
-    `${BASE}/v1/tokens?chainId=${chainId}&symbol=${encodeURIComponent(symbol)}`
-  );
+  const res = await fetch(`${BASE}/v1/tokens`);
   if (!res.ok) return null;
-  const data = await res.json();
-  const token = Array.isArray(data) ? data[0] : (data?.tokens?.[0] ?? data);
-  return token ?? null;
+  const data: Record<string, DeloraToken[]> = await res.json();
+  const chainTokens = data[String(chainId)];
+  if (!Array.isArray(chainTokens)) return null;
+  return (
+    chainTokens.find(
+      (t) => t.symbol.toUpperCase() === symbol.toUpperCase()
+    ) ?? null
+  );
 }
 
 export async function getQuote(params: {
