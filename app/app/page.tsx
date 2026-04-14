@@ -278,12 +278,29 @@ function QuoteDisplay({ result }: { result: QuoteResult }) {
 
   const explorerBase: Record<string, string> = {
     Ethereum: "https://etherscan.io/tx/",
-    Base: "https://basescan.org/tx/",
-    Arbitrum: "https://arbiscan.io/tx/",
     Optimism: "https://optimistic.etherscan.io/tx/",
-    Polygon: "https://polygonscan.com/tx/",
-    Avalanche: "https://snowtrace.io/tx/",
+    Cronos: "https://explorer.cronos.org/tx/",
     BSC: "https://bscscan.com/tx/",
+    Gnosis: "https://gnosis.blockscout.com/tx/",
+    Unichain: "https://uniscan.xyz/tx/",
+    Polygon: "https://polygonscan.com/tx/",
+    Monad: "https://monadscan.com/tx/",
+    Sonic: "https://explorer.soniclabs.com/tx/",
+    "World Chain": "https://worldscan.org/tx/",
+    HyperEVM: "https://hyperevmscan.io/tx/",
+    Metis: "https://andromeda-explorer.metis.io/tx/",
+    Soneium: "https://soneium.blockscout.com/tx/",
+    Mantle: "https://mantlescan.xyz/tx/",
+    Base: "https://basescan.org/tx/",
+    Plasma: "https://plasmascan.to/tx/",
+    Arbitrum: "https://arbiscan.io/tx/",
+    Celo: "https://celoscan.io/tx/",
+    Avalanche: "https://snowtrace.io/tx/",
+    Ink: "https://explorer.inkonchain.com/tx/",
+    Linea: "https://lineascan.build/tx/",
+    Berachain: "https://berascan.com/tx/",
+    Blast: "https://blastscan.io/tx/",
+    Scroll: "https://scrollscan.com/tx/",
   };
   const explorerUrl = txHash
     ? `${explorerBase[intent.from.chain] ?? "https://etherscan.io/tx/"}${txHash}`
