@@ -1,7 +1,7 @@
 import { createPublicClient, http } from "viem";
 import { mainnet } from "viem/chains";
-import type { TxData, Transfer, ChainBalance, AddressData } from "./alchemy-types";
-export type { TxData, Transfer, ChainBalance, AddressData };
+import type { TxData, Transfer, ChainBalance, TokenBalance, AddressData } from "./alchemy-types";
+export type { TxData, Transfer, ChainBalance, TokenBalance, AddressData };
 
 const KEY = process.env.ALCHEMY_API_KEY ?? "";
 
@@ -198,5 +198,64 @@ export async function lookupAddress(address: string): Promise<AddressData> {
     .sort((a, b) => hexToNum(b.blockNum) - hexToNum(a.blockNum))
     .slice(0, 12);
 
-  return { address, balances, recentTransfers };
+  // ERC-20 balances — only on chains where the address has native activity
+  const activeChainIds = new Set([
+    ...balances.map(b => b.chainId),
+    1,   // always include Ethereum (most tokens live here)
+    8453, // and Base
+  ]);
+
+  const tokenResults = await Promise.allSettled(
+    [...activeChainIds].map(chainId => fetchErc20Balances(address, chainId))
+  );
+
+  const tokenBalances: TokenBalance[] = tokenResults
+    .flatMap(r => r.status === "fulfilled" ? r.value : [])
+    .filter(t => parseFloat(t.balance) > 0)
+    .sort((a, b) => parseFloat(b.balance) - parseFloat(a.balance));
+
+  return { address, balances, tokenBalances, recentTransfers };
+}
+
+async function fetchErc20Balances(address: string, chainId: number): Promise<TokenBalance[]> {
+  const chain = ALCHEMY_CHAINS[chainId];
+  if (!chain) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await rpc<any>(chain.rpc, "alchemy_getTokenBalances", [address, "erc20"]);
+  if (!result?.tokenBalances) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nonZero: any[] = result.tokenBalances.filter(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (t: any) => t.tokenBalance && t.tokenBalance !== "0x0000000000000000000000000000000000000000000000000000000000000000"
+  );
+
+  // Fetch metadata for up to 8 tokens in parallel to keep latency reasonable
+  const top = nonZero.slice(0, 8);
+  const metaResults = await Promise.allSettled(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    top.map((t: any) => rpc<any>(chain.rpc, "alchemy_getTokenMetadata", [t.contractAddress]))
+  );
+
+  const out: TokenBalance[] = [];
+  for (let i = 0; i < top.length; i++) {
+    const meta = metaResults[i];
+    if (meta.status !== "fulfilled" || !meta.value) continue;
+    const { decimals, symbol, name } = meta.value;
+    if (!decimals || !symbol) continue;
+    const raw = hexToNum(top[i].tokenBalance);
+    const balance = (raw / 10 ** decimals).toFixed(4);
+    if (parseFloat(balance) <= 0) continue;
+    out.push({
+      contractAddress: top[i].contractAddress as string,
+      symbol:    symbol as string,
+      name:      (name ?? symbol) as string,
+      decimals:  decimals as number,
+      balance,
+      chainId,
+      chainName: chain.name,
+    });
+  }
+  return out;
 }

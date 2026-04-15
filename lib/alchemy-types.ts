@@ -32,8 +32,19 @@ export interface ChainBalance {
   native: string;
 }
 
+export interface TokenBalance {
+  contractAddress: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  balance: string;    // human-readable
+  chainId: number;
+  chainName: string;
+}
+
 export interface AddressData {
   address: string;
   balances: ChainBalance[];
+  tokenBalances: TokenBalance[];
   recentTransfers: Transfer[];
 }

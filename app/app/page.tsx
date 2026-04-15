@@ -958,7 +958,7 @@ function AddressDisplay({ result }: { result: AddressResult }) {
         </span>
       </div>
 
-      {data.balances.length > 0 && (
+      {(data.balances.length > 0 || data.tokenBalances.length > 0) && (
         <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.2)", marginBottom: 10 }}>
             BALANCES
@@ -967,6 +967,14 @@ function AddressDisplay({ result }: { result: AddressResult }) {
             <div key={b.chainId} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
               <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.35)" }}>{b.chainName}</span>
               <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.72)" }}>{b.native} {b.nativeSymbol}</span>
+            </div>
+          ))}
+          {data.tokenBalances.slice(0, 10).map(t => (
+            <div key={`${t.chainId}-${t.contractAddress}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+              <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.28)" }}>
+                {t.symbol} <span style={{ color: "rgba(255,255,255,0.15)" }}>· {t.chainName}</span>
+              </span>
+              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.6)" }}>{t.balance}</span>
             </div>
           ))}
         </div>
