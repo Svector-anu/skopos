@@ -31,7 +31,13 @@ type LegOk = {
 
 type LegErr = { ok: false; text: string };
 
-async function resolveLeg(intent: ParsedIntent, senderAddress?: string): Promise<LegOk | LegErr> {
+async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage?: number): Promise<LegOk | LegErr> {
+  // Rule 3: validate amount before touching the API
+  const parsedAmount = parseFloat(intent.amount);
+  if (!isFinite(parsedAmount) || parsedAmount <= 0) {
+    return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
+  }
+
   const destToken      = intent.destinationToken;
   const originChainId  = resolveChainId(intent.originChain);
   const destChainId    = resolveChainId(intent.destinationChain);
@@ -82,6 +88,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string): Promise
       destinationCurrency: destCurrency,
       senderAddress:   senderAddress ?? undefined,
       receiverAddress: senderAddress ?? undefined,
+      slippage,
     });
   } catch (err) {
     const msg        = err instanceof Error ? err.message : "Unknown error";
@@ -124,7 +131,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string): Promise
 // ── POST handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const { message, senderAddress, history } = await req.json();
+  const { message, senderAddress, history, slippage } = await req.json();
 
   if (!message?.trim()) {
     return NextResponse.json({ error: "No message provided" }, { status: 400 });
@@ -134,23 +141,30 @@ export async function POST(req: NextRequest) {
   const intent = await parseIntent(message);
 
   if (intent) {
-    const result = await resolveLeg(intent, senderAddress);
+    const result = await resolveLeg(intent, senderAddress, slippage);
     if (!result.ok) return NextResponse.json({ type: "error", text: result.text });
     const { ok: _ok, ...rest } = result;
-    return NextResponse.json({ type: "quote", ...rest });
+    return NextResponse.json({ type: "quote", mode: "preview", ...rest });
   }
 
   // ── multi-leg rebalance ──────────────────────────────────────────────────
   if (looksLikeRebalance(message)) {
     const legs = await parseRebalanceIntent(message);
     if (legs && legs.length >= 2) {
-      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress)));
+      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, slippage)));
+
+      // Rule 4: fail fast — if any leg errored, surface the first failure
+      const firstErr = results.find((r): r is LegErr => !r.ok);
+      if (firstErr) {
+        return NextResponse.json({ type: "error", text: `Rebalance aborted: ${firstErr.text}` });
+      }
+
       return NextResponse.json({
         type: "rebalance",
+        mode: "preview",
         legs: results.map(r => {
-          if (!r.ok) return { type: "error", text: r.text };
-          const { ok: _ok, ...rest } = r;
-          return { type: "quote", ...rest };
+          const { ok: _ok, ...rest } = r as LegOk;
+          return { type: "quote", mode: "preview", ...rest };
         }),
       });
     }

@@ -64,6 +64,7 @@ export async function getQuote(params: {
   destinationCurrency: string;
   senderAddress?: string;
   receiverAddress?: string;
+  slippage?: number;
 }): Promise<DeloraQuote> {
   const query = new URLSearchParams({
     originChainId: String(params.originChainId),
@@ -74,6 +75,7 @@ export async function getQuote(params: {
     senderAddress: params.senderAddress ?? PLACEHOLDER_ADDRESS,
     receiverAddress: params.receiverAddress ?? PLACEHOLDER_ADDRESS,
   });
+  if (params.slippage != null) query.set("slippage", String(params.slippage));
 
   const res = await fetch(`${BASE}/v1/quotes?${query}`);
   if (!res.ok) {

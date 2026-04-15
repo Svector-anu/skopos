@@ -192,7 +192,13 @@ Rules:
 - If a destination is stated once ("consolidate to base"), apply it to ALL legs
 - destinationToken equals token unless user explicitly says "swap X to Y"
 - Aliases: ether→ETH, mainnet→ethereum, arb→arbitrum, poly/matic→polygon, op→optimism, avax→avalanche
-- Return {"legs":null} if fewer than 2 clear legs or intent is ambiguous`;
+- Return {"legs":null} if fewer than 2 clear legs or intent is ambiguous
+
+CRITICAL — data integrity:
+- Extract ONLY what is explicitly stated in the message. NEVER infer, assume, or fabricate chain names, token symbols, or amounts that are not literally present.
+- If a chain name is ambiguous or not mentioned for a leg, omit that leg entirely.
+- If an amount is missing or unclear for a leg, omit that leg entirely.
+- Every field must be traceable to a word or number in the user's message.`;
 
 export function looksLikeRebalance(input: string): boolean {
   const lower = input.toLowerCase();
@@ -233,11 +239,17 @@ export async function parseRebalanceIntent(input: string): Promise<ParsedIntent[
     const legs: unknown[] = Array.isArray(parsed) ? parsed : parsed.legs;
     if (!Array.isArray(legs) || legs.length < 2) return null;
 
+    const lower = input.toLowerCase();
     const results: ParsedIntent[] = [];
     for (const leg of legs) {
       if (!leg || typeof leg !== "object") continue;
       const { originChain, destinationChain, token, amount, destinationToken } = leg as Record<string, string>;
       if (!originChain || !destinationChain || !token || !amount) continue;
+      // Sanity-check: at least one chain in this leg must appear in the original input
+      const chainMentioned =
+        lower.includes(originChain.toLowerCase()) ||
+        lower.includes(destinationChain.toLowerCase());
+      if (!chainMentioned) continue;
       results.push({
         originChain:        originChain.trim().toLowerCase(),
         destinationChain:   destinationChain.trim().toLowerCase(),

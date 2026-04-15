@@ -2,25 +2,31 @@
 
 import { useEffect, useRef } from "react";
 
-// ── constants ────────────────────────────────────────────────────────────────
-const CHARS       = "AX70BZ91CY80xEFG2H3IJ4KL5MN6OP";
-const BASE_OP     = 0.78;   // particles are the primary visual
-const ACTIVE_OP   = 1.0;    // peak near cursor
-const RADIUS      = 110;    // mouse influence px
-const SCATTER     = 32;     // max displacement on hover
-const PSIZE       = 12;     // particle character size
-const STEP        = 5;      // sample grid (lower = more particles)
-const EASE        = 0.1;
-const FLOAT_X     = 3;      // ambient drift amplitude x
-const FLOAT_Y     = 2;      // ambient drift amplitude y
+// ── config ────────────────────────────────────────────────────────────────────
+const CHARS = "AX70BZ91CY80xEFG2H3IJ4KL5MN6OP";
+const PSIZE  = 11;
+const RADIUS = 120;
+
+const FG = {
+  step: 4, baseOp: 0.55, peakOp: 1.0,
+  scatter: 28, ease: 0.12, floatX: 2.5, floatY: 1.5,
+} as const;
+
+const BG = {
+  step: 8, baseOp: 0.18, peakOp: 0.30,
+  scatter: 6,  ease: 0.04, floatX: 1.0, floatY: 0.6,
+} as const;
+
+const INTERIOR_KEEP = 0.12;
 
 interface P {
-  x: number; y: number;   // current position
-  ox: number; oy: number; // rest position
+  x: number; y: number;
+  ox: number; oy: number;
   ch: string;
   op: number;
   sc: number;
-  ph: number;             // individual phase offset for ambient drift
+  ph: number;   // letter-zone phase + small random jitter
+  bg: boolean;  // true = background layer (interior, dim, slow)
 }
 
 export function HeroTitle() {
@@ -49,96 +55,153 @@ export function HeroTitle() {
       canvas!.style.height = `${h}px`;
       ctx.scale(dpr, dpr);
 
-      // Match CSS clamp(5rem, 14vw, 10rem)
       const fontSize = Math.max(80, Math.min(160, window.innerWidth * 0.14));
+      const spacing  = `${Math.round(fontSize * 0.08)}px`;
 
-      // Wait for font before sampling — with a 1s safety fallback
       await Promise.race([
         document.fonts.load(`400 ${Math.round(fontSize)}px "Bebas Neue"`),
         new Promise(r => setTimeout(r, 1000)),
       ]);
 
-      // Draw text invisibly on offscreen canvas, sample filled pixels
-      const off    = document.createElement("canvas");
-      off.width    = w;
-      off.height   = h;
-      const offCtx = off.getContext("2d")!;
-      offCtx.font         = `400 ${fontSize}px "Bebas Neue", sans-serif`;
-      offCtx.fillStyle    = "#fff";
-      offCtx.textAlign    = "center";
-      offCtx.textBaseline = "middle";
-      offCtx.fillText("SKOPOS", w / 2, h / 2);
+      // ── offscreen pixel sampling ──────────────────────────────────────────
+      const off = document.createElement("canvas");
+      off.width  = w;
+      off.height = h;
+      const oCtx = off.getContext("2d")!;
+      oCtx.font          = `400 ${fontSize}px "Bebas Neue", sans-serif`;
+      oCtx.letterSpacing = spacing;
+      oCtx.fillStyle     = "#fff";
+      oCtx.textAlign     = "center";
+      oCtx.textBaseline  = "middle";
+      oCtx.fillText("SKOPOS", w / 2, h / 2);
 
-      const { data } = offCtx.getImageData(0, 0, w, h);
+      const { data } = oCtx.getImageData(0, 0, w, h);
+      const textW    = oCtx.measureText("SKOPOS").width;
+      const textLeft = w / 2 - textW / 2;
+
+      function alpha(px: number, py: number): number {
+        if (px < 0 || px >= w || py < 0 || py >= h) return 0;
+        return data[(py * w + px) * 4 + 3];
+      }
+
+      function isEdge(px: number, py: number): boolean {
+        return alpha(px - 4, py) < 40 || alpha(px + 4, py) < 40 ||
+               alpha(px, py - 4) < 40 || alpha(px, py + 4) < 40;
+      }
+
+      // Letters stagger: each of the 6 letter zones gets a distinct phase,
+      // so ambient drift ripples gently across the word instead of moving in sync.
+      function letterPhase(px: number): number {
+        const idx = Math.max(0, Math.min(5, Math.floor((px - textLeft) / textW * 6)));
+        return idx * (Math.PI / 3);
+      }
+
       const ps: P[] = [];
 
-      for (let py = 0; py < h; py += STEP) {
-        for (let px = 0; px < w; px += STEP) {
-          if (data[(py * w + px) * 4 + 3] > 80) {
-            const jx = px + (Math.random() - 0.5) * STEP * 0.6;
-            const jy = py + (Math.random() - 0.5) * STEP * 0.6;
-            ps.push({
-              x: jx, y: jy, ox: jx, oy: jy,
-              ch: CHARS[Math.floor(Math.random() * CHARS.length)],
-              op: BASE_OP, sc: 1,
-              ph: Math.random() * Math.PI * 2,   // random phase per particle
-            });
-          }
+      // FG pass — fine grid, edge pixels always included, very sparse interior
+      for (let py = 0; py < h; py += FG.step) {
+        for (let px = 0; px < w; px += FG.step) {
+          if (alpha(px, py) <= 80) continue;
+          if (!isEdge(px, py) && Math.random() > INTERIOR_KEEP) continue;
+          const jx = px + (Math.random() - 0.5) * FG.step * 0.4;
+          const jy = py + (Math.random() - 0.5) * FG.step * 0.4;
+          ps.push({
+            x: jx, y: jy, ox: jx, oy: jy,
+            ch: CHARS[Math.floor(Math.random() * CHARS.length)],
+            op: FG.baseOp, sc: 1,
+            ph: letterPhase(px) + Math.random() * 0.6,
+            bg: false,
+          });
         }
       }
+
+      // BG pass — coarse grid, interior only, thinned further
+      for (let py = 0; py < h; py += BG.step) {
+        for (let px = 0; px < w; px += BG.step) {
+          if (alpha(px, py) <= 80) continue;
+          if (isEdge(px, py)) continue;
+          if (Math.random() > 0.45) continue;
+          const jx = px + (Math.random() - 0.5) * BG.step * 0.4;
+          const jy = py + (Math.random() - 0.5) * BG.step * 0.4;
+          ps.push({
+            x: jx, y: jy, ox: jx, oy: jy,
+            ch: CHARS[Math.floor(Math.random() * CHARS.length)],
+            op: BG.baseOp, sc: 1,
+            ph: letterPhase(px) + Math.random() * 0.6,
+            bg: true,
+          });
+        }
+      }
+
       particles.current = ps;
 
-      // ── render loop ──────────────────────────────────────────────────────
+      // ── render loop ───────────────────────────────────────────────────────
       function tick() {
         if (!alive) return;
-
-        const t  = performance.now();
+        const t = performance.now();
         ctx.clearRect(0, 0, w, h);
 
+        // Stroke outline guide — drawn first, under all particles
+        ctx.save();
+        ctx.font          = `400 ${fontSize}px "Bebas Neue", sans-serif`;
+        ctx.letterSpacing = spacing;
+        ctx.textAlign     = "center";
+        ctx.textBaseline  = "middle";
+        ctx.strokeStyle   = "#EAC45A";
+        ctx.lineWidth     = 1;
+        ctx.globalAlpha   = 0.18;
+        ctx.shadowColor   = "#EAC45A";
+        ctx.shadowBlur    = 16;
+        ctx.strokeText("SKOPOS", w / 2, h / 2);
+        ctx.restore();
+
         const { x: mx, y: my } = mouse.current;
-        ctx.fillStyle    = "#EAC45A";
-        ctx.textAlign    = "center";
-        ctx.textBaseline = "middle";
 
-        for (const p of particles.current) {
-          // Effect 1 — ambient drift: each particle floats around its origin
-          // using unique phase so they move independently (looks alive at rest)
-          const floatX = p.ox + Math.sin(t * 0.0007 + p.ph)        * FLOAT_X;
-          const floatY = p.oy + Math.cos(t * 0.0009 + p.ph * 1.37) * FLOAT_Y;
+        // Draw BG first, FG on top
+        for (const drawBg of [true, false]) {
+          ctx.fillStyle    = "#EAC45A";
+          ctx.textAlign    = "center";
+          ctx.textBaseline = "middle";
 
-          // Effect 2 — mouse scatter: repel outward from cursor
-          const dx    = p.ox - mx;
-          const dy    = p.oy - my;
-          const dist2 = dx * dx + dy * dy;
+          for (const p of particles.current) {
+            if (p.bg !== drawBg) continue;
+            const cfg = p.bg ? BG : FG;
 
-          if (dist2 < RADIUS * RADIUS) {
-            const str      = 1 - Math.sqrt(dist2) / RADIUS;
-            const angle    = Math.atan2(dy, dx);
-            // scatter from the float position (not raw origin)
-            const targetX  = floatX + Math.cos(angle) * SCATTER * str;
-            const targetY  = floatY + Math.sin(angle) * SCATTER * str;
-            p.x  += (targetX - p.x) * EASE * 2.4;
-            p.y  += (targetY - p.y) * EASE * 2.4;
-            p.op += (BASE_OP + (ACTIVE_OP - BASE_OP) * str - p.op) * EASE * 2;
-            p.sc += (1 + 0.55 * str - p.sc) * EASE * 2;
-          } else {
-            // ease back toward the drifting float position
-            p.x  += (floatX - p.x) * EASE;
-            p.y  += (floatY - p.y) * EASE;
-            p.op += (BASE_OP - p.op) * EASE * 1.6;
-            p.sc += (1 - p.sc)       * EASE * 1.6;
+            // Ambient float — BG drifts at half speed, creating depth separation
+            const spd    = p.bg ? 0.0003 : 0.0006;
+            const floatX = p.ox + Math.sin(t * spd       + p.ph) * cfg.floatX;
+            const floatY = p.oy + Math.cos(t * spd * 1.4 + p.ph * 1.3) * cfg.floatY;
+
+            // Smooth repel — push outward from cursor, ease back when cursor leaves
+            const dx    = p.ox - mx;
+            const dy    = p.oy - my;
+            const dist2 = dx * dx + dy * dy;
+
+            if (dist2 < RADIUS * RADIUS) {
+              const str   = 1 - Math.sqrt(dist2) / RADIUS;
+              const angle = Math.atan2(dy, dx);
+              p.x  += (floatX + Math.cos(angle) * cfg.scatter * str - p.x) * cfg.ease * 2.5;
+              p.y  += (floatY + Math.sin(angle) * cfg.scatter * str - p.y) * cfg.ease * 2.5;
+              p.op += (cfg.baseOp + (cfg.peakOp - cfg.baseOp) * str - p.op) * cfg.ease * 2;
+              p.sc += (1 + (p.bg ? 0.15 : 0.45) * str - p.sc) * cfg.ease * 2;
+            } else {
+              p.x  += (floatX - p.x) * cfg.ease;
+              p.y  += (floatY - p.y) * cfg.ease;
+              p.op += (cfg.baseOp - p.op) * cfg.ease * 1.5;
+              p.sc += (1 - p.sc)           * cfg.ease * 1.5;
+            }
+
+            if (p.op < 0.01) continue;
+            ctx.globalAlpha = p.op;
+            ctx.font        = `${PSIZE * p.sc}px "JetBrains Mono", monospace`;
+            ctx.fillText(p.ch, p.x, p.y);
           }
-
-          if (p.op < 0.01) continue;
-
-          ctx.globalAlpha = p.op;
-          ctx.font        = `${PSIZE * p.sc}px "JetBrains Mono", monospace`;
-          ctx.fillText(p.ch, p.x, p.y);
         }
 
         ctx.globalAlpha = 1;
         raf.current = requestAnimationFrame(tick);
       }
+
       tick();
     }
 
@@ -163,21 +226,22 @@ export function HeroTitle() {
       className="text-center leading-none select-none"
       style={{ position: "relative" }}
     >
-      {/* Particle canvas — pointer-events off, sits above text */}
+      {/* Particle + guide canvas — same coordinate space as offscreen sampler */}
       <canvas
         ref={canvasRef}
         style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 2 }}
       />
-      {/* Base text — always solid and readable */}
+      {/* Invisible layout spacer — gives the wrapper its height */}
       <div
+        aria-hidden="true"
         style={{
-          position: "relative",
-          zIndex: 1,
           fontFamily: "var(--font-bebas-neue), sans-serif",
           fontSize: "clamp(5rem, 14vw, 10rem)",
-          letterSpacing: "0.02em",
+          letterSpacing: "0.08em",
           lineHeight: 1,
-          color: "rgba(234,196,90,0.07)",
+          opacity: 0,
+          userSelect: "none",
+          pointerEvents: "none",
         }}
       >
         SKOPOS

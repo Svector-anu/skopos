@@ -16,6 +16,8 @@ type ApprovalInfo = { tokenAddress: string; spender: string; amount: string } | 
 
 type QuoteResult = {
   type: "quote";
+  mode: "preview";
+  originMessage?: string;
   intent: {
     from: { chain: string; chainId: number; token: string; amount: string };
     to: { chain: string; chainId: number; token: string };
@@ -27,7 +29,7 @@ type QuoteResult = {
 
 type TextResult      = { type: "text";      text: string };
 type ErrorResult     = { type: "error";     text: string };
-type RebalanceResult = { type: "rebalance"; legs: Array<QuoteResult | ErrorResult> };
+type RebalanceResult = { type: "rebalance"; mode: "preview"; legs: Array<QuoteResult | ErrorResult> };
 type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
@@ -88,6 +90,12 @@ const SWAP_ACTIONS = [
   { label: "ETH → USDC · Base", prompt: "swap 0.1 ETH to USDC on base" },
   { label: "ETH → USDC · Arb",  prompt: "swap 0.1 ETH to USDC on arbitrum" },
   { label: "USDC → ETH · Base", prompt: "swap 100 USDC to ETH on base" },
+];
+
+const SLIPPAGE_OPTIONS = [
+  { value: 0.003, label: "0.3%" },
+  { value: 0.005, label: "0.5%" },
+  { value: 0.01,  label: "1%" },
 ];
 
 const EXAMPLE_PROMPTS = [
@@ -152,6 +160,7 @@ export default function AppPage() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [featureSlide, setFeatureSlide]= useState(0);
   const [isMobile, setIsMobile]        = useState(false);
+  const [slippage, setSlippage]        = useState(0.005);
 
   const { address }                            = useAccount();
   const currentChainId                         = useChainId();
@@ -246,9 +255,10 @@ export default function AppPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, senderAddress: address, history }),
+        body: JSON.stringify({ message: text, senderAddress: address, history, slippage }),
       });
       const data: AssistantResult = await res.json();
+      if (data.type === "quote") data.originMessage = text;
       setMessages(prev => [...prev, { role: "assistant", result: data }]);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", result: { type: "error", text: "Network error. Is the server running?" } }]);
@@ -414,7 +424,26 @@ export default function AppPage() {
                             </span>
                           )}
                         </p>
-                        <QuoteDisplay result={msg.result} onTxSubmitted={saveTx} />
+                        <QuoteDisplay
+                          result={msg.result}
+                          onTxSubmitted={saveTx}
+                          onRefresh={async () => {
+                            const origin = (msg.result as QuoteResult).originMessage;
+                            if (!origin) return;
+                            try {
+                              const res = await fetch("/api/chat", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ message: origin, senderAddress: address, history: [], slippage }),
+                              });
+                              const data: AssistantResult = await res.json();
+                              if (data.type === "quote") data.originMessage = origin;
+                              setMessages(prev => prev.map((m, j) =>
+                                j === i ? { role: "assistant", result: data } : m
+                              ));
+                            } catch { /* silent — QuoteDisplay will reset isRefreshing */ }
+                          }}
+                        />
                       </div>
                     )}
                     {msg.result.type === "rebalance" && (
@@ -490,10 +519,28 @@ export default function AppPage() {
                   className="placeholder:text-white/15"
                   style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: "rgba(255,255,255,0.85)", fontSize: "0.95rem" }}
                 />
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
                   <span style={{ ...MONO, fontSize: "0.62rem", color: "rgba(255,255,255,0.18)", letterSpacing: "0.06em" }}>
                     Groq · Delora
                   </span>
+                  <div style={{ flex: 1 }} />
+                  <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.15)" }}>slip</span>
+                  {SLIPPAGE_OPTIONS.map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSlippage(value)}
+                      style={{
+                        ...MONO, fontSize: "0.6rem", padding: "2px 6px", borderRadius: 4,
+                        border: `1px solid ${slippage === value ? "rgba(245,184,0,0.35)" : "rgba(255,255,255,0.07)"}`,
+                        background: slippage === value ? "rgba(245,184,0,0.06)" : "transparent",
+                        color: slippage === value ? "rgba(245,184,0,0.85)" : "rgba(255,255,255,0.22)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
                   <button
                     type="submit"
                     disabled={!value.trim() || loading}
@@ -592,7 +639,13 @@ function DrawerAction({ label, onClick }: { label: string; onClick: () => void }
 
 // ─── QuoteDisplay ─────────────────────────────────────────────────────────────
 
-function QuoteDisplay({ result, onTxSubmitted }: { result: QuoteResult; onTxSubmitted?: (r: TxRecord) => void }) {
+const QUOTE_TTL = 30;
+
+function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
+  result: QuoteResult;
+  onTxSubmitted?: (r: TxRecord) => void;
+  onRefresh?: () => Promise<void>;
+}) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { address }              = useAccount();
   const chainId                  = useChainId();
@@ -618,7 +671,27 @@ function QuoteDisplay({ result, onTxSubmitted }: { result: QuoteResult; onTxSubm
   const { sendTransaction, data: txHash, isPending: isSending } = useSendTransaction();
   const { isLoading: isConfirming, isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
-  const [switchErr, setSwitchErr] = useState<string | null>(null);
+  const [switchErr, setSwitchErr]     = useState<string | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(QUOTE_TTL);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Reset countdown whenever a fresh quote arrives
+  useEffect(() => { setSecondsLeft(QUOTE_TTL); setIsRefreshing(false); }, [result]);
+
+  // Tick down — pauses once a tx is in flight (no point expiring mid-execution)
+  useEffect(() => {
+    if (txHash || secondsLeft <= 0) return;
+    const id = setTimeout(() => setSecondsLeft(s => s - 1), 1000);
+    return () => clearTimeout(id);
+  }, [secondsLeft, txHash]);
+
+  const isExpired = secondsLeft <= 0 && !txHash;
+
+  async function handleRefresh() {
+    if (!onRefresh) return;
+    setIsRefreshing(true);
+    try { await onRefresh(); } catch { setIsRefreshing(false); }
+  }
 
   useEffect(() => {
     if (!txHash) return;
@@ -664,13 +737,26 @@ function QuoteDisplay({ result, onTxSubmitted }: { result: QuoteResult; onTxSubm
     ...(route.feesUSD ? [{ label: "Fees", value: `~$${Number(route.feesUSD).toFixed(4)}` }] : []),
   ];
 
+  const executionMode = !!txHash;
+
   return (
-    <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, overflow: "hidden" }}>
+    <div style={{ background: "#0D0D0D", border: `1px solid ${executionMode ? "rgba(245,184,0,0.18)" : "rgba(255,255,255,0.08)"}`, borderRadius: 16, overflow: "hidden" }}>
       {/* Header */}
-      <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.22)", margin: 0 }}>
-          Transaction
+          {executionMode ? "Transaction" : "Quote Preview"}
         </p>
+        {!executionMode && (
+          <span style={{
+            ...MONO, fontSize: "0.6rem", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 4,
+            background: "rgba(255,255,255,0.04)",
+            color: isExpired ? "#F5B800"
+              : secondsLeft <= 10 ? "rgba(245,184,0,0.65)"
+              : "rgba(255,255,255,0.18)",
+          }}>
+            {isExpired ? "expired" : secondsLeft <= 15 ? `${secondsLeft}s` : "preview"}
+          </span>
+        )}
       </div>
 
       {/* Rows */}
@@ -704,6 +790,12 @@ function QuoteDisplay({ result, onTxSubmitted }: { result: QuoteResult; onTxSubm
               {isConfirming ? "confirming on-chain…" : "submitted · waiting…"}
             </div>
           )
+        ) : isExpired ? (
+          <button onClick={handleRefresh} disabled={isRefreshing || !onRefresh}
+            style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.05)", border: "1px solid rgba(245,184,0,0.22)", borderRadius: 10, color: isRefreshing ? "rgba(245,184,0,0.35)" : "rgba(245,184,0,0.75)", cursor: isRefreshing ? "wait" : "pointer" }}
+            className={isRefreshing ? "animate-pulse" : ""}>
+            {isRefreshing ? "refreshing…" : "quote expired · refresh →"}
+          </button>
         ) : !authenticated ? (
           <button onClick={login} style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.08)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: "pointer" }}>
             connect to execute →
