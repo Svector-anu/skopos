@@ -16,7 +16,7 @@ import {
   generateAddressSummary,
   ParsedIntent,
 } from "@/lib/parseIntent";
-import { lookupTx, lookupAddress } from "@/lib/alchemy";
+import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 
 // ── shared leg resolver ───────────────────────────────────────────────────────
 
@@ -141,6 +141,27 @@ export async function POST(req: NextRequest) {
   }
 
   const trimmed = message.trim();
+
+  // ── explorer: ENS name (*.eth) ──────────────────────────────────────────
+  if (/^[a-z0-9][a-z0-9-_.]*\.eth$/i.test(trimmed)) {
+    const resolved = await resolveENS(trimmed);
+    if (!resolved) {
+      return NextResponse.json({ type: "error", text: `Could not resolve ${trimmed}. Make sure the ENS name is registered.` });
+    }
+    const data = await lookupAddress(resolved);
+    const summary = await generateAddressSummary(data);
+    return NextResponse.json({ type: "address", data, summary, ensName: trimmed });
+  }
+
+  // ── portfolio: connected wallet ──────────────────────────────────────────
+  if (/\b(my\s+)?(portfolio|wallet|balances?|holdings?|address)\b/i.test(trimmed)) {
+    if (!senderAddress) {
+      return NextResponse.json({ type: "text", text: "Connect your wallet first — I'll fetch your live balances across all supported chains." });
+    }
+    const data = await lookupAddress(senderAddress);
+    const summary = await generateAddressSummary(data);
+    return NextResponse.json({ type: "address", data, summary });
+  }
 
   // ── explorer: tx hash (0x + 64 hex chars) ───────────────────────────────
   if (/^0x[0-9a-fA-F]{64}$/.test(trimmed)) {

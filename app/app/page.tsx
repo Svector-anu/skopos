@@ -32,7 +32,7 @@ type TextResult      = { type: "text";      text: string };
 type ErrorResult     = { type: "error";     text: string };
 type RebalanceResult = { type: "rebalance"; mode: "preview"; legs: Array<QuoteResult | ErrorResult> };
 type TxResult        = { type: "tx";        tx: TxData;      summary: string };
-type AddressResult   = { type: "address";   data: AddressData; summary: string };
+type AddressResult   = { type: "address";   data: AddressData; summary: string; ensName?: string };
 type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult | TxResult | AddressResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
@@ -104,8 +104,8 @@ const SLIPPAGE_OPTIONS = [
 const EXAMPLE_PROMPTS = [
   "bridge 0.1 ETH from ethereum to base",
   "swap 100 USDC to ETH on arbitrum",
+  "show my portfolio",
   "what chains do you support?",
-  "how does cross-chain bridging work?",
 ];
 
 // ─── Feature carousel ─────────────────────────────────────────────────────────
@@ -343,6 +343,9 @@ export default function AppPage() {
               ))}
             </DrawerSection>
           )}
+          <DrawerSection label="PORTFOLIO">
+            <DrawerAction label="My balances" onClick={() => submit("show my portfolio")} />
+          </DrawerSection>
           <DrawerSection label="BRIDGE">
             {BRIDGE_ACTIONS.map(({ label, prompt }) => (
               <DrawerAction key={label} label={label} onClick={() => submit(prompt)} />
@@ -942,13 +945,13 @@ function TxDisplay({ result }: { result: TxResult }) {
 
 function AddressDisplay({ result }: { result: AddressResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-  const { data, summary } = result;
+  const { data, summary, ensName } = result;
 
   return (
     <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, overflow: "hidden" }}>
       <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.22)", margin: 0 }}>
-          Address
+          {ensName ? <span>{ensName} <span style={{ color: "rgba(255,255,255,0.3)" }}>· address</span></span> : "Address"}
         </p>
         <span style={{ ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.35)" }}>
           {data.address.slice(0, 8)}…{data.address.slice(-6)}
