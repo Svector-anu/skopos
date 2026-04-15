@@ -1,5 +1,7 @@
 import { createPublicClient, http } from "viem";
 import { mainnet } from "viem/chains";
+import type { TxData, Transfer, ChainBalance, AddressData } from "./alchemy-types";
+export type { TxData, Transfer, ChainBalance, AddressData };
 
 const KEY = process.env.ALCHEMY_API_KEY ?? "";
 
@@ -34,48 +36,6 @@ const METHOD_SIGS: Record<string, string> = {
   "0x6af479b2": "sellToUniswap (0x)",
   "0x0d5f0e3b": "fillLimitOrder (0x)",
 };
-
-// ── public types ──────────────────────────────────────────────────────────────
-
-export interface TxData {
-  hash: string;
-  chainId: number;
-  chainName: string;
-  explorerUrl: string;
-  from: string;
-  to: string | null;
-  valueEth: string;
-  status: "success" | "failed" | "pending";
-  blockNumber: number;
-  gasUsed: string;
-  gasCostEth: string;
-  method: string | null;
-  timestamp: number | null;
-  logCount: number;
-}
-
-export interface Transfer {
-  hash: string;
-  from: string;
-  to: string | null;
-  value: string;
-  asset: string;
-  direction: "in" | "out";
-  blockNum: string;
-}
-
-export interface ChainBalance {
-  chainId: number;
-  chainName: string;
-  nativeSymbol: string;
-  native: string;
-}
-
-export interface AddressData {
-  address: string;
-  balances: ChainBalance[];
-  recentTransfers: Transfer[];
-}
 
 // ── internal helpers ──────────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import type { TxData, AddressData } from "@/lib/alchemy";
+import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet } from "@privy-io/react-auth";
 import { mainnet } from "viem/chains";
 import {
