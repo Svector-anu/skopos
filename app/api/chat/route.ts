@@ -70,11 +70,15 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   // address — fetch it from the Delora token list instead of using the EVM zero address.
   if (isOriginNative && NATIVE_DECIMALS[originChainId] !== undefined) {
     const tokenData = await getToken(originChainId, originNativeSymbol ?? intent.token);
-    if (tokenData) { originCurrency = tokenData.address; originDecimals = tokenData.decimals; }
+    if (!tokenData) return { ok: false, text: `${intent.token} on ${CHAIN_NAMES[originChainId]} is not yet supported. Try an EVM-to-EVM route instead.` };
+    originCurrency = tokenData.address;
+    originDecimals = tokenData.decimals;
   }
   if (isDestNative && NATIVE_DECIMALS[destChainId] !== undefined) {
     const tokenData = await getToken(destChainId, destNativeSymbol ?? destToken);
-    if (tokenData) { destCurrency = tokenData.address; destDecimals = tokenData.decimals; }
+    if (!tokenData) return { ok: false, text: `${destToken} on ${CHAIN_NAMES[destChainId]} is not yet supported as a destination.` };
+    destCurrency = tokenData.address;
+    destDecimals = tokenData.decimals;
   }
 
   if (!isOriginNative) {
@@ -108,10 +112,13 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   } catch (err) {
     const msg        = err instanceof Error ? err.message : "Unknown error";
     const noAdapters = msg.includes("No adapters available");
+    const isSolana   = originChainId === 1000000001 || destChainId === 1000000001;
     return {
       ok: false,
       text: noAdapters
-        ? `No route found for ${intent.amount} ${intent.token} — amount may be too small. Try at least 0.001 ETH or $1 worth.`
+        ? isSolana
+          ? `No route found for ${intent.amount} ${intent.token} on Solana. Solana cross-chain routes require Mayan bridge — try a larger amount (≥0.1 SOL) or check back as liquidity improves.`
+          : `No route found for ${intent.amount} ${intent.token} — amount may be too small. Try at least 0.001 ETH or $1 worth.`
         : `Could not get a quote: ${msg}`,
     };
   }

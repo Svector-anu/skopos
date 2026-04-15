@@ -6,7 +6,7 @@ import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet } from "@privy-io/react-auth";
 import { mainnet } from "viem/chains";
 import {
-  useAccount, useBalance, useChainId, useSwitchChain,
+  useConnection, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
@@ -118,7 +118,7 @@ const IcNet     = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="no
 const IcChart   = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
 const IcClock   = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>;
 const IcWallet  = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M16 14h2"/><path d="M2 10h20"/></svg>;
-const IcDiamond = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M2 9h20"/></svg>;
+
 
 type FeatureCard = { label: string; sub: string; icon: React.ReactNode };
 const FEATURE_SLIDES: FeatureCard[][] = [
@@ -165,7 +165,7 @@ export default function AppPage() {
   const [isMobile, setIsMobile]        = useState(false);
   const [slippage, setSlippage]        = useState(0.005);
 
-  const { address }                            = useAccount();
+  const { address }                            = useConnection();
   const currentChainId                         = useChainId();
   const { login, logout, authenticated, ready }= usePrivy();
   const { fundWallet }                         = useFundWallet();
@@ -655,9 +655,9 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
   onRefresh?: () => Promise<void>;
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-  const { address }              = useAccount();
+  const { address }              = useConnection();
   const chainId                  = useChainId();
-  const { switchChainAsync }     = useSwitchChain();
+  const { mutateAsync: switchChain } = useSwitchChain();
   const { login, authenticated } = usePrivy();
   const { intent, route, calldata, approval } = result;
   const originChainId            = intent.from.chainId;
@@ -672,11 +672,11 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
 
   const needsApproval = !!approval && (allowance === undefined || BigInt(allowance as bigint) < BigInt(approval.amount));
 
-  const { writeContract, data: approvalHash, isPending: isApproving } = useWriteContract();
+  const { mutate: writeContract, data: approvalHash, isPending: isApproving } = useWriteContract();
   const { isSuccess: approvalConfirmed } = useWaitForTransactionReceipt({ hash: approvalHash });
   useEffect(() => { if (approvalConfirmed) refetchAllowance(); }, [approvalConfirmed, refetchAllowance]);
 
-  const { sendTransaction, data: txHash, isPending: isSending } = useSendTransaction();
+  const { mutate: sendTransaction, data: txHash, isPending: isSending } = useSendTransaction();
   const { isLoading: isConfirming, isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
   const [switchErr, setSwitchErr]     = useState<string | null>(null);
@@ -715,7 +715,7 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
     if (!approval) return;
     setSwitchErr(null);
     try {
-      if (!onCorrectChain) await switchChainAsync({ chainId: originChainId });
+      if (!onCorrectChain) await switchChain({ chainId: originChainId });
       writeContract({ address: approval.tokenAddress as `0x${string}`, abi: ERC20_ABI, functionName: "approve", args: [approval.spender as `0x${string}`, BigInt(approval.amount)], chainId: originChainId });
     } catch {
       setSwitchErr(`Switch your wallet to ${intent.from.chain} to continue`);
@@ -726,7 +726,7 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
     if (!calldata) return;
     setSwitchErr(null);
     try {
-      if (!onCorrectChain) await switchChainAsync({ chainId: originChainId });
+      if (!onCorrectChain) await switchChain({ chainId: originChainId });
       sendTransaction({ to: calldata.to as `0x${string}`, value: BigInt(calldata.value || "0x0"), data: calldata.data as `0x${string}`, chainId: originChainId });
     } catch {
       setSwitchErr(`Switch your wallet to ${intent.from.chain} to continue`);
@@ -912,22 +912,22 @@ function TxDisplay({ result }: { result: TxResult }) {
         </span>
       </div>
 
-      <div style={{ padding: "4px 20px" }}>
+      <div style={{ padding: "4px 16px" }}>
         {rows.map(({ label, value }) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-            <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.27)", letterSpacing: "0.04em" }}>{label}</span>
-            <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.68)" }}>{value}</span>
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+            <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.27)", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
+            <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.68)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{value}</span>
           </div>
         ))}
       </div>
 
       {summary && (
-        <div style={{ padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+        <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
           <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.38)", lineHeight: 1.65, margin: 0 }}>{summary}</p>
         </div>
       )}
 
-      <div style={{ padding: "14px 20px 18px" }}>
+      <div style={{ padding: "12px 16px 16px" }}>
         <a
           href={tx.explorerUrl}
           target="_blank"
@@ -964,17 +964,17 @@ function AddressDisplay({ result }: { result: AddressResult }) {
             BALANCES
           </p>
           {data.balances.map(b => (
-            <div key={b.chainId} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-              <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.35)" }}>{b.chainName}</span>
-              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.72)" }}>{b.native} {b.nativeSymbol}</span>
+            <div key={b.chainId} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+              <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.35)", flexShrink: 0 }}>{b.chainName}</span>
+              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.72)", textAlign: "right" }}>{b.native} {b.nativeSymbol}</span>
             </div>
           ))}
           {data.tokenBalances.slice(0, 10).map(t => (
-            <div key={`${t.chainId}-${t.contractAddress}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-              <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.28)" }}>
+            <div key={`${t.chainId}-${t.contractAddress}`} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+              <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.28)", flexShrink: 0 }}>
                 {t.symbol} <span style={{ color: "rgba(255,255,255,0.15)" }}>· {t.chainName}</span>
               </span>
-              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.6)" }}>{t.balance}</span>
+              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.6)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{t.balance}</span>
             </div>
           ))}
         </div>
@@ -986,18 +986,18 @@ function AddressDisplay({ result }: { result: AddressResult }) {
             RECENT TRANSFERS
           </p>
           {data.recentTransfers.slice(0, 8).map((t, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-              <span style={{ ...MONO, fontSize: "0.6rem", color: t.direction === "in" ? "#4ade80" : "#F5B800", letterSpacing: "0.04em", width: 22 }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)", minWidth: 0 }}>
+              <span style={{ ...MONO, fontSize: "0.6rem", color: t.direction === "in" ? "#4ade80" : "#F5B800", letterSpacing: "0.04em", flexShrink: 0, width: 26 }}>
                 {t.direction === "in" ? "IN" : "OUT"}
               </span>
-              <span style={{ ...MONO, fontSize: "0.7rem", color: "rgba(255,255,255,0.65)", flex: 1 }}>
+              <span style={{ ...MONO, fontSize: "0.7rem", color: "rgba(255,255,255,0.65)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {t.value} {t.asset}
               </span>
               <a
                 href={`https://etherscan.io/tx/${t.hash}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ ...MONO, fontSize: "0.6rem", color: "rgba(255,255,255,0.25)", textDecoration: "none" }}
+                style={{ ...MONO, fontSize: "0.6rem", color: "rgba(255,255,255,0.25)", textDecoration: "none", flexShrink: 0 }}
               >
                 {t.hash.slice(0, 8)}…
               </a>
