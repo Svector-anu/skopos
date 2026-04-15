@@ -8,7 +8,7 @@ export function TerminalCard() {
 
   return (
     <div
-      className="w-full max-w-xl mx-auto rounded-lg overflow-hidden"
+      className="w-full max-w-xl mx-auto rounded-2xl overflow-hidden"
       style={{
         background: "#0A0A0A",
         border: "1px solid rgba(255,255,255,0.08)",

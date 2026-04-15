@@ -63,7 +63,7 @@ function regexParse(input: string): ParsedIntent | null {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 2: Groq LLM fallback (free tier, ~200ms, handles edge cases)
+// Layer 2: Groq LLM — intent extraction + general chat
 // ---------------------------------------------------------------------------
 
 let groqClient: Groq | null = null;
@@ -74,7 +74,7 @@ function getGroq(): Groq | null {
   return groqClient;
 }
 
-const GROQ_SYSTEM = `You are a DeFi intent parser. Extract swap/bridge intent from user messages into JSON.
+const GROQ_INTENT_SYSTEM = `You are a DeFi intent parser. Extract swap/bridge intent from user messages into JSON.
 
 Return ONLY a JSON object matching this schema (no markdown, no explanation):
 {
@@ -85,11 +85,53 @@ Return ONLY a JSON object matching this schema (no markdown, no explanation):
   "destinationToken": "string (symbol uppercased; same as token if not specified)"
 }
 
-Aliases: ether/ETH → ETH, bitcoin/btc → WBTC, mainnet → ethereum, arb → arbitrum, poly/matic → polygon, avax → avalanche, sol → solana.
+Aliases: ether/ETH → ETH, bitcoin/btc → WBTC, mainnet → ethereum, arb → arbitrum, poly/matic → polygon, avax → avalanche, sol → solana, op → optimism.
 
-If the message is NOT a swap/bridge/transfer request, return: {"intent": null}`;
+IMPORTANT: Only return the JSON object if ALL of the following are clearly present in the message:
+- A source chain (originChain)
+- A destination chain or "on CHAIN" for same-chain swaps (destinationChain)
+- A token symbol or name (token)
+- A numeric amount (amount)
 
-async function groqParse(input: string): Promise<ParsedIntent | null> {
+If any required field is missing or ambiguous, return: {"intent": null}
+
+If the message is NOT a swap/bridge/transfer request at all, return: {"intent": null}`;
+
+const GROQ_CHAT_SYSTEM = `You are Skopos, a cross-chain DeFi copilot powered by the Delora protocol.
+
+You help users bridge tokens and swap tokens across chains using natural language.
+
+CRITICAL RULES (must follow strictly):
+
+- NEVER say a transaction is completed unless a real transaction hash was returned by the app.
+- NEVER invent balances, token holdings, explorer links, bridge times, or fees.
+- NEVER fabricate route comparisons unless data was actually returned from the Delora API in this conversation.
+- If you do NOT have real data, say so clearly.
+
+- If the user asks for balances:
+  → say you cannot read live balances yet unless explicitly fetched.
+
+- If the user asks "did it execute?" or "show transaction":
+  → say no transaction has been executed unless a tx hash exists.
+
+- If the request is unclear or invalid:
+  → ask a clarifying question instead of guessing.
+
+- If the request is complex (rebalance, optimize, yield strategies):
+  → explain the steps required instead of pretending it is executed.
+
+- Treat all chat responses as explanation or guidance only.
+- Real execution ONLY happens through the quote + transaction flow.
+
+Keep responses:
+- under 3 sentences
+- plain text only
+- clear and honest`;
+
+async function groqParseIntent(input: string): Promise<ParsedIntent | null> {
+  // A transaction intent requires a numeric amount — skip LLM for purely textual messages
+  if (!/\d/.test(input)) return null;
+
   const groq = getGroq();
   if (!groq) return null;
 
@@ -100,7 +142,7 @@ async function groqParse(input: string): Promise<ParsedIntent | null> {
       max_tokens: 128,
       temperature: 0,
       messages: [
-        { role: "system", content: GROQ_SYSTEM },
+        { role: "system", content: GROQ_INTENT_SYSTEM },
         { role: "user", content: input },
       ],
     });
@@ -114,7 +156,98 @@ async function groqParse(input: string): Promise<ParsedIntent | null> {
     const { originChain, destinationChain, token, amount, destinationToken } = parsed;
     if (!originChain || !destinationChain || !token || !amount) return null;
 
+    // Sanity-check: at least one chain name must appear somewhere in the input.
+    // Prevents the model from fabricating chains for inputs like "send 5 somewhere".
+    const lower = input.toLowerCase();
+    const chainMentioned =
+      lower.includes(originChain.toLowerCase()) ||
+      lower.includes(destinationChain.toLowerCase());
+    if (!chainMentioned) return null;
+
     return { originChain, destinationChain, token, amount, destinationToken: destinationToken ?? token };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Layer 3: Groq LLM — multi-leg rebalance extraction
+// ---------------------------------------------------------------------------
+
+const GROQ_REBALANCE_SYSTEM = `You are a DeFi multi-leg rebalance intent parser.
+
+Users describe assets they hold on various chains and a destination, like:
+- "I have 1 ETH on ethereum and 200 USDC on arbitrum, consolidate to base"
+- "move 0.5 ETH from optimism and 100 USDC from polygon both to base"
+- "rebalance: 1 ETH mainnet + 50 USDC arbitrum → base"
+
+Return ONLY a raw JSON array (no markdown, no wrapper object):
+[
+  { "originChain": "ethereum", "destinationChain": "base", "token": "ETH", "amount": "1", "destinationToken": "ETH" },
+  { "originChain": "arbitrum", "destinationChain": "base", "token": "USDC", "amount": "200", "destinationToken": "USDC" }
+]
+
+Rules:
+- One object per asset/leg
+- If a destination is stated once ("consolidate to base"), apply it to ALL legs
+- destinationToken equals token unless user explicitly says "swap X to Y"
+- Aliases: ether→ETH, mainnet→ethereum, arb→arbitrum, poly/matic→polygon, op→optimism, avax→avalanche
+- Return {"legs":null} if fewer than 2 clear legs or intent is ambiguous`;
+
+export function looksLikeRebalance(input: string): boolean {
+  const lower = input.toLowerCase();
+  if (
+    lower.includes("rebalance") ||
+    lower.includes("consolidate") ||
+    lower.includes("move everything") ||
+    lower.includes("move all my")
+  ) return true;
+  // Multiple "from" mentions + at least 2 amounts = multi-leg bridge
+  const fromCount  = (lower.match(/\bfrom\b/g) || []).length;
+  const numCount   = (input.match(/\d+(?:\.\d+)?/g) || []).length;
+  return fromCount >= 2 && numCount >= 2;
+}
+
+export async function parseRebalanceIntent(input: string): Promise<ParsedIntent[] | null> {
+  const groq = getGroq();
+  if (!groq) return null;
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      response_format: { type: "json_object" },
+      max_tokens: 512,
+      temperature: 0,
+      messages: [
+        { role: "system", content: GROQ_REBALANCE_SYSTEM },
+        { role: "user", content: input },
+      ],
+    });
+
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+
+    // Model may return the array directly or wrap it; handle both
+    const legs: unknown[] = Array.isArray(parsed) ? parsed : parsed.legs;
+    if (!Array.isArray(legs) || legs.length < 2) return null;
+
+    const results: ParsedIntent[] = [];
+    for (const leg of legs) {
+      if (!leg || typeof leg !== "object") continue;
+      const { originChain, destinationChain, token, amount, destinationToken } = leg as Record<string, string>;
+      if (!originChain || !destinationChain || !token || !amount) continue;
+      results.push({
+        originChain:        originChain.trim().toLowerCase(),
+        destinationChain:   destinationChain.trim().toLowerCase(),
+        token:              token.trim().toUpperCase(),
+        amount:             amount.trim(),
+        destinationToken:   (destinationToken ?? token).trim().toUpperCase(),
+      });
+    }
+
+    return results.length >= 2 ? results : null;
   } catch {
     return null;
   }
@@ -125,9 +258,35 @@ async function groqParse(input: string): Promise<ParsedIntent | null> {
 // ---------------------------------------------------------------------------
 
 export async function parseIntent(input: string): Promise<ParsedIntent | null> {
-  return regexParse(input) ?? await groqParse(input);
+  return regexParse(input) ?? await groqParseIntent(input);
 }
 
-export async function getSuggestion(_input: string): Promise<string> {
-  return "Try: 'move 1 ETH from ethereum to base' or 'swap 100 USDC to ETH on arbitrum'";
+export async function getSuggestion(
+  input: string,
+  history?: { role: "user" | "assistant"; content: string }[],
+  senderAddress?: string,
+): Promise<string> {
+  const FALLBACK = "Try: 'move 1 ETH from ethereum to base' or 'swap 100 USDC to ETH on arbitrum'";
+  const groq = getGroq();
+  if (!groq) return FALLBACK;
+
+  const walletCtx = senderAddress
+    ? `\n\nUser's connected wallet address: ${senderAddress}. If the user mentions "this address", "my address", "my wallet", or pastes this exact address, it is their own wallet — not a third party. Answer accordingly (e.g. yes they can receive tokens there, guide them to fund it).`
+    : "";
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      max_tokens: 256,
+      temperature:0.2,
+      messages: [
+        { role: "system", content: GROQ_CHAT_SYSTEM + walletCtx },
+        ...(history?.slice(-6) ?? []),
+        { role: "user", content: input },
+      ],
+    });
+    return completion.choices[0]?.message?.content?.trim() ?? FALLBACK;
+  } catch {
+    return FALLBACK;
+  }
 }

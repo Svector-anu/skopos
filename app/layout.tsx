@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Delora Copilot",
+  title: "Skopos",
   description: "Cross-chain intent execution. Say what you want, it executes.",
 };
 

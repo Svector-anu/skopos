@@ -7,44 +7,47 @@ import {
   toWei,
 } from "@/lib/chains";
 import { getToken, getQuote } from "@/lib/delora";
-import { parseIntent, getSuggestion } from "@/lib/parseIntent";
+import {
+  parseIntent,
+  parseRebalanceIntent,
+  looksLikeRebalance,
+  getSuggestion,
+  ParsedIntent,
+} from "@/lib/parseIntent";
 
-export async function POST(req: NextRequest) {
-  const { message, senderAddress } = await req.json();
+// ── shared leg resolver ───────────────────────────────────────────────────────
 
-  if (!message?.trim()) {
-    return NextResponse.json({ error: "No message provided" }, { status: 400 });
-  }
+type LegOk = {
+  ok: true;
+  intent: {
+    from: { chain: string; chainId: number; token: string; amount: string };
+    to:   { chain: string; chainId: number; token: string };
+  };
+  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null };
+  approval: { tokenAddress: string; spender: string; amount: string } | null;
+  calldata: { to: string; value: string; data: string } | null;
+  raw: unknown;
+};
 
-  const intent = await parseIntent(message);
+type LegErr = { ok: false; text: string };
 
-  if (!intent) {
-    return NextResponse.json({
-      type: "text",
-      text: await getSuggestion(message),
-    });
-  }
-
-  const destToken = intent.destinationToken;
-
-  const originChainId = resolveChainId(intent.originChain);
-  const destChainId = resolveChainId(intent.destinationChain);
+async function resolveLeg(intent: ParsedIntent, senderAddress?: string): Promise<LegOk | LegErr> {
+  const destToken      = intent.destinationToken;
+  const originChainId  = resolveChainId(intent.originChain);
+  const destChainId    = resolveChainId(intent.destinationChain);
 
   if (!originChainId || !destChainId) {
     const unknown = !originChainId ? intent.originChain : intent.destinationChain;
-    return NextResponse.json({
-      type: "error",
-      text: `Unknown chain: "${unknown}". Supported: ethereum, base, arbitrum, optimism, polygon, avalanche, bsc, and more.`,
-    });
+    return { ok: false, text: `Unknown chain: "${unknown}". Supported: ethereum, base, arbitrum, optimism, polygon, avalanche, bsc, and more.` };
   }
 
   const originNativeSymbol = NATIVE_SYMBOLS[originChainId];
-  const destNativeSymbol = NATIVE_SYMBOLS[destChainId];
+  const destNativeSymbol   = NATIVE_SYMBOLS[destChainId];
 
   let originCurrency = NATIVE_ADDRESS;
-  let destCurrency = NATIVE_ADDRESS;
+  let destCurrency   = NATIVE_ADDRESS;
   let originDecimals = 18;
-  let destDecimals = 18;
+  let destDecimals   = 18;
 
   const isOriginNative =
     intent.token.toUpperCase() === originNativeSymbol?.toUpperCase() ||
@@ -55,24 +58,14 @@ export async function POST(req: NextRequest) {
 
   if (!isOriginNative) {
     const tokenData = await getToken(originChainId, intent.token);
-    if (!tokenData) {
-      return NextResponse.json({
-        type: "error",
-        text: `Could not find ${intent.token} on ${CHAIN_NAMES[originChainId]}. Check the symbol and try again.`,
-      });
-    }
+    if (!tokenData) return { ok: false, text: `Could not find ${intent.token} on ${CHAIN_NAMES[originChainId]}.` };
     originCurrency = tokenData.address;
     originDecimals = tokenData.decimals;
   }
 
   if (!isDestNative) {
     const tokenData = await getToken(destChainId, destToken);
-    if (!tokenData) {
-      return NextResponse.json({
-        type: "error",
-        text: `Could not find ${destToken} on ${CHAIN_NAMES[destChainId]}.`,
-      });
-    }
+    if (!tokenData) return { ok: false, text: `Could not find ${destToken} on ${CHAIN_NAMES[destChainId]}.` };
     destCurrency = tokenData.address;
     destDecimals = tokenData.decimals;
   }
@@ -87,46 +80,85 @@ export async function POST(req: NextRequest) {
       amount: amountWei,
       originCurrency,
       destinationCurrency: destCurrency,
-      senderAddress: senderAddress ?? undefined,
+      senderAddress:   senderAddress ?? undefined,
       receiverAddress: senderAddress ?? undefined,
     });
   } catch (err) {
-    return NextResponse.json({
-      type: "error",
-      text: `Could not get a quote: ${err instanceof Error ? err.message : "Unknown error"}`,
-    });
+    const msg        = err instanceof Error ? err.message : "Unknown error";
+    const noAdapters = msg.includes("No adapters available");
+    return {
+      ok: false,
+      text: noAdapters
+        ? `No route found for ${intent.amount} ${intent.token} — amount may be too small. Try at least 0.001 ETH or $1 worth.`
+        : `Could not get a quote: ${msg}`,
+    };
   }
 
-  const rawOut = quote.outputAmount;
-  const outputFormatted = rawOut
-    ? (Number(rawOut) / 10 ** destDecimals).toFixed(6)
+  const outputFormatted = quote.outputAmount
+    ? (Number(quote.outputAmount) / 10 ** destDecimals).toFixed(6)
     : "unknown";
 
-  const tool = quote.adapter ?? "best route";
+  const tool           = quote.adapter ?? "best route";
+  const feeBreakdown   = quote.fees?.breakdown ?? [];
+  const gasFee         = feeBreakdown.find((f) => f.type === "gas");
+  const totalFeesUSD   = quote.fees?.totalUsd ?? null;
+  const gasUSD         = gasFee?.amountUsd ?? null;
 
-  const feeBreakdown = quote.fees?.breakdown ?? [];
-  const gasFee = feeBreakdown.find((f) => f.type === "gas");
-  const totalFeesUSD = quote.fees?.totalUsd ?? null;
-  const gasUSD = gasFee?.amountUsd ?? null;
-
-  return NextResponse.json({
-    type: "quote",
+  return {
+    ok: true,
     intent: {
       from: { chain: CHAIN_NAMES[originChainId], chainId: originChainId, token: intent.token, amount: intent.amount },
-      to: { chain: CHAIN_NAMES[destChainId], chainId: destChainId, token: destToken },
+      to:   { chain: CHAIN_NAMES[destChainId],   chainId: destChainId,   token: destToken },
     },
-    route: {
-      tool,
-      outputAmount: outputFormatted,
-      feesUSD: totalFeesUSD,
-      gasUSD,
-    },
+    route:    { tool, outputAmount: outputFormatted, feesUSD: totalFeesUSD, gasUSD },
     approval: isOriginNative ? null : {
       tokenAddress: originCurrency,
-      spender: quote.calldata?.to ?? null,
-      amount: amountWei,
+      spender:      quote.calldata?.to ?? "",
+      amount:       amountWei,
     },
     calldata: quote.calldata ?? null,
-    raw: quote,
+    raw:      quote,
+  };
+}
+
+// ── POST handler ──────────────────────────────────────────────────────────────
+
+export async function POST(req: NextRequest) {
+  const { message, senderAddress, history } = await req.json();
+
+  if (!message?.trim()) {
+    return NextResponse.json({ error: "No message provided" }, { status: 400 });
+  }
+
+  // ── single-leg intent ────────────────────────────────────────────────────
+  const intent = await parseIntent(message);
+
+  if (intent) {
+    const result = await resolveLeg(intent, senderAddress);
+    if (!result.ok) return NextResponse.json({ type: "error", text: result.text });
+    const { ok: _ok, ...rest } = result;
+    return NextResponse.json({ type: "quote", ...rest });
+  }
+
+  // ── multi-leg rebalance ──────────────────────────────────────────────────
+  if (looksLikeRebalance(message)) {
+    const legs = await parseRebalanceIntent(message);
+    if (legs && legs.length >= 2) {
+      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress)));
+      return NextResponse.json({
+        type: "rebalance",
+        legs: results.map(r => {
+          if (!r.ok) return { type: "error", text: r.text };
+          const { ok: _ok, ...rest } = r;
+          return { type: "quote", ...rest };
+        }),
+      });
+    }
+  }
+
+  // ── general chat ────────────────────────────────────────────────────────
+  return NextResponse.json({
+    type: "text",
+    text: await getSuggestion(message, history, senderAddress),
   });
 }
