@@ -85,7 +85,7 @@ Return ONLY a JSON object matching this schema (no markdown, no explanation):
   "destinationToken": "string (symbol uppercased; same as token if not specified)"
 }
 
-Aliases: ether/ETH → ETH, bitcoin/btc → WBTC, mainnet → ethereum, arb → arbitrum, poly/matic → polygon, avax → avalanche, sol → solana, op → optimism.
+Aliases: ether/ETH → ETH, bitcoin/btc → WBTC, mainnet → ethereum, arb → arbitrum, poly/matic → polygon, avax → avalanche, sol/solana → solana (chain), SOL → SOL (token), op → optimism.
 
 IMPORTANT: Only return the JSON object if ALL of the following are clearly present in the message:
 - A source chain (originChain)
@@ -93,7 +93,9 @@ IMPORTANT: Only return the JSON object if ALL of the following are clearly prese
 - A token symbol or name (token)
 - A numeric amount (amount)
 
-If any required field is missing or ambiguous, return: {"intent": null}
+SPECIAL CASE — Solana origin: if the token is SOL or the origin chain is solana, set originChain: "solana". If no destination chain is specified, default to destinationChain: "ethereum" and destinationToken: "ETH".
+
+If any required field is still missing or ambiguous after applying the above, return: {"intent": null}
 
 If the message is NOT a swap/bridge/transfer request at all, return: {"intent": null}`;
 

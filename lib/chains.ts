@@ -109,6 +109,10 @@ export const NATIVE_SYMBOLS: Record<number, string> = {
 
 export const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+export const NATIVE_DECIMALS: Record<number, number> = {
+  1000000001: 9,  // SOL (lamports)
+};
+
 export function resolveChainId(name: string): number | null {
   return CHAIN_IDS[name.toLowerCase().trim()] ?? null;
 }

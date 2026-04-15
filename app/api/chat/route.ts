@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   CHAIN_NAMES,
   NATIVE_ADDRESS,
+  NATIVE_DECIMALS,
   NATIVE_SYMBOLS,
   resolveChainId,
   toWei,
@@ -55,8 +56,8 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
 
   let originCurrency = NATIVE_ADDRESS;
   let destCurrency   = NATIVE_ADDRESS;
-  let originDecimals = 18;
-  let destDecimals   = 18;
+  let originDecimals = NATIVE_DECIMALS[originChainId] ?? 18;
+  let destDecimals   = NATIVE_DECIMALS[destChainId]   ?? 18;
 
   const isOriginNative =
     intent.token.toUpperCase() === originNativeSymbol?.toUpperCase() ||
@@ -64,6 +65,17 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   const isDestNative =
     destToken.toUpperCase() === destNativeSymbol?.toUpperCase() ||
     destToken.toUpperCase() === "ETH";
+
+  // For non-EVM chains (e.g. Solana), the native token has a chain-specific
+  // address — fetch it from the Delora token list instead of using the EVM zero address.
+  if (isOriginNative && NATIVE_DECIMALS[originChainId] !== undefined) {
+    const tokenData = await getToken(originChainId, originNativeSymbol ?? intent.token);
+    if (tokenData) { originCurrency = tokenData.address; originDecimals = tokenData.decimals; }
+  }
+  if (isDestNative && NATIVE_DECIMALS[destChainId] !== undefined) {
+    const tokenData = await getToken(destChainId, destNativeSymbol ?? destToken);
+    if (tokenData) { destCurrency = tokenData.address; destDecimals = tokenData.decimals; }
+  }
 
   if (!isOriginNative) {
     const tokenData = await getToken(originChainId, intent.token);
