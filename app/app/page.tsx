@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import type { TxData, AddressData } from "@/lib/alchemy";
 import { usePrivy, useFundWallet } from "@privy-io/react-auth";
 import { mainnet } from "viem/chains";
 import {
@@ -30,7 +31,9 @@ type QuoteResult = {
 type TextResult      = { type: "text";      text: string };
 type ErrorResult     = { type: "error";     text: string };
 type RebalanceResult = { type: "rebalance"; mode: "preview"; legs: Array<QuoteResult | ErrorResult> };
-type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult;
+type TxResult        = { type: "tx";        tx: TxData;      summary: string };
+type AddressResult   = { type: "address";   data: AddressData; summary: string };
+type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult | TxResult | AddressResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -449,6 +452,8 @@ export default function AppPage() {
                     {msg.result.type === "rebalance" && (
                       <RebalanceDisplay result={msg.result} onTxSubmitted={saveTx} />
                     )}
+                    {msg.result.type === "tx" && <TxDisplay result={msg.result} />}
+                    {msg.result.type === "address" && <AddressDisplay result={msg.result} />}
                     {(msg.result.type === "text" || msg.result.type === "error") && (
                       <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: msg.result.type === "error" ? "#ff5555" : "rgba(255,255,255,0.65)", margin: 0 }}>
                         {msg.result.text}
@@ -865,6 +870,147 @@ function RebalanceDisplay({ result, onTxSubmitted }: { result: RebalanceResult; 
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── TxDisplay ────────────────────────────────────────────────────────────────
+
+function TxDisplay({ result }: { result: TxResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { tx, summary } = result;
+
+  const statusColor = tx.status === "success" ? "#4ade80" : tx.status === "failed" ? "#ff6b6b" : "#F5B800";
+  const ts = tx.timestamp ? new Date(tx.timestamp * 1000) : null;
+
+  type Row = { label: string; value: React.ReactNode };
+  const rows: Row[] = [
+    { label: "Hash",    value: <span title={tx.hash}>{tx.hash.slice(0, 12)}…{tx.hash.slice(-8)}</span> },
+    { label: "Chain",   value: tx.chainName },
+    { label: "Status",  value: <span style={{ color: statusColor }}>{tx.status}</span> },
+    { label: "Block",   value: tx.blockNumber ? `#${tx.blockNumber.toLocaleString()}` : "—" },
+    { label: "From",    value: <span title={tx.from}>{tx.from.slice(0, 8)}…{tx.from.slice(-6)}</span> },
+    ...(tx.to ? [{ label: "To", value: <span title={tx.to}>{tx.to.slice(0, 8)}…{tx.to.slice(-6)}</span> }] : []),
+    ...(tx.method ? [{ label: "Method", value: <span style={{ color: "#F5B800" }}>{tx.method}</span> }] : []),
+    { label: "Value",   value: `${tx.valueEth} ETH` },
+    { label: "Gas",     value: `${tx.gasCostEth} ETH` },
+    { label: "Logs",    value: tx.logCount.toString() },
+    ...(ts ? [{ label: "Time", value: ts.toLocaleString() }] : []),
+  ];
+
+  return (
+    <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, overflow: "hidden" }}>
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.22)", margin: 0 }}>
+          Transaction
+        </p>
+        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: statusColor }}>
+          {tx.chainName}
+        </span>
+      </div>
+
+      <div style={{ padding: "4px 20px" }}>
+        {rows.map(({ label, value }) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+            <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.27)", letterSpacing: "0.04em" }}>{label}</span>
+            <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.68)" }}>{value}</span>
+          </div>
+        ))}
+      </div>
+
+      {summary && (
+        <div style={{ padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.38)", lineHeight: 1.65, margin: 0 }}>{summary}</p>
+        </div>
+      )}
+
+      <div style={{ padding: "14px 20px 18px" }}>
+        <a
+          href={tx.explorerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...MONO, display: "block", width: "100%", padding: "10px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+        >
+          view on explorer →
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ─── AddressDisplay ───────────────────────────────────────────────────────────
+
+function AddressDisplay({ result }: { result: AddressResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { data, summary } = result;
+
+  return (
+    <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, overflow: "hidden" }}>
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.22)", margin: 0 }}>
+          Address
+        </p>
+        <span style={{ ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.35)" }}>
+          {data.address.slice(0, 8)}…{data.address.slice(-6)}
+        </span>
+      </div>
+
+      {data.balances.length > 0 && (
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.2)", marginBottom: 10 }}>
+            BALANCES
+          </p>
+          {data.balances.map(b => (
+            <div key={b.chainId} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+              <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.35)" }}>{b.chainName}</span>
+              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.72)" }}>{b.native} {b.nativeSymbol}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.recentTransfers.length > 0 && (
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.2)", marginBottom: 10 }}>
+            RECENT TRANSFERS
+          </p>
+          {data.recentTransfers.slice(0, 8).map((t, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+              <span style={{ ...MONO, fontSize: "0.6rem", color: t.direction === "in" ? "#4ade80" : "#F5B800", letterSpacing: "0.04em", width: 22 }}>
+                {t.direction === "in" ? "IN" : "OUT"}
+              </span>
+              <span style={{ ...MONO, fontSize: "0.7rem", color: "rgba(255,255,255,0.65)", flex: 1 }}>
+                {t.value} {t.asset}
+              </span>
+              <a
+                href={`https://etherscan.io/tx/${t.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...MONO, fontSize: "0.6rem", color: "rgba(255,255,255,0.25)", textDecoration: "none" }}
+              >
+                {t.hash.slice(0, 8)}…
+              </a>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {summary && (
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.38)", lineHeight: 1.65, margin: 0 }}>{summary}</p>
+        </div>
+      )}
+
+      <div style={{ padding: "14px 20px 18px" }}>
+        <a
+          href={`https://etherscan.io/address/${data.address}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...MONO, display: "block", width: "100%", padding: "10px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+        >
+          view on etherscan →
+        </a>
+      </div>
     </div>
   );
 }

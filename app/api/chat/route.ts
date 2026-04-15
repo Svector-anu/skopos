@@ -12,8 +12,11 @@ import {
   parseRebalanceIntent,
   looksLikeRebalance,
   getSuggestion,
+  generateTxSummary,
+  generateAddressSummary,
   ParsedIntent,
 } from "@/lib/parseIntent";
+import { lookupTx, lookupAddress } from "@/lib/alchemy";
 
 // ── shared leg resolver ───────────────────────────────────────────────────────
 
@@ -135,6 +138,25 @@ export async function POST(req: NextRequest) {
 
   if (!message?.trim()) {
     return NextResponse.json({ error: "No message provided" }, { status: 400 });
+  }
+
+  const trimmed = message.trim();
+
+  // ── explorer: tx hash (0x + 64 hex chars) ───────────────────────────────
+  if (/^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
+    const tx = await lookupTx(trimmed);
+    if (tx) {
+      const summary = await generateTxSummary(tx);
+      return NextResponse.json({ type: "tx", tx, summary });
+    }
+    return NextResponse.json({ type: "error", text: "Transaction not found on any supported chain." });
+  }
+
+  // ── explorer: address (0x + 40 hex chars) ───────────────────────────────
+  if (/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+    const data = await lookupAddress(trimmed);
+    const summary = await generateAddressSummary(data);
+    return NextResponse.json({ type: "address", data, summary });
   }
 
   // ── single-leg intent ────────────────────────────────────────────────────

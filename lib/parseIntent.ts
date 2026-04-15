@@ -273,6 +273,60 @@ export async function parseIntent(input: string): Promise<ParsedIntent | null> {
   return regexParse(input) ?? await groqParseIntent(input);
 }
 
+export async function generateTxSummary(tx: import("./alchemy").TxData): Promise<string> {
+  const groq = getGroq();
+  if (!groq) return "";
+  const prompt = [
+    `Chain: ${tx.chainName}`,
+    `Status: ${tx.status}`,
+    `Value: ${tx.valueEth} ${tx.chainId === 137 ? "POL" : "ETH"}`,
+    `Gas cost: ${tx.gasCostEth} ETH`,
+    tx.method ? `Method: ${tx.method}` : null,
+    `Log events: ${tx.logCount}`,
+    tx.timestamp ? `Time: ${new Date(tx.timestamp * 1000).toUTCString()}` : null,
+  ].filter(Boolean).join("\n");
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      max_tokens: 80,
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: "You are a blockchain transaction analyst. In 1–2 sentences describe what this transaction likely did. Use only the data provided. Never invent details." },
+        { role: "user", content: prompt },
+      ],
+    });
+    return completion.choices[0]?.message?.content?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export async function generateAddressSummary(data: import("./alchemy").AddressData): Promise<string> {
+  const groq = getGroq();
+  if (!groq) return "";
+  const balances = data.balances.length > 0
+    ? data.balances.map(b => `${b.native} ${b.nativeSymbol} on ${b.chainName}`).join(", ")
+    : "no native balances";
+  const recent = data.recentTransfers.slice(0, 5)
+    .map(t => `${t.direction === "out" ? "sent" : "received"} ${t.value} ${t.asset}`)
+    .join(", ");
+  const prompt = `Address: ${data.address}\nBalances: ${balances}\nRecent: ${recent || "none"}`;
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      max_tokens: 80,
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: "You are a blockchain wallet analyst. In 1–2 sentences summarise this wallet's holdings and activity. Use only the data provided. Never invent details." },
+        { role: "user", content: prompt },
+      ],
+    });
+    return completion.choices[0]?.message?.content?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export async function getSuggestion(
   input: string,
   history?: { role: "user" | "assistant"; content: string }[],
