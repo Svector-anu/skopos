@@ -708,9 +708,13 @@ export default function AppPage() {
                 )
               )}
               {loading && (
-                <p className="animate-pulse" style={{ ...MONO, fontSize: "0.75rem", color: T.textFaint, margin: 0 }}>
-                  routing…
-                </p>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 22, paddingBottom: 2 }}>
+                  <span className="eq-bar" />
+                  <span className="eq-bar" />
+                  <span className="eq-bar" />
+                  <span className="eq-bar" />
+                  <span className="eq-bar" />
+                </div>
               )}
               <div ref={bottomRef} />
             </div>
