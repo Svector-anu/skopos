@@ -9,6 +9,12 @@ import {
   useSendTransaction, useWriteContract, useReadContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
+import {
+  useWallet as useSolanaWallet,
+  useConnection as useSolanaConnection,
+} from "@solana/wallet-adapter-react";
+import type { WalletName } from "@solana/wallet-adapter-base";
+import { VersionedTransaction } from "@solana/web3.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -18,6 +24,7 @@ type QuoteResult = {
   type: "quote";
   mode: "preview";
   originMessage?: string;
+  quotedAt?: number;
   intent: {
     from: { chain: string; chainId: number; token: string; amount: string };
     to: { chain: string; chainId: number; token: string };
@@ -181,10 +188,13 @@ class ErrorBoundary extends Component<
 export default function AppPage() {
   const inputRef     = useRef<HTMLInputElement>(null);
   const bottomRef    = useRef<HTMLDivElement>(null);
+  const abortRef     = useRef<AbortController | null>(null);
+  const dripRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string>("");
 
   const [value, setValue]              = useState("");
   const [loading, setLoading]          = useState(false);
+  const [streamingText, setStreamingText] = useState<string | null>(null);
   const [inputFocused, setInputFocused]= useState(false);
   const [messages, setMessages]        = useState<Message[]>([]);
   const [sessions, setSessions]        = useState<Session[]>([]);
@@ -201,13 +211,14 @@ export default function AppPage() {
   const currentChainId                         = useChainId();
   const { login, logout, authenticated, ready }= usePrivy();
   const { fundWallet }                         = useFundWallet();
-  const { data: nativeBal }                    = useBalance({ address });
+  const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
   const usdcAddress                            = USDC_ADDRESSES[currentChainId];
-  const { data: usdcRaw } = useReadContract({
+  const { data: usdcRaw, isLoading: usdcLoading } = useReadContract({
     address: usdcAddress, abi: ERC20_ABI, functionName: "balanceOf",
     args: address ? [address] : undefined, chainId: currentChainId,
     query: { enabled: !!address && !!usdcAddress },
   });
+  const balanceLoading = nativeLoading || usdcLoading;
 
   const nativeDisplay = nativeBal
     ? `${(Number(nativeBal.value) / 10 ** nativeBal.decimals).toFixed(4)} ${nativeBal.symbol}`
@@ -251,7 +262,7 @@ export default function AppPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, streamingText]);
 
   const saveTx = useCallback((record: TxRecord) => {
     setTxHistory(prev => {
@@ -279,7 +290,14 @@ export default function AppPage() {
 
   async function submit(msg?: string) {
     const text = (msg ?? value).trim();
-    if (!text || loading) return;
+    if (!text) return;
+
+    // Interrupt any in-flight stream + drip
+    if (abortRef.current) abortRef.current.abort();
+    if (dripRef.current)  { clearInterval(dripRef.current); dripRef.current = null; }
+    setLoading(false);
+    setStreamingText(null);
+
     setSidebarExpanded(false);
 
     // Build history snapshot before state update (last 6 turns)
@@ -308,18 +326,82 @@ export default function AppPage() {
     setMessages(prev => [...prev, { role: "user", text }]);
     setValue("");
     setLoading(true);
+    const abort = new AbortController();
+    abortRef.current = abort;
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, senderAddress: address, history, slippage }),
+        signal: abort.signal,
       });
-      const data: AssistantResult = await res.json();
-      if (data.type === "quote") data.originMessage = text;
-      setMessages(prev => [...prev, { role: "assistant", result: data }]);
-    } catch {
+
+      const contentType = res.headers.get("content-type") ?? "";
+
+      if (contentType.includes("text/plain")) {
+        // Streaming text response — word-by-word typewriter
+        setLoading(false);
+        setStreamingText("");
+
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = "";
+        let displayed = "";
+        const buf = { text: "" };
+
+        // Drip one word unit (word + trailing whitespace) every 90ms
+        const drip = setInterval(() => {
+          if (abort.signal.aborted) { clearInterval(drip); dripRef.current = null; return; }
+          if (!buf.text) return;
+          // Match a word with trailing whitespace, or flush pure whitespace
+          const match = buf.text.match(/^(\S+\s*|\s+)/);
+          if (!match) return;
+          buf.text = buf.text.slice(match[1].length);
+          displayed += match[1];
+          setStreamingText(displayed);
+        }, 90);
+        dripRef.current = drip;
+
+        while (true) {
+          if (abort.signal.aborted) break;
+          const { done, value: chunk } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(chunk, { stream: true });
+          accumulated += text;
+          buf.text  += text;
+        }
+
+        if (!abort.signal.aborted) {
+          // Drain remaining buffer before finalising
+          await new Promise<void>(resolve => {
+            const check = setInterval(() => {
+              if (!buf.text || abort.signal.aborted) {
+                clearInterval(check);
+                clearInterval(drip);
+                dripRef.current = null;
+                resolve();
+              }
+            }, 20);
+          });
+
+          // Flush any trailing partial word (e.g. last word with no trailing space)
+          if (!abort.signal.aborted && displayed !== accumulated) setStreamingText(accumulated);
+
+          if (!abort.signal.aborted) {
+            setMessages(prev => [...prev, { role: "assistant", result: { type: "text", text: accumulated } }]);
+            setStreamingText(null);
+          }
+        }
+      } else {
+        // JSON response (quote, rebalance, address, tx, error)
+        const data: AssistantResult = await res.json();
+        if (data.type === "quote") data.originMessage = text;
+        setMessages(prev => [...prev, { role: "assistant", result: data }]);
+        setLoading(false);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
       setMessages(prev => [...prev, { role: "assistant", result: { type: "error", text: "Network error. Is the server running?" } }]);
-    } finally {
       setLoading(false);
     }
   }
@@ -414,7 +496,7 @@ export default function AppPage() {
           {recentSessions.length > 0 && (
             <DrawerSection label="RECENTS">
               {recentSessions.map(s => (
-                <button key={s.id} onClick={() => openSession(s)} style={{
+                <button key={s.id} onClick={() => { openSession(s); if (isMobile) setSidebarExpanded(false); }} style={{
                   ...MONO, width: "100%", textAlign: "left", padding: "7px 12px", fontSize: "0.72rem",
                   background: s.id === activeSessionId ? "var(--recent-active-bg)" : "none",
                   color: s.id === activeSessionId ? "var(--recent-active)" : "var(--recent-inactive)",
@@ -468,11 +550,24 @@ export default function AppPage() {
                 <div style={{ width: 6, height: 6, borderRadius: 999, background: "#F5B800", flexShrink: 0 }} />
                 <span style={{ ...MONO, fontSize: "0.62rem", color: "rgba(245,184,0,0.75)", letterSpacing: "0.08em" }}>WALLET</span>
               </div>
-              {nativeDisplay && (
-                <p style={{ ...MONO, fontSize: "0.72rem", color: T.textMuted, margin: "0 0 2px", fontWeight: 600 }}>{nativeDisplay}</p>
-              )}
-              {usdcDisplay && (
-                <p style={{ ...MONO, fontSize: "0.68rem", color: T.textDim, margin: "0 0 10px" }}>{usdcDisplay}</p>
+              {balanceLoading ? (
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 18, marginBottom: 10 }}>
+                  <span className="eq-bar" style={{ height: 10, background: "rgba(245,184,0,0.4)" }} />
+                  <span className="eq-bar" style={{ height: 10, background: "rgba(245,184,0,0.4)" }} />
+                  <span className="eq-bar" style={{ height: 10, background: "rgba(245,184,0,0.4)" }} />
+                </div>
+              ) : (
+                <>
+                  {nativeDisplay && (
+                    <p style={{ ...MONO, fontSize: "0.72rem", color: T.textMuted, margin: "0 0 2px", fontWeight: 600 }}>{nativeDisplay}</p>
+                  )}
+                  {usdcDisplay && (
+                    <p style={{ ...MONO, fontSize: "0.68rem", color: T.textDim, margin: "0 0 10px" }}>{usdcDisplay}</p>
+                  )}
+                  {!nativeDisplay && !usdcDisplay && (
+                    <p style={{ ...MONO, fontSize: "0.68rem", color: T.textFaint, margin: "0 0 10px" }}>no assets on this chain</p>
+                  )}
+                </>
               )}
               <button
                 onClick={() => fundWallet({ address })}
@@ -691,7 +786,7 @@ export default function AppPage() {
                     {/* Send feedback */}
                     <div style={{ marginTop: 8 }}>
                       <a
-                        href="https://github.com/Svector-anu/delora-copilot/issues/new"
+                        href="https://github.com/Svector-anu/skopos/issues/new"
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{ ...MONO, fontSize: "0.62rem", color: T.textFaint, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
@@ -708,35 +803,52 @@ export default function AppPage() {
                 )
               )}
               {loading && (
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 22, paddingBottom: 2 }}>
-                  <span className="eq-bar" />
-                  <span className="eq-bar" />
-                  <span className="eq-bar" />
-                  <span className="eq-bar" />
-                  <span className="eq-bar" />
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: 7, background: "#F5B800", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg viewBox="0 0 32 32" width="14" height="14">
+                      <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="#000" strokeWidth="2.5" strokeLinejoin="round"/>
+                      <circle cx="16" cy="16" r="2.2" fill="#000"/>
+                    </svg>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 20 }}>
+                    <span className="eq-bar" />
+                    <span className="eq-bar" />
+                    <span className="eq-bar" />
+                    <span className="eq-bar" />
+                    <span className="eq-bar" />
+                  </div>
                 </div>
+              )}
+              {streamingText !== null && (
+                <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: T.textMuted, margin: 0 }}>
+                  {streamingText}
+                  <span className="cursor-blink" style={{ color: "#F5B800", marginLeft: 1 }}>▌</span>
+                </p>
               )}
               <div ref={bottomRef} />
             </div>
           </div>
         ) : (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: isMobile ? "0 20px" : "0 28px", textAlign: "center" }}>
-            {/* Skopos avatar mark */}
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#F5B800", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-              <svg viewBox="0 0 32 32" width="22" height="22">
-                <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="#000" strokeWidth="2" strokeLinejoin="round"/>
-                <circle cx="16" cy="16" r="2.2" fill="#000"/>
-              </svg>
-            </div>
-            <p style={{ ...MONO, fontSize: isMobile ? "0.95rem" : "1.05rem", color: T.textMuted, lineHeight: 1.65, margin: 0, maxWidth: 440 }}>
-              Welcome to the Delora protocol. I&apos;m{" "}
-              <span style={{ color: "#F5B800", fontWeight: 600 }}>Skopos</span>
-              , your cross-chain DeFi copilot.
-            </p>
-            <p style={{ ...MONO, fontSize: "0.82rem", color: T.textDim, marginTop: 10, marginBottom: 0 }}>
-              What can I help you with today?
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 20, maxWidth: 520 }}>
+            {isMobile && (
+              <>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: "#F5B800", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+                  <svg viewBox="0 0 32 32" width="22" height="22">
+                    <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="#000" strokeWidth="2" strokeLinejoin="round"/>
+                    <circle cx="16" cy="16" r="2.2" fill="#000"/>
+                  </svg>
+                </div>
+                <p style={{ ...MONO, fontSize: "0.95rem", color: T.textMuted, lineHeight: 1.65, margin: 0, maxWidth: 440 }}>
+                  Welcome to the Delora protocol. I&apos;m{" "}
+                  <span style={{ color: "#F5B800", fontWeight: 600 }}>Skopos</span>
+                  , your cross-chain DeFi copilot.
+                </p>
+                <p style={{ ...MONO, fontSize: "0.82rem", color: T.textDim, marginTop: 10, marginBottom: 0 }}>
+                  What can I help you with today?
+                </p>
+              </>
+            )}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: isMobile ? 20 : 0, maxWidth: 520 }}>
               {EXAMPLE_PROMPTS.map(p => (
                 <button
                   key={p}
@@ -843,17 +955,27 @@ export default function AppPage() {
                     disabled={!value.trim() || loading}
                     style={{
                       width: 34, height: 34, borderRadius: 999, border: "none",
-                      background: value.trim() && !loading ? "#F5B800" : T.surface,
+                      background: loading ? "rgba(245,184,0,0.12)" : value.trim() ? "#F5B800" : T.surface,
                       cursor: value.trim() && !loading ? "pointer" : "not-allowed",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       flexShrink: 0, transition: "background 0.15s ease",
                     }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                      <path d="M7 12V2M2 7l5-5 5 5"
-                        stroke={value.trim() && !loading ? "#000" : "rgba(255,255,255,0.3)"}
-                        strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
+                    {loading ? (
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 14 }}>
+                        <span className="eq-bar" style={{ height: 12 }} />
+                        <span className="eq-bar" style={{ height: 12 }} />
+                        <span className="eq-bar" style={{ height: 12 }} />
+                        <span className="eq-bar" style={{ height: 12 }} />
+                        <span className="eq-bar" style={{ height: 12 }} />
+                      </div>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M7 12V2M2 7l5-5 5 5"
+                          stroke={value.trim() ? "#000" : "rgba(255,255,255,0.3)"}
+                          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>
@@ -953,6 +1075,8 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
   const { login, authenticated } = usePrivy();
   const { intent, route, calldata, approval } = result;
   const originChainId            = intent.from.chainId;
+  const destChainId              = intent.to.chainId;
+  const isSolanaRoute            = originChainId === 1000000001 || destChainId === 1000000001;
   const onCorrectChain           = chainId === originChainId;
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -975,8 +1099,12 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
   const [secondsLeft, setSecondsLeft] = useState(QUOTE_TTL);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Reset countdown whenever a fresh quote arrives
-  useEffect(() => { setSecondsLeft(QUOTE_TTL); setIsRefreshing(false); }, [result]);
+  // Reset countdown whenever a fresh quote arrives, accounting for server-to-client latency
+  useEffect(() => {
+    const elapsed = result.quotedAt ? Math.floor((Date.now() - result.quotedAt) / 1000) : 0;
+    setSecondsLeft(Math.max(0, QUOTE_TTL - elapsed));
+    setIsRefreshing(false);
+  }, [result]);
 
   // Tick down — pauses once a tx is in flight (no point expiring mid-execution)
   useEffect(() => {
@@ -1098,6 +1226,8 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
             className={isRefreshing ? "animate-pulse" : ""}>
             {isRefreshing ? "refreshing…" : "quote expired · refresh →"}
           </button>
+        ) : isSolanaRoute ? (
+          <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} />
         ) : !authenticated ? (
           <button onClick={login} style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.08)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: "pointer" }}>
             connect to execute →
@@ -1114,6 +1244,100 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── SolanaExecuteButton ─────────────────────────────────────────────────────
+
+function SolanaExecuteButton({ result, onTxSubmitted }: {
+  result: QuoteResult;
+  onTxSubmitted?: (r: TxRecord) => void;
+}) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { publicKey, connected, connect, select, wallets, signTransaction, wallet } = useSolanaWallet();
+  const { connection } = useSolanaConnection();
+  const [sending, setSending] = useState(false);
+  const [err, setErr]         = useState<string | null>(null);
+  const [sig, setSig]         = useState<string | null>(null);
+
+  async function execute() {
+    if (!publicKey || !result.calldata || !signTransaction) return;
+    setSending(true);
+    setErr(null);
+    try {
+      // Delora returns base64-encoded VersionedTransaction
+      const txBuffer = Uint8Array.from(atob(result.calldata.data), c => c.charCodeAt(0));
+      const tx = VersionedTransaction.deserialize(txBuffer);
+
+      const signed = await signTransaction(tx);
+      const signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+      const confirmation = await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        "confirmed"
+      );
+      if (confirmation.value.err) throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+
+      setSig(signature);
+      onTxSubmitted?.({
+        hash: signature,
+        label: `${result.intent.from.amount} ${result.intent.from.token} → ${result.intent.to.chain}`,
+        explorerUrl: `https://solscan.io/tx/${signature}`,
+        chainId: result.intent.from.chainId,
+        chain: result.intent.from.chain,
+        timestamp: Date.now(),
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Transaction failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (sig) {
+    return (
+      <a href={`https://solscan.io/tx/${sig}`} target="_blank" rel="noopener noreferrer"
+        style={{ ...MONO, display: "block", width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: "pointer", textAlign: "center", textDecoration: "none" }}>
+        view on solscan ↗
+      </a>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
+      {!connected ? (
+        <button
+          onClick={async () => {
+            try {
+              if (!wallet) {
+                const phantom = wallets.find(w => w.adapter.name === "Phantom");
+                if (phantom) select(phantom.adapter.name as WalletName<"Phantom">);
+              }
+              await connect();
+            } catch (e) {
+              setErr(e instanceof Error ? e.message : "Failed to connect wallet");
+            }
+          }}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.08)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: "pointer" }}>
+          {wallet ? `connect ${wallet.adapter.name}` : "connect phantom →"}
+        </button>
+      ) : (
+        <button
+          onClick={execute}
+          disabled={sending || !result.calldata}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: result.calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${result.calldata ? "rgba(245,184,0,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 10, color: result.calldata ? "#F5B800" : "rgba(255,255,255,0.2)", cursor: sending || !result.calldata ? "not-allowed" : "pointer" }}>
+          {sending ? "confirm in phantom…" : "execute via phantom →"}
+        </button>
+      )}
+      <p style={{ ...MONO, fontSize: "0.6rem", color: "rgba(255,255,255,0.18)", margin: 0, textAlign: "center" }}>
+        {publicKey ? `${publicKey.toBase58().slice(0, 6)}…${publicKey.toBase58().slice(-4)}` : "phantom · solana"}
+      </p>
     </div>
   );
 }

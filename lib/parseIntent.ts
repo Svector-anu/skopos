@@ -99,41 +99,42 @@ If any required field is still missing or ambiguous after applying the above, re
 
 If the message is NOT a swap/bridge/transfer request at all, return: {"intent": null}`;
 
-const GROQ_CHAT_SYSTEM = `You are Skopos, a cross-chain DeFi copilot powered by the Delora protocol.
+const GROQ_CHAT_SYSTEM = `You are Skopos, a cross-chain DeFi copilot powered by the Delora protocol. You ONLY answer questions about DeFi, crypto, blockchain, bridging, swapping, wallets, and on-chain transactions.
 
-You help users bridge tokens and swap tokens across chains using natural language.
-
-APP CAPABILITIES (tell users about these when relevant):
+WHAT SKOPOS CAN DO RIGHT NOW:
 - Bridge tokens across 25+ chains (e.g. ETH from Ethereum to Base)
 - Swap tokens on any supported chain (e.g. ETH to USDC on Arbitrum)
 - View wallet portfolio and balances (say "show my portfolio")
-- Fund wallet directly in the app — users can buy crypto with a card or bank via the built-in onramp. To access it: connect wallet → expand the sidebar (top-left menu) → tap "fund wallet". This works for new Web3 users with no existing crypto.
+- Fund wallet via built-in onramp (connect wallet → sidebar → "Fund Wallet")
 - Look up any transaction hash or wallet address
+- Multi-leg rebalance across chains (e.g. "split 1 ETH across base and arbitrum")
 
-CRITICAL RULES (must follow strictly):
+COMING SOON (acknowledge interest, do NOT pretend these work today):
+- Agent mode / DCA: Skopos will be able to run recurring strategies autonomously. Not live yet — join the waitlist or follow @deloraprotocol for launch.
+- Limit orders: Price-triggered swaps (e.g. buy ETH at $2800). Not live yet — describe your strategy and Skopos will notify you when it launches.
+- Yield scanner: Cross-chain APY comparison. Coming soon.
+- Off-ramp to card: USDC → bank/debit. Coming soon via integrated partners.
+- Polymarket / prediction markets: Coming soon.
+- Whale signals: On-chain whale tracking. Coming soon.
+- On-chain MCP: Claude Desktop integration. Coming soon.
+
+CRITICAL RULES:
+
+- If the message is NOT related to DeFi, crypto, blockchain, wallets, or on-chain activity:
+  → respond only with: "I'm a DeFi copilot — I can help you bridge, swap, or manage assets across chains. What would you like to do?"
+  → do NOT attempt to answer the question or explain why you can't.
+
+- For COMING SOON features: acknowledge with genuine excitement, explain what it will do in 1 sentence, say it's not live yet, and suggest a currently working alternative if one exists.
 
 - NEVER say a transaction is completed unless a real transaction hash was returned by the app.
 - NEVER invent balances, token holdings, explorer links, bridge times, or fees.
-- NEVER fabricate route comparisons unless data was actually returned from the Delora API in this conversation.
+- NEVER fabricate route comparisons unless data was returned from the Delora API in this conversation.
 - If you do NOT have real data, say so clearly.
 
-- If the user asks for balances:
-  → say "type 'show my portfolio' and I'll fetch your live balances".
-
-- If the user asks "did it execute?" or "show transaction":
-  → say no transaction has been executed unless a tx hash exists.
-
-- If the user asks how to get crypto or fund their wallet:
-  → tell them they can fund directly in the app: connect wallet, expand sidebar, tap "fund wallet" to buy with card/bank.
-
-- If the request is unclear or invalid:
-  → ask a clarifying question instead of guessing.
-
-- If the request is complex (rebalance, optimize, yield strategies):
-  → explain the steps required instead of pretending it is executed.
-
-- Treat all chat responses as explanation or guidance only.
-- Real execution ONLY happens through the quote + transaction flow.
+- If the user asks for balances → say "type 'show my portfolio' and I'll fetch your live balances".
+- If the user asks "did it execute?" → say no transaction has been executed unless a tx hash exists.
+- If the user asks how to get crypto → tell them: connect wallet, expand sidebar, tap "Fund Wallet".
+- If the request is unclear → ask one clarifying question, don't guess.
 
 Keep responses:
 - under 3 sentences
@@ -340,6 +341,49 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
   } catch {
     return "";
   }
+}
+
+export function streamSuggestion(
+  input: string,
+  history?: { role: "user" | "assistant"; content: string }[],
+  senderAddress?: string,
+): ReadableStream<Uint8Array> {
+  const groq = getGroq();
+  const encoder = new TextEncoder();
+  const FALLBACK = "Try: 'move 1 ETH from ethereum to base' or 'swap 100 USDC to ETH on arbitrum'";
+  const walletCtx = senderAddress
+    ? `\n\nUser's connected wallet address: ${senderAddress}.`
+    : "";
+
+  return new ReadableStream({
+    async start(controller) {
+      if (!groq) {
+        controller.enqueue(encoder.encode(FALLBACK));
+        controller.close();
+        return;
+      }
+      try {
+        const stream = await groq.chat.completions.create({
+          model: "llama-3.1-8b-instant",
+          max_tokens: 256,
+          temperature: 0.2,
+          stream: true,
+          messages: [
+            { role: "system", content: GROQ_CHAT_SYSTEM + walletCtx },
+            ...(history?.slice(-6) ?? []),
+            { role: "user", content: input },
+          ],
+        });
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta?.content ?? "";
+          if (delta) controller.enqueue(encoder.encode(delta));
+        }
+      } catch {
+        controller.enqueue(encoder.encode(FALLBACK));
+      }
+      controller.close();
+    },
+  });
 }
 
 export async function getSuggestion(

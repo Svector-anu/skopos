@@ -7,17 +7,35 @@ import {
   resolveChainId,
   toWei,
 } from "@/lib/chains";
+
+const SOLANA_CHAIN_ID    = 1000000001;
+const SOLANA_SOL_ADDRESS = "11111111111111111111111111111111";
+const SOLANA_SYSTEM_PROGRAM = "11111111111111111111111111111111"; // system program — valid Solana placeholder
 import { getToken, getQuote } from "@/lib/delora";
 import {
   parseIntent,
   parseRebalanceIntent,
   looksLikeRebalance,
-  getSuggestion,
+  streamSuggestion,
   generateTxSummary,
   generateAddressSummary,
   ParsedIntent,
 } from "@/lib/parseIntent";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
+
+// ── in-memory rate limiter (sliding window, per IP) ──────────────────────────
+const RATE_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT     = 30;     // max 30 requests per minute per IP
+
+const rateMap = new Map<string, number[]>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const hits = (rateMap.get(ip) ?? []).filter(t => now - t < RATE_WINDOW_MS);
+  hits.push(now);
+  rateMap.set(ip, hits);
+  return hits.length <= RATE_LIMIT;
+}
 
 // ── shared leg resolver ───────────────────────────────────────────────────────
 
@@ -42,7 +60,6 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
     return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
   }
 
-  const destToken      = intent.destinationToken;
   const originChainId  = resolveChainId(intent.originChain);
   const destChainId    = resolveChainId(intent.destinationChain);
 
@@ -54,6 +71,21 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   const originNativeSymbol = NATIVE_SYMBOLS[originChainId];
   const destNativeSymbol   = NATIVE_SYMBOLS[destChainId];
 
+  // When bridging a native token cross-chain without an explicit destination token,
+  // the parser defaults destToken = originToken. Remap to the dest chain's native instead
+  // so "bridge 1 SOL from Solana to Ethereum" receives ETH, not wrapped SOL.
+  const destToken = (() => {
+    const raw = intent.destinationToken;
+    if (
+      raw === intent.token &&
+      originChainId !== destChainId &&
+      raw.toUpperCase() === originNativeSymbol?.toUpperCase() &&
+      destNativeSymbol &&
+      raw.toUpperCase() !== destNativeSymbol.toUpperCase()
+    ) return destNativeSymbol;
+    return raw;
+  })();
+
   let originCurrency = NATIVE_ADDRESS;
   let destCurrency   = NATIVE_ADDRESS;
   let originDecimals = NATIVE_DECIMALS[originChainId] ?? 18;
@@ -64,15 +96,21 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   const isDestNative =
     destToken.toUpperCase() === destNativeSymbol?.toUpperCase();
 
-  // For non-EVM chains (e.g. Solana), the native token has a chain-specific
-  // address — fetch it from the Delora token list instead of using the EVM zero address.
-  if (isOriginNative && NATIVE_DECIMALS[originChainId] !== undefined) {
+  // Solana native SOL: address is a fixed base58 system program, not EVM zero address
+  if (isOriginNative && originChainId === SOLANA_CHAIN_ID) {
+    originCurrency = SOLANA_SOL_ADDRESS;
+    originDecimals = 9;
+  } else if (isOriginNative && NATIVE_DECIMALS[originChainId] !== undefined) {
     const tokenData = await getToken(originChainId, originNativeSymbol ?? intent.token);
     if (!tokenData) return { ok: false, text: `${intent.token} on ${CHAIN_NAMES[originChainId]} is not yet supported. Try an EVM-to-EVM route instead.` };
     originCurrency = tokenData.address;
     originDecimals = tokenData.decimals;
   }
-  if (isDestNative && NATIVE_DECIMALS[destChainId] !== undefined) {
+
+  if (isDestNative && destChainId === SOLANA_CHAIN_ID) {
+    destCurrency = SOLANA_SOL_ADDRESS;
+    destDecimals = 9;
+  } else if (isDestNative && NATIVE_DECIMALS[destChainId] !== undefined) {
     const tokenData = await getToken(destChainId, destNativeSymbol ?? destToken);
     if (!tokenData) return { ok: false, text: `${destToken} on ${CHAIN_NAMES[destChainId]} is not yet supported as a destination.` };
     destCurrency = tokenData.address;
@@ -103,8 +141,8 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
       amount: amountWei,
       originCurrency,
       destinationCurrency: destCurrency,
-      senderAddress:   senderAddress ?? undefined,
-      receiverAddress: senderAddress ?? undefined,
+      senderAddress:   originChainId === SOLANA_CHAIN_ID ? SOLANA_SYSTEM_PROGRAM : senderAddress,
+      receiverAddress: destChainId   === SOLANA_CHAIN_ID ? SOLANA_SYSTEM_PROGRAM : senderAddress,
       slippage,
     });
   } catch (err) {
@@ -151,6 +189,11 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
 // ── POST handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429 });
+  }
+
   const { message, senderAddress, history, slippage } = await req.json();
 
   if (!message?.trim()) {
@@ -235,7 +278,7 @@ export async function POST(req: NextRequest) {
     const result = await resolveLeg(intent, senderAddress, slippage);
     if (!result.ok) return NextResponse.json({ type: "error", text: result.text });
     const { ok: _ok, ...rest } = result;
-    return NextResponse.json({ type: "quote", mode: "preview", ...rest });
+    return NextResponse.json({ type: "quote", mode: "preview", quotedAt: Date.now(), ...rest });
   }
 
   // ── multi-leg rebalance ──────────────────────────────────────────────────
@@ -250,20 +293,21 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ type: "error", text: `Rebalance aborted: ${firstErr.text}` });
       }
 
+      const quotedAt = Date.now();
       return NextResponse.json({
         type: "rebalance",
         mode: "preview",
+        quotedAt,
         legs: results.map(r => {
           const { ok: _ok, ...rest } = r as LegOk;
-          return { type: "quote", mode: "preview", ...rest };
+          return { type: "quote", mode: "preview", quotedAt, ...rest };
         }),
       });
     }
   }
 
-  // ── general chat ────────────────────────────────────────────────────────
-  return NextResponse.json({
-    type: "text",
-    text: await getSuggestion(message, history, senderAddress),
+  // ── general chat — stream tokens back as plain text ─────────────────────
+  return new Response(streamSuggestion(message, history, senderAddress), {
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
   });
 }
