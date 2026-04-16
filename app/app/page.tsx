@@ -1,10 +1,9 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, Component } from "react";
 import Link from "next/link";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet } from "@privy-io/react-auth";
-import { mainnet } from "viem/chains";
 import {
   useConnection, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
@@ -41,7 +40,7 @@ type TxRecord = { hash: string; chainId: number; chain: string; label: string; t
 // ─── Style tokens ─────────────────────────────────────────────────────────────
 
 const MONO: React.CSSProperties  = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-const BEBAS: React.CSSProperties = { fontFamily: "var(--font-bebas-neue), sans-serif" };
+const BEBAS: React.CSSProperties = { fontFamily: "var(--font-display), serif" };
 
 // ─── ABIs & data constants ────────────────────────────────────────────────────
 
@@ -108,6 +107,17 @@ const EXAMPLE_PROMPTS = [
   "what chains do you support?",
 ];
 
+const HORIZON_PILLS: { label: string; prompt: string }[] = [
+  { label: "agent mode",       prompt: "set up an agent to DCA $20 into ETH every week on base" },
+  { label: "limit orders",     prompt: "buy 0.05 ETH when price drops to $2800 on arbitrum" },
+  { label: "polymarket",       prompt: "what are the current odds ETH hits $5k this year?" },
+  { label: "offramp to card",  prompt: "cash out 200 USDC to my debit card" },
+  { label: "yield scanner",    prompt: "find the highest yield for my USDC across all chains" },
+  { label: "deep research",    prompt: "compare gas costs across all supported bridges for 1 ETH" },
+  { label: "on-chain MCP",     prompt: "connect skopos to my claude desktop via MCP" },
+  { label: "whale signals",    prompt: "show me what top wallets are bridging this week" },
+];
+
 // ─── Feature carousel ─────────────────────────────────────────────────────────
 
 const IcBridge  = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M4 12a8 8 0 0 1 16 0"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="6" y1="12" x2="6" y2="19"/><line x1="18" y1="12" x2="18" y2="19"/><line x1="2" y1="19" x2="22" y2="19"/></svg>;
@@ -146,6 +156,26 @@ function loadJson<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; } catch { return fallback; }
 }
 
+// ─── ErrorBoundary ────────────────────────────────────────────────────────────
+
+class ErrorBoundary extends Component<
+  { children: React.ReactNode; label?: string },
+  { error: Error | null }
+> {
+  state = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <p style={{ fontFamily: "var(--font-jetbrains-mono), monospace", fontSize: "0.72rem", color: "#ff6b6b", padding: "12px 16px", background: "rgba(255,107,107,0.05)", border: "1px solid rgba(255,107,107,0.12)", borderRadius: 12, margin: 0 }}>
+          {this.props.label ?? "Failed to render result."}
+        </p>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── AppPage ──────────────────────────────────────────────────────────────────
 
 export default function AppPage() {
@@ -164,6 +194,8 @@ export default function AppPage() {
   const [featureSlide, setFeatureSlide]= useState(0);
   const [isMobile, setIsMobile]        = useState(false);
   const [slippage, setSlippage]        = useState(0.005);
+  const [horizonToast, setHorizonToast] = useState<string | null>(null);
+  const [theme, setTheme]              = useState<"dark" | "light">("dark");
 
   const { address }                            = useConnection();
   const currentChainId                         = useChainId();
@@ -190,6 +222,8 @@ export default function AppPage() {
     setActiveId(id);
     setSessions(loadJson("skopos-sessions", []));
     setTxHistory(loadJson("skopos-tx-history", []));
+    const stored = localStorage.getItem("skopos-theme");
+    if (stored === "light" || stored === "dark") setTheme(stored);
     setTimeout(() => inputRef.current?.focus(), 100);
 
     const checkMobile = () => setIsMobile(window.innerWidth < 600);
@@ -197,6 +231,11 @@ export default function AppPage() {
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("skopos-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -247,7 +286,22 @@ export default function AppPage() {
     const history = messages.slice(-6).flatMap((m): { role: "user" | "assistant"; content: string }[] => {
       if (m.role === "user") return [{ role: "user", content: m.text }];
       if (m.result.type === "text")  return [{ role: "assistant", content: m.result.text }];
-      if (m.result.type === "quote") return [{ role: "assistant", content: `Quoted route: ${m.result.intent.from.amount} ${m.result.intent.from.token} from ${m.result.intent.from.chain} → ${m.result.intent.to.chain} via ${m.result.route.tool}` }];
+      if (m.result.type === "error") return [{ role: "assistant", content: m.result.text }];
+      if (m.result.type === "quote") {
+        const { intent, route } = m.result;
+        const fees = route.feesUSD ? `, fees ~$${Number(route.feesUSD).toFixed(4)}` : "";
+        return [{ role: "assistant", content: `[Real Delora quote] ${intent.from.amount} ${intent.from.token} from ${intent.from.chain} → ${intent.to.chain} via ${route.tool}. Output: ~${route.outputAmount} ${intent.to.token}${fees}. This is live data from the Delora API — the amounts are real.` }];
+      }
+      if (m.result.type === "rebalance") {
+        const legs = m.result.legs.filter(l => l.type === "quote") as QuoteResult[];
+        const summary = legs.map(l => `${l.intent.from.amount} ${l.intent.from.token} from ${l.intent.from.chain} → ~${l.route.outputAmount} ${l.intent.to.token} via ${l.route.tool}`).join("; ");
+        return [{ role: "assistant", content: `[Real Delora rebalance] ${summary}` }];
+      }
+      if (m.result.type === "address") {
+        const native = m.result.data.balances.map(b => `${b.native} ${b.nativeSymbol} on ${b.chainName}`).join(", ");
+        const tokens = m.result.data.tokenBalances.slice(0, 5).map(t => `${t.balance} ${t.symbol} on ${t.chainName}`).join(", ");
+        return [{ role: "assistant", content: `[Live wallet data] Native: ${native || "none"}. Tokens: ${tokens || "none"}.` }];
+      }
       return [];
     });
 
@@ -270,29 +324,71 @@ export default function AppPage() {
     }
   }
 
+  const isDark = theme === "dark";
+  const T = isDark ? {
+    bg:          "#000000",
+    sidebar:     "#080808",
+    border:      "rgba(255,255,255,0.05)",
+    borderStrong:"rgba(255,255,255,0.09)",
+    textPrimary: "#ffffff",
+    textMuted:   "rgba(255,255,255,0.65)",
+    textDim:     "rgba(255,255,255,0.28)",
+    textFaint:   "rgba(255,255,255,0.15)",
+    surface:     "rgba(255,255,255,0.04)",
+    msgBubble:   "rgba(255,255,255,0.05)",
+    gridLine:    "rgba(255,255,255,0.025)",
+    inputBg:     "rgba(255,255,255,0.02)",
+    fadeMask:    "linear-gradient(to right, transparent, rgba(0,0,0,0.85))",
+  } : {
+    bg:          "#F0F0EC",
+    sidebar:     "#E6E6E2",
+    border:      "rgba(0,0,0,0.08)",
+    borderStrong:"rgba(0,0,0,0.13)",
+    textPrimary: "#111111",
+    textMuted:   "rgba(0,0,0,0.65)",
+    textDim:     "rgba(0,0,0,0.38)",
+    textFaint:   "rgba(0,0,0,0.22)",
+    surface:     "rgba(0,0,0,0.04)",
+    msgBubble:   "rgba(0,0,0,0.05)",
+    gridLine:    "rgba(0,0,0,0.025)",
+    inputBg:     "rgba(0,0,0,0.03)",
+    fadeMask:    "linear-gradient(to right, transparent, rgba(240,240,236,0.95))",
+  };
+
   const recentSessions = [...sessions].reverse().slice(0, 6);
   const hasMessages = messages.length > 0;
 
   return (
-    <main style={{ position: "relative", height: "100vh", width: "100vw", background: "#000", display: "flex", overflow: "hidden" }}>
+    <main style={{ position: "relative", height: "100vh", width: "100vw", background: T.bg, display: "flex", overflow: "hidden" }}>
 
       {/* Subtle grid background */}
       <div style={{
         position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0,
-        backgroundImage: "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
+        backgroundImage: `linear-gradient(${T.gridLine} 1px, transparent 1px), linear-gradient(90deg, ${T.gridLine} 1px, transparent 1px)`,
         backgroundSize: "48px 48px",
       }} />
 
+      {/* Mobile sidebar overlay backdrop */}
+      {isMobile && sidebarExpanded && (
+        <div
+          onClick={() => setSidebarExpanded(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9 }}
+        />
+      )}
+
       {/* Collapsible nav rail */}
       <aside style={{
-        width: sidebarExpanded && !isMobile ? 240 : 52,
-        minWidth: sidebarExpanded && !isMobile ? 240 : 52,
+        width: isMobile ? (sidebarExpanded ? 240 : 0) : (sidebarExpanded ? 240 : 52),
+        minWidth: isMobile ? (sidebarExpanded ? 240 : 0) : (sidebarExpanded ? 240 : 52),
         height: "100%", zIndex: 10, flexShrink: 0,
-        background: "#080808",
-        borderRight: "1px solid rgba(255,255,255,0.05)",
+        background: T.sidebar,
+        borderRight: `1px solid ${T.border}`,
         display: "flex", flexDirection: "column",
         transition: "width 0.22s cubic-bezier(0.16,1,0.3,1), min-width 0.22s cubic-bezier(0.16,1,0.3,1)",
         overflow: "hidden",
+        position: isMobile ? "fixed" : "relative",
+        top: isMobile ? 0 : undefined,
+        left: isMobile ? 0 : undefined,
       }}>
 
         {/* Header: back arrow + logo */}
@@ -300,7 +396,7 @@ export default function AppPage() {
           <Link href="/" title="Home" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", textDecoration: "none" }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3L5 8l5 5"/></svg>
           </Link>
-          <span style={{ ...BEBAS, fontSize: "1rem", letterSpacing: "0.06em", color: "white", whiteSpace: "nowrap", paddingLeft: 6, flex: 1, opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>
+          <span style={{ ...BEBAS, fontSize: "1rem", letterSpacing: "0.06em", color: T.textPrimary, whiteSpace: "nowrap", paddingLeft: 6, flex: 1, opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>
             SKOP<span style={{ color: "#F5B800" }}>OS</span>
           </span>
         </div>
@@ -320,8 +416,8 @@ export default function AppPage() {
               {recentSessions.map(s => (
                 <button key={s.id} onClick={() => openSession(s)} style={{
                   ...MONO, width: "100%", textAlign: "left", padding: "7px 12px", fontSize: "0.72rem",
-                  background: s.id === activeSessionId ? "rgba(255,255,255,0.04)" : "none",
-                  color: s.id === activeSessionId ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.32)",
+                  background: s.id === activeSessionId ? "var(--recent-active-bg)" : "none",
+                  color: s.id === activeSessionId ? "var(--recent-active)" : "var(--recent-inactive)",
                   border: "none", cursor: "pointer", borderRadius: 6, display: "block",
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                 }}>
@@ -359,49 +455,169 @@ export default function AppPage() {
         </div>
 
         {/* Bottom rail */}
-        <div style={{ flexShrink: 0, paddingLeft: 8, paddingRight: 8, paddingBottom: 16, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ flexShrink: 0, paddingLeft: 8, paddingRight: 8, paddingBottom: 16, paddingTop: 8, borderTop: `1px solid ${T.border}`, display: "flex", flexDirection: "column", gap: 3 }}>
 
-          {/* Wallet balances when expanded */}
+          {/* ── Fund Wallet card ────────────────────────────────────────────── */}
           {sidebarExpanded && ready && authenticated && address && (
-            <div style={{ marginBottom: 6 }}>
-              {nativeDisplay && <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.28)", margin: 0, padding: "2px 10px" }}>{nativeDisplay}</p>}
-              {usdcDisplay && <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.28)", margin: 0, padding: "2px 10px" }}>{usdcDisplay}</p>}
-              <button onClick={() => fundWallet({ address, options: { chain: mainnet } })} style={{ ...MONO, display: "block", width: "100%", textAlign: "left", padding: "5px 10px", fontSize: "0.68rem", color: "rgba(245,184,0,0.6)", background: "none", border: "none", cursor: "pointer", borderRadius: 6 }}>
-                fund wallet
+            <div style={{
+              marginBottom: 8, borderRadius: 12, padding: "12px 14px",
+              background: isDark ? "rgba(245,184,0,0.05)" : "rgba(245,184,0,0.09)",
+              border: "1px solid rgba(245,184,0,0.2)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <div style={{ width: 6, height: 6, borderRadius: 999, background: "#F5B800", flexShrink: 0 }} />
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "rgba(245,184,0,0.75)", letterSpacing: "0.08em" }}>WALLET</span>
+              </div>
+              {nativeDisplay && (
+                <p style={{ ...MONO, fontSize: "0.72rem", color: T.textMuted, margin: "0 0 2px", fontWeight: 600 }}>{nativeDisplay}</p>
+              )}
+              {usdcDisplay && (
+                <p style={{ ...MONO, fontSize: "0.68rem", color: T.textDim, margin: "0 0 10px" }}>{usdcDisplay}</p>
+              )}
+              <button
+                onClick={() => fundWallet({ address })}
+                style={{
+                  ...MONO, width: "100%", padding: "7px 0", fontSize: "0.72rem",
+                  color: "#000", background: "#F5B800", border: "none", cursor: "pointer",
+                  borderRadius: 8, fontWeight: 700, letterSpacing: "0.04em",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 1v10M1 6h10"/></svg>
+                Fund Wallet
               </button>
             </div>
           )}
 
+          {/* ── Connect Wallet CTA (when disconnected) ─────────────────────── */}
+          {ready && !authenticated && sidebarExpanded && (
+            <button
+              onClick={login}
+              style={{
+                ...MONO, width: "100%", marginBottom: 8, padding: "10px 0",
+                fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.05em",
+                color: "#000", background: "#F5B800", border: "none", borderRadius: 10, cursor: "pointer",
+              }}
+            >
+              Connect Wallet
+            </button>
+          )}
+
+          {/* Collapsed wallet dot */}
+          {ready && !sidebarExpanded && (
+            <button
+              onClick={authenticated ? () => { if (window.confirm("Disconnect wallet?")) logout(); } : login}
+              style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer" }}
+              title={authenticated && address ? `${shortAddr(address)} — disconnect` : "Connect wallet"}
+            >
+              <div style={{ width: 8, height: 8, borderRadius: 999, background: authenticated ? "#F5B800" : T.textFaint }} />
+            </button>
+          )}
+
+          {/* Expanded address chip */}
+          {ready && authenticated && address && sidebarExpanded && (
+            <button
+              onClick={() => { if (window.confirm("Disconnect wallet?")) logout(); }}
+              style={{ width: "100%", height: 32, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 8, background: "none", border: "none", cursor: "pointer" }}
+              title={`${shortAddr(address)} — click to disconnect`}
+            >
+              <div style={{ width: 7, height: 7, borderRadius: 999, background: "#F5B800", flexShrink: 0 }} />
+              <span style={{ ...MONO, fontSize: "0.68rem", color: T.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {shortAddr(address)}
+              </span>
+            </button>
+          )}
+
           {/* GitHub */}
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, color: "rgba(255,255,255,0.25)", textDecoration: "none", whiteSpace: "nowrap" }}>
+          <a href="https://github.com/deloraprotocol/delora-copilot" target="_blank" rel="noopener noreferrer"
+            style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, color: T.textDim, textDecoration: "none", whiteSpace: "nowrap" }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
             </svg>
             <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>GitHub</span>
           </a>
 
-          {/* Toggle expand/collapse */}
-          <button onClick={() => setSidebarExpanded(!sidebarExpanded)} style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}>
-            <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
-              <line x1="1" y1="1" x2="15" y2="1"/><line x1="1" y1="7" x2="15" y2="7"/><line x1="1" y1="13" x2="15" y2="13"/>
-            </svg>
-            <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>Collapse</span>
-          </button>
-
-          {/* Wallet indicator / connect */}
-          {ready && (
-            <button onClick={authenticated ? logout : login} style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, background: "none", border: "none", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }} title={authenticated && address ? shortAddr(address) : "Connect wallet"}>
-              <div style={{ width: 8, height: 8, borderRadius: 999, background: authenticated ? "#F5B800" : "rgba(255,255,255,0.2)", flexShrink: 0, marginLeft: 4 }} />
-              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.3)", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {authenticated && address ? shortAddr(address) : "Connect wallet"}
+          {/* Theme toggle + collapse in one row */}
+          <div style={{ display: "flex", gap: 2 }}>
+            <button
+              onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+              title={`Switch to ${isDark ? "light" : "dark"} mode`}
+              style={{ flex: 1, height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 9, background: "none", border: "none", color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}
+            >
+              {isDark ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
+              <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>
+                {isDark ? "Light mode" : "Dark mode"}
               </span>
             </button>
-          )}
+            <button
+              onClick={() => setSidebarExpanded(!sidebarExpanded)}
+              style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: T.textDim, cursor: "pointer" }}
+            >
+              <svg width="14" height="12" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <line x1="1" y1="1" x2="15" y2="1"/><line x1="1" y1="7" x2="15" y2="7"/><line x1="1" y1="13" x2="15" y2="13"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </aside>
 
       {/* Main canvas */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", position: "relative", zIndex: 1 }}>
+
+        {/* Mobile top bar */}
+        {isMobile && (
+          <div style={{ height: 52, flexShrink: 0, display: "flex", alignItems: "center", paddingLeft: 8, paddingRight: 8, borderBottom: `1px solid ${T.border}`, gap: 4 }}>
+            {/* Hamburger */}
+            <button onClick={() => setSidebarExpanded(true)} style={{ width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: T.textDim, cursor: "pointer", borderRadius: 10, flexShrink: 0 }}>
+              <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <line x1="1" y1="1" x2="15" y2="1"/><line x1="1" y1="7" x2="15" y2="7"/><line x1="1" y1="13" x2="15" y2="13"/>
+              </svg>
+            </button>
+            {/* Logo */}
+            <span style={{ fontFamily: "var(--font-display), serif", fontSize: "1.05rem", letterSpacing: "0.06em", color: T.textPrimary, flex: 1 }}>
+              SKOP<span style={{ color: "#F5B800" }}>OS</span>
+            </span>
+            {/* Theme toggle */}
+            <button
+              onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+              style={{ width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: T.textDim, cursor: "pointer", borderRadius: 10, flexShrink: 0 }}
+            >
+              {isDark ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
+            </button>
+            {/* Wallet quick-connect / status */}
+            {ready && (
+              <button
+                onClick={authenticated ? () => { if (window.confirm("Disconnect wallet?")) logout(); } : login}
+                style={{ height: 32, paddingLeft: 12, paddingRight: 12, display: "flex", alignItems: "center", gap: 6, background: authenticated ? "rgba(245,184,0,0.08)" : "#F5B800", border: authenticated ? "1px solid rgba(245,184,0,0.2)" : "none", borderRadius: 8, cursor: "pointer", flexShrink: 0 }}
+              >
+                {authenticated && address ? (
+                  <>
+                    <div style={{ width: 6, height: 6, borderRadius: 999, background: "#F5B800" }} />
+                    <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(245,184,0,0.85)" }}>{shortAddr(address)}</span>
+                  </>
+                ) : (
+                  <span style={{ ...MONO, fontSize: "0.68rem", color: "#000", fontWeight: 700 }}>Connect</span>
+                )}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Messages or empty state */}
         {hasMessages ? (
@@ -410,55 +626,67 @@ export default function AppPage() {
               {messages.map((msg, i) =>
                 msg.role === "user" ? (
                   <div key={i} style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <div style={{ padding: "10px 18px", background: "rgba(255,255,255,0.05)", borderRadius: 20, maxWidth: "70%" }}>
-                      <p style={{ ...MONO, fontSize: "0.875rem", color: "rgba(255,255,255,0.82)", margin: 0 }}>{msg.text}</p>
+                    <div style={{ padding: "10px 18px", background: T.msgBubble, borderRadius: 20, maxWidth: isMobile ? "88%" : "70%" }}>
+                      <p style={{ ...MONO, fontSize: "0.875rem", color: T.textMuted, margin: 0, wordBreak: "break-word" }}>{msg.text}</p>
                     </div>
                   </div>
                 ) : (
                   <div key={i}>
                     {msg.result.type === "quote" && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                        <p style={{ ...MONO, fontSize: "0.75rem", color: "rgba(255,255,255,0.38)", lineHeight: 1.7, margin: 0 }}>
+                        <p style={{ ...MONO, fontSize: "0.75rem", color: T.textDim, lineHeight: 1.7, margin: 0 }}>
                           <span style={{ color: "#F5B800" }}>{msg.result.route.tool}</span>
                           {"  ·  "}
-                          <span style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.82rem" }}>
+                          <span style={{ color: T.textMuted, fontSize: "0.82rem" }}>
                             ~{msg.result.route.outputAmount} {msg.result.intent.to.token}
                           </span>
                           {msg.result.route.feesUSD && (
-                            <span style={{ color: "rgba(255,255,255,0.3)" }}>
+                            <span style={{ color: T.textDim }}>
                               {"  ·  "}${Number(msg.result.route.feesUSD).toFixed(2)} fees
                             </span>
                           )}
                         </p>
-                        <QuoteDisplay
-                          result={msg.result}
-                          onTxSubmitted={saveTx}
-                          onRefresh={async () => {
-                            const origin = (msg.result as QuoteResult).originMessage;
-                            if (!origin) return;
-                            try {
-                              const res = await fetch("/api/chat", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ message: origin, senderAddress: address, history: [], slippage }),
-                              });
-                              const data: AssistantResult = await res.json();
-                              if (data.type === "quote") data.originMessage = origin;
-                              setMessages(prev => prev.map((m, j) =>
-                                j === i ? { role: "assistant", result: data } : m
-                              ));
-                            } catch { /* silent — QuoteDisplay will reset isRefreshing */ }
-                          }}
-                        />
+                        <ErrorBoundary label="Quote failed to render.">
+                          <QuoteDisplay
+                            result={msg.result}
+                            onTxSubmitted={saveTx}
+                            onRefresh={async () => {
+                              const origin = (msg.result as QuoteResult).originMessage;
+                              if (!origin) return;
+                              try {
+                                const res = await fetch("/api/chat", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ message: origin, senderAddress: address, history: [], slippage }),
+                                });
+                                const data: AssistantResult = await res.json();
+                                if (data.type === "quote") data.originMessage = origin;
+                                setMessages(prev => prev.map((m, j) =>
+                                  j === i ? { role: "assistant", result: data } : m
+                                ));
+                              } catch { /* silent — QuoteDisplay will reset isRefreshing */ }
+                            }}
+                          />
+                        </ErrorBoundary>
                       </div>
                     )}
                     {msg.result.type === "rebalance" && (
-                      <RebalanceDisplay result={msg.result} onTxSubmitted={saveTx} />
+                      <ErrorBoundary label="Rebalance failed to render.">
+                        <RebalanceDisplay result={msg.result} onTxSubmitted={saveTx} />
+                      </ErrorBoundary>
                     )}
-                    {msg.result.type === "tx" && <TxDisplay result={msg.result} />}
-                    {msg.result.type === "address" && <AddressDisplay result={msg.result} />}
+                    {msg.result.type === "tx" && (
+                      <ErrorBoundary label="Transaction details failed to render.">
+                        <TxDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "address" && (
+                      <ErrorBoundary label="Address details failed to render.">
+                        <AddressDisplay result={msg.result} onSwap={prompt => submit(prompt)} />
+                      </ErrorBoundary>
+                    )}
                     {(msg.result.type === "text" || msg.result.type === "error") && (
-                      <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: msg.result.type === "error" ? "#ff5555" : "rgba(255,255,255,0.65)", margin: 0 }}>
+                      <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: msg.result.type === "error" ? "#ff5555" : T.textMuted, margin: 0 }}>
                         {msg.result.text}
                       </p>
                     )}
@@ -466,7 +694,7 @@ export default function AppPage() {
                 )
               )}
               {loading && (
-                <p className="animate-pulse" style={{ ...MONO, fontSize: "0.75rem", color: "rgba(255,255,255,0.2)", margin: 0 }}>
+                <p className="animate-pulse" style={{ ...MONO, fontSize: "0.75rem", color: T.textFaint, margin: 0 }}>
                   routing…
                 </p>
               )}
@@ -474,11 +702,11 @@ export default function AppPage() {
             </div>
           </div>
         ) : (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 28px", textAlign: "center" }}>
-            <h1 style={{ ...BEBAS, fontSize: "clamp(2rem, 4vw, 3.2rem)", color: "rgba(255,255,255,0.08)", letterSpacing: "0.05em", margin: 0 }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: isMobile ? "0 20px" : "0 28px", textAlign: "center" }}>
+            <h1 style={{ ...BEBAS, fontSize: "clamp(2rem, 4vw, 3.2rem)", color: T.textFaint, letterSpacing: "0.05em", margin: 0 }}>
               WHAT DO YOU WANT TO DO?
             </h1>
-            <p style={{ ...MONO, fontSize: "0.75rem", color: "rgba(255,255,255,0.18)", marginTop: 10 }}>
+            <p style={{ ...MONO, fontSize: "0.75rem", color: T.textFaint, marginTop: 10 }}>
               Ask anything about cross-chain DeFi
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 20, maxWidth: 520 }}>
@@ -486,9 +714,9 @@ export default function AppPage() {
                 <button
                   key={p}
                   onClick={() => submit(p)}
-                  style={{ ...MONO, padding: "6px 14px", fontSize: "0.7rem", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 999, color: "rgba(255,255,255,0.35)", cursor: "pointer", whiteSpace: "nowrap", transition: "border-color 0.15s, color 0.15s" }}
+                  style={{ ...MONO, padding: "6px 14px", fontSize: "0.7rem", background: T.surface, border: `1px solid ${T.borderStrong}`, borderRadius: 999, color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", transition: "border-color 0.15s, color 0.15s" }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.3)"; e.currentTarget.style.color = "rgba(245,184,0,0.7)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "rgba(255,255,255,0.35)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = T.borderStrong; e.currentTarget.style.color = T.textDim; }}
                 >
                   {p}
                 </button>
@@ -498,7 +726,7 @@ export default function AppPage() {
         )}
 
         {/* Bottom: feature cards + input */}
-        <div style={{ flexShrink: 0, width: "100%", display: "flex", justifyContent: "center", padding: isMobile ? "0 16px 20px" : "0 28px 32px" }}>
+        <div style={{ flexShrink: 0, width: "100%", display: "flex", justifyContent: "center", padding: isMobile ? "0 12px max(16px, env(safe-area-inset-bottom))" : "0 28px 32px" }}>
           <div style={{ width: "100%", maxWidth: 700 }}>
 
             {/* Feature carousel — empty state, desktop only */}
@@ -509,7 +737,7 @@ export default function AppPage() {
             {/* Input box */}
             <form onSubmit={e => { e.preventDefault(); submit(); }}>
               <div style={{
-                background: "rgba(255,255,255,0.02)",
+                background: T.inputBg,
                 border: `1px solid ${inputFocused ? "rgba(245,184,0,0.38)" : "rgba(245,184,0,0.18)"}`,
                 borderRadius: 20,
                 padding: "18px 20px 14px",
@@ -524,14 +752,48 @@ export default function AppPage() {
                   onFocus={() => setInputFocused(true)}
                   onBlur={() => setInputFocused(false)}
                   placeholder="ask skopos…"
-                  className="placeholder:text-white/15"
-                  style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: "rgba(255,255,255,0.85)", fontSize: "0.95rem" }}
+                  className={isDark ? "placeholder:text-white/15" : "placeholder:text-black/20"}
+                  style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: T.textMuted, fontSize: "0.95rem" }}
                 />
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
-                  <span style={{ ...MONO, fontSize: "0.62rem", color: "rgba(255,255,255,0.18)", letterSpacing: "0.06em" }}>
-                    Groq · Delora
-                  </span>
-                  <div style={{ flex: 1 }} />
+                  {/* Horizon pills — coming soon features */}
+                  <div style={{ position: "relative", flex: 1, minWidth: 0, overflow: "hidden" }}>
+                    <div style={{ display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none", paddingRight: 24 }}>
+                      {HORIZON_PILLS.map(pill => (
+                        <button
+                          key={pill.label}
+                          type="button"
+                          onClick={() => {
+                            setValue(pill.prompt);
+                            setHorizonToast(pill.label);
+                            setTimeout(() => setHorizonToast(null), 2000);
+                            setTimeout(() => inputRef.current?.focus(), 50);
+                          }}
+                          style={{
+                            ...MONO, flexShrink: 0,
+                            fontSize: "0.58rem", padding: "2px 8px", borderRadius: 999,
+                            border: `1px solid ${T.border}`,
+                            background: "transparent",
+                            color: T.textFaint,
+                            cursor: "pointer", whiteSpace: "nowrap",
+                            transition: "border-color 0.15s, color 0.15s",
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textFaint; }}
+                        >
+                          ◆ {pill.label}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Fade mask on right */}
+                    <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 24, background: T.fadeMask, pointerEvents: "none" }} />
+                  </div>
+                  {/* Toast */}
+                  {horizonToast && (
+                    <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(245,184,0,0.5)", whiteSpace: "nowrap", flexShrink: 0 }}>
+                      soon ✦
+                    </span>
+                  )}
                   <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.15)" }}>slip</span>
                   {SLIPPAGE_OPTIONS.map(({ value, label }) => (
                     <button
@@ -540,9 +802,9 @@ export default function AppPage() {
                       onClick={() => setSlippage(value)}
                       style={{
                         ...MONO, fontSize: "0.6rem", padding: "2px 6px", borderRadius: 4,
-                        border: `1px solid ${slippage === value ? "rgba(245,184,0,0.35)" : "rgba(255,255,255,0.07)"}`,
+                        border: `1px solid ${slippage === value ? "rgba(245,184,0,0.35)" : "var(--drawer-label)"}`,
                         background: slippage === value ? "rgba(245,184,0,0.06)" : "transparent",
-                        color: slippage === value ? "rgba(245,184,0,0.85)" : "rgba(255,255,255,0.22)",
+                        color: slippage === value ? "rgba(245,184,0,0.85)" : "var(--drawer-action)",
                         cursor: "pointer",
                       }}
                     >
@@ -554,7 +816,7 @@ export default function AppPage() {
                     disabled={!value.trim() || loading}
                     style={{
                       width: 34, height: 34, borderRadius: 999, border: "none",
-                      background: value.trim() && !loading ? "#F5B800" : "rgba(255,255,255,0.07)",
+                      background: value.trim() && !loading ? "#F5B800" : T.surface,
                       cursor: value.trim() && !loading ? "pointer" : "not-allowed",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       flexShrink: 0, transition: "background 0.15s ease",
@@ -587,13 +849,13 @@ function FeatureCarousel({ slide, setSlide }: { slide: number; setSlide: (i: num
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         {cards.map(card => (
           <div key={card.label} style={{
-            flex: 1, background: "rgba(255,255,255,0.02)",
-            border: "1px solid rgba(255,255,255,0.07)",
+            flex: 1, background: "var(--recent-active-bg)",
+            border: "1px solid var(--drawer-label)",
             borderRadius: 14, padding: "16px",
           }}>
-            <div style={{ color: "rgba(255,255,255,0.4)", marginBottom: 12 }}>{card.icon}</div>
-            <p style={{ ...MONO, fontSize: "0.75rem", color: "rgba(255,255,255,0.7)", margin: 0 }}>{card.label}</p>
-            <p style={{ ...MONO, fontSize: "0.63rem", color: "rgba(255,255,255,0.28)", marginTop: 3 }}>{card.sub}</p>
+            <div style={{ color: "var(--drawer-action)", marginBottom: 12 }}>{card.icon}</div>
+            <p style={{ ...MONO, fontSize: "0.75rem", color: "var(--drawer-action-hover)", margin: 0 }}>{card.label}</p>
+            <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--drawer-action)", marginTop: 3 }}>{card.sub}</p>
           </div>
         ))}
       </div>
@@ -606,7 +868,7 @@ function FeatureCarousel({ slide, setSlide }: { slide: number; setSlide: (i: num
             onClick={() => setSlide(i)}
             style={{
               height: 5, width: i === slide ? 22 : 5, borderRadius: 999, border: "none",
-              background: i === slide ? "#F5B800" : "rgba(255,255,255,0.15)",
+              background: i === slide ? "#F5B800" : "var(--drawer-label)",
               cursor: "pointer", padding: 0,
               transition: "width 0.25s ease, background 0.25s ease",
             }}
@@ -623,7 +885,7 @@ function DrawerSection({ label, children }: { label: string; children: React.Rea
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   return (
     <div style={{ padding: "4px 8px 12px" }}>
-      <p style={{ ...MONO, fontSize: "0.62rem", color: "rgba(255,255,255,0.18)", letterSpacing: "0.08em", padding: "0 12px 6px" }}>
+      <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--drawer-label)", letterSpacing: "0.08em", padding: "0 12px 6px" }}>
         {label}
       </p>
       {children}
@@ -636,9 +898,9 @@ function DrawerAction({ label, onClick }: { label: string; onClick: () => void }
   return (
     <button
       onClick={onClick}
-      style={{ ...MONO, width: "100%", textAlign: "left", padding: "7px 12px", fontSize: "0.72rem", color: "rgba(255,255,255,0.32)", background: "none", border: "none", cursor: "pointer", borderRadius: 6, display: "block" }}
-      onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-      onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.32)")}
+      style={{ ...MONO, width: "100%", textAlign: "left", padding: "7px 12px", fontSize: "0.72rem", color: "var(--drawer-action)", background: "none", border: "none", cursor: "pointer", borderRadius: 6, display: "block" }}
+      onMouseEnter={e => (e.currentTarget.style.color = "var(--drawer-action-hover)")}
+      onMouseLeave={e => (e.currentTarget.style.color = "var(--drawer-action)")}
     >
       {label}
     </button>
@@ -672,11 +934,11 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
 
   const needsApproval = !!approval && (allowance === undefined || BigInt(allowance as bigint) < BigInt(approval.amount));
 
-  const { mutate: writeContract, data: approvalHash, isPending: isApproving } = useWriteContract();
+  const { mutateAsync: writeContract, data: approvalHash, isPending: isApproving } = useWriteContract();
   const { isSuccess: approvalConfirmed } = useWaitForTransactionReceipt({ hash: approvalHash });
   useEffect(() => { if (approvalConfirmed) refetchAllowance(); }, [approvalConfirmed, refetchAllowance]);
 
-  const { mutate: sendTransaction, data: txHash, isPending: isSending } = useSendTransaction();
+  const { mutateAsync: sendTransaction, data: txHash, isPending: isSending } = useSendTransaction();
   const { isLoading: isConfirming, isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
   const [switchErr, setSwitchErr]     = useState<string | null>(null);
@@ -716,9 +978,10 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
     setSwitchErr(null);
     try {
       if (!onCorrectChain) await switchChain({ chainId: originChainId });
-      writeContract({ address: approval.tokenAddress as `0x${string}`, abi: ERC20_ABI, functionName: "approve", args: [approval.spender as `0x${string}`, BigInt(approval.amount)], chainId: originChainId });
-    } catch {
-      setSwitchErr(`Switch your wallet to ${intent.from.chain} to continue`);
+      await writeContract({ address: approval.tokenAddress as `0x${string}`, abi: ERC20_ABI, functionName: "approve", args: [approval.spender as `0x${string}`, BigInt(approval.amount)], chainId: originChainId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
     }
   }
 
@@ -727,9 +990,10 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
     setSwitchErr(null);
     try {
       if (!onCorrectChain) await switchChain({ chainId: originChainId });
-      sendTransaction({ to: calldata.to as `0x${string}`, value: BigInt(calldata.value || "0x0"), data: calldata.data as `0x${string}`, chainId: originChainId });
-    } catch {
-      setSwitchErr(`Switch your wallet to ${intent.from.chain} to continue`);
+      await sendTransaction({ to: calldata.to as `0x${string}`, value: BigInt(calldata.value || "0x0"), data: calldata.data as `0x${string}`, chainId: originChainId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
     }
   }
 
@@ -748,9 +1012,9 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
   const executionMode = !!txHash;
 
   return (
-    <div style={{ background: "#0D0D0D", border: `1px solid ${executionMode ? "rgba(245,184,0,0.18)" : "rgba(255,255,255,0.08)"}`, borderRadius: 16, overflow: "hidden" }}>
+    <div style={{ background: "#0D0D0D", border: `1px solid ${executionMode ? "rgba(245,184,0,0.18)" : "rgba(255,255,255,0.08)"}`, borderRadius: 16, overflow: "hidden", width: "100%" }}>
       {/* Header */}
-      <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.22)", margin: 0 }}>
           {executionMode ? "Transaction" : "Quote Preview"}
         </p>
@@ -768,11 +1032,11 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
       </div>
 
       {/* Rows */}
-      <div style={{ padding: "4px 20px" }}>
+      <div style={{ padding: "4px 16px" }}>
         {rows.map(({ label, value, highlight }) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-            <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.27)", letterSpacing: "0.04em" }}>{label}</span>
-            <span style={{ ...MONO, fontSize: highlight ? "0.95rem" : "0.73rem", color: highlight ? "white" : "rgba(255,255,255,0.68)", fontWeight: highlight ? 500 : 400, display: "flex", alignItems: "center", gap: 4 }}>
+          <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", gap: 8 }}>
+            <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.27)", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
+            <span style={{ ...MONO, fontSize: highlight ? "0.92rem" : "0.73rem", color: highlight ? "white" : "rgba(255,255,255,0.68)", fontWeight: highlight ? 500 : 400, display: "flex", alignItems: "center", gap: 4, textAlign: "right", wordBreak: "break-all" }}>
               {value}
             </span>
           </div>
@@ -780,7 +1044,7 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
       </div>
 
       {/* Action */}
-      <div style={{ padding: "14px 20px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ padding: "14px 16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
         {switchErr && (
           <p style={{ ...MONO, fontSize: "0.68rem", color: "#ff6b6b", margin: 0, textAlign: "center" }}>
             {switchErr}
@@ -943,7 +1207,7 @@ function TxDisplay({ result }: { result: TxResult }) {
 
 // ─── AddressDisplay ───────────────────────────────────────────────────────────
 
-function AddressDisplay({ result }: { result: AddressResult }) {
+function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (prompt: string) => void }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { data, summary, ensName } = result;
 
@@ -970,11 +1234,23 @@ function AddressDisplay({ result }: { result: AddressResult }) {
             </div>
           ))}
           {data.tokenBalances.slice(0, 10).map(t => (
-            <div key={`${t.chainId}-${t.contractAddress}`} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+            <div key={`${t.chainId}-${t.contractAddress}`} style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
               <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.28)", flexShrink: 0 }}>
                 {t.symbol} <span style={{ color: "rgba(255,255,255,0.15)" }}>· {t.chainName}</span>
               </span>
-              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.6)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{t.balance}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.6)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.balance}</span>
+                {onSwap && (
+                  <button
+                    onClick={() => onSwap(`swap ${t.balance} ${t.symbol} to USDC on ${t.chainName.toLowerCase()}`)}
+                    style={{ ...MONO, fontSize: "0.58rem", padding: "2px 7px", borderRadius: 4, border: "1px solid rgba(245,184,0,0.2)", background: "rgba(245,184,0,0.04)", color: "rgba(245,184,0,0.55)", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.45)"; e.currentTarget.style.color = "rgba(245,184,0,0.9)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.2)"; e.currentTarget.style.color = "rgba(245,184,0,0.55)"; }}
+                  >
+                    swap →
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

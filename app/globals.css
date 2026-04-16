@@ -10,7 +10,8 @@
   --color-foreground: var(--foreground);
   --color-yellow: #F5B800;
   --color-terminal: #0A0A0A;
-  --font-bebas: var(--font-bebas-neue);
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
   --font-mono: var(--font-jetbrains-mono);
 }
 
@@ -27,11 +28,41 @@ body {
   padding: 0;
 }
 
+/* iPhone safe area — prevents content from hiding behind notch / home indicator */
+@supports (padding: env(safe-area-inset-bottom)) {
+  body {
+    padding-left:   env(safe-area-inset-left);
+    padding-right:  env(safe-area-inset-right);
+  }
+}
+
 body {
   background: #000000;
   color: #ffffff;
+  font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Light mode surface tokens (consumed by DrawerSection/DrawerAction) ──── */
+:root {
+  color-scheme: dark;
+  --drawer-label:        rgba(255,255,255,0.18);
+  --drawer-action:       rgba(255,255,255,0.32);
+  --drawer-action-hover: rgba(255,255,255,0.7);
+  --recent-active:       rgba(255,255,255,0.75);
+  --recent-inactive:     rgba(255,255,255,0.32);
+  --recent-active-bg:    rgba(255,255,255,0.04);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --drawer-label:        rgba(0,0,0,0.3);
+  --drawer-action:       rgba(0,0,0,0.5);
+  --drawer-action-hover: rgba(0,0,0,0.85);
+  --recent-active:       rgba(0,0,0,0.8);
+  --recent-inactive:     rgba(0,0,0,0.38);
+  --recent-active-bg:    rgba(0,0,0,0.05);
 }
 
 /* Blinking cursor animation */

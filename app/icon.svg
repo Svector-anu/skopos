@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Black rounded background -->
+  <rect width="32" height="32" rx="7" fill="#000000"/>
+
+  <!-- Yellow diamond mark — matches ◆ used throughout the UI -->
+  <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="#F5B800" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Inner fill, lighter -->
+  <path d="M16 9 L23 16 L16 23 L9 16 Z" fill="#F5B800" opacity="0.15"/>
+  <!-- Center dot -->
+  <circle cx="16" cy="16" r="2.2" fill="#F5B800"/>
+</svg>

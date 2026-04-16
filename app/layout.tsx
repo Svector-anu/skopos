@@ -1,12 +1,19 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, JetBrains_Mono } from "next/font/google";
+import { Source_Serif_4, Source_Sans_3, JetBrains_Mono } from "next/font/google";
 import { PageTransitionWrapper } from "@/components/shared/PageTransitionWrapper";
 import "./globals.css";
 
-const bebasNeue = Bebas_Neue({
-  weight: "400",
+const sourceSerif = Source_Serif_4({
+  weight: ["400", "600", "700"],
   subsets: ["latin"],
-  variable: "--font-bebas-neue",
+  variable: "--font-display",
+  display: "swap",
+});
+
+const sourceSans = Source_Sans_3({
+  weight: ["400", "600"],
+  subsets: ["latin"],
+  variable: "--font-sans",
   display: "swap",
 });
 
@@ -19,6 +26,15 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Skopos",
   description: "Cross-chain intent execution. Say what you want, it executes.",
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export default function RootLayout({
@@ -29,7 +45,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${bebasNeue.variable} ${jetbrainsMono.variable} h-full`}
+      suppressHydrationWarning
+      className={`${sourceSerif.variable} ${sourceSans.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="h-full bg-black text-white antialiased">
         <PageTransitionWrapper>{children}</PageTransitionWrapper>

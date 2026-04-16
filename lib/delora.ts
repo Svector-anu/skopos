@@ -2,6 +2,18 @@ const BASE = "https://api.delora.build";
 
 const PLACEHOLDER_ADDRESS = "0x0000000000000000000000000000000000000001";
 
+const TIMEOUT_MS = 8000;
+
+async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 export interface DeloraToken {
   address: string;
   symbol: string;
@@ -44,7 +56,7 @@ export async function getToken(
   chainId: number,
   symbol: string
 ): Promise<DeloraToken | null> {
-  const res = await fetch(`${BASE}/v1/tokens`);
+  const res = await fetchWithTimeout(`${BASE}/v1/tokens`);
   if (!res.ok) return null;
   const data: Record<string, DeloraToken[]> = await res.json();
   const chainTokens = data[String(chainId)];
@@ -77,7 +89,7 @@ export async function getQuote(params: {
   });
   if (params.slippage != null) query.set("slippage", String(params.slippage));
 
-  const res = await fetch(`${BASE}/v1/quotes?${query}`);
+  const res = await fetchWithTimeout(`${BASE}/v1/quotes?${query}`);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Delora quote failed ${res.status}: ${text}`);

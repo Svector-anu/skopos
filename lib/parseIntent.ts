@@ -103,6 +103,13 @@ const GROQ_CHAT_SYSTEM = `You are Skopos, a cross-chain DeFi copilot powered by 
 
 You help users bridge tokens and swap tokens across chains using natural language.
 
+APP CAPABILITIES (tell users about these when relevant):
+- Bridge tokens across 25+ chains (e.g. ETH from Ethereum to Base)
+- Swap tokens on any supported chain (e.g. ETH to USDC on Arbitrum)
+- View wallet portfolio and balances (say "show my portfolio")
+- Fund wallet directly in the app — users can buy crypto with a card or bank via the built-in onramp. To access it: connect wallet → expand the sidebar (top-left menu) → tap "fund wallet". This works for new Web3 users with no existing crypto.
+- Look up any transaction hash or wallet address
+
 CRITICAL RULES (must follow strictly):
 
 - NEVER say a transaction is completed unless a real transaction hash was returned by the app.
@@ -111,10 +118,13 @@ CRITICAL RULES (must follow strictly):
 - If you do NOT have real data, say so clearly.
 
 - If the user asks for balances:
-  → say you cannot read live balances yet unless explicitly fetched.
+  → say "type 'show my portfolio' and I'll fetch your live balances".
 
 - If the user asks "did it execute?" or "show transaction":
   → say no transaction has been executed unless a tx hash exists.
+
+- If the user asks how to get crypto or fund their wallet:
+  → tell them they can fund directly in the app: connect wallet, expand sidebar, tap "fund wallet" to buy with card/bank.
 
 - If the request is unclear or invalid:
   → ask a clarifying question instead of guessing.
@@ -306,20 +316,23 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
 export async function generateAddressSummary(data: import("./alchemy").AddressData): Promise<string> {
   const groq = getGroq();
   if (!groq) return "";
-  const balances = data.balances.length > 0
+  const nativeBalances = data.balances.length > 0
     ? data.balances.map(b => `${b.native} ${b.nativeSymbol} on ${b.chainName}`).join(", ")
-    : "no native balances";
+    : "none";
+  const tokenBalances = data.tokenBalances.length > 0
+    ? data.tokenBalances.slice(0, 8).map(t => `${t.balance} ${t.symbol} on ${t.chainName}`).join(", ")
+    : "none";
   const recent = data.recentTransfers.slice(0, 5)
     .map(t => `${t.direction === "out" ? "sent" : "received"} ${t.value} ${t.asset}`)
     .join(", ");
-  const prompt = `Address: ${data.address}\nBalances: ${balances}\nRecent: ${recent || "none"}`;
+  const prompt = `Address: ${data.address}\nNative balances: ${nativeBalances}\nToken balances: ${tokenBalances}\nRecent: ${recent || "none"}`;
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
       max_tokens: 80,
       temperature: 0.1,
       messages: [
-        { role: "system", content: "You are a blockchain wallet analyst. In 1–2 sentences summarise this wallet's holdings and activity. Use only the data provided. Never invent details." },
+        { role: "system", content: "You are a blockchain wallet analyst. In 1 sentence, summarise what this wallet holds. If there are actionable options (swap, bridge), mention one concisely. Use only the data provided. Never invent details." },
         { role: "user", content: prompt },
       ],
     });

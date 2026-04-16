@@ -5,12 +5,19 @@ export type { TxData, Transfer, ChainBalance, TokenBalance, AddressData };
 
 const KEY = process.env.ALCHEMY_API_KEY ?? "";
 
-export const ALCHEMY_CHAINS: Record<number, { name: string; rpc: string; nativeSymbol: string; explorer: string }> = {
-  1:     { name: "Ethereum", nativeSymbol: "ETH", explorer: "https://etherscan.io",              rpc: `https://eth-mainnet.g.alchemy.com/v2/${KEY}`     },
-  8453:  { name: "Base",     nativeSymbol: "ETH", explorer: "https://basescan.org",              rpc: `https://base-mainnet.g.alchemy.com/v2/${KEY}`    },
-  42161: { name: "Arbitrum", nativeSymbol: "ETH", explorer: "https://arbiscan.io",               rpc: `https://arb-mainnet.g.alchemy.com/v2/${KEY}`     },
-  10:    { name: "Optimism", nativeSymbol: "ETH", explorer: "https://optimistic.etherscan.io",   rpc: `https://opt-mainnet.g.alchemy.com/v2/${KEY}`     },
-  137:   { name: "Polygon",  nativeSymbol: "POL", explorer: "https://polygonscan.com",           rpc: `https://polygon-mainnet.g.alchemy.com/v2/${KEY}` },
+// alchemyErc20: true  → supports alchemy_getTokenBalances / alchemy_getTokenMetadata
+// alchemyErc20: false → public RPC, native balance only
+export const ALCHEMY_CHAINS: Record<number, { name: string; rpc: string; nativeSymbol: string; explorer: string; alchemyErc20: boolean }> = {
+  1:      { name: "Ethereum",  nativeSymbol: "ETH",  explorer: "https://etherscan.io",             rpc: `https://eth-mainnet.g.alchemy.com/v2/${KEY}`,      alchemyErc20: true  },
+  8453:   { name: "Base",      nativeSymbol: "ETH",  explorer: "https://basescan.org",             rpc: `https://base-mainnet.g.alchemy.com/v2/${KEY}`,     alchemyErc20: true  },
+  42161:  { name: "Arbitrum",  nativeSymbol: "ETH",  explorer: "https://arbiscan.io",              rpc: `https://arb-mainnet.g.alchemy.com/v2/${KEY}`,      alchemyErc20: true  },
+  10:     { name: "Optimism",  nativeSymbol: "ETH",  explorer: "https://optimistic.etherscan.io",  rpc: `https://opt-mainnet.g.alchemy.com/v2/${KEY}`,      alchemyErc20: true  },
+  137:    { name: "Polygon",   nativeSymbol: "POL",  explorer: "https://polygonscan.com",          rpc: `https://polygon-mainnet.g.alchemy.com/v2/${KEY}`,  alchemyErc20: true  },
+  56:     { name: "BSC",       nativeSymbol: "BNB",  explorer: "https://bscscan.com",              rpc: "https://bsc-dataseed1.binance.org",                 alchemyErc20: false },
+  43114:  { name: "Avalanche", nativeSymbol: "AVAX", explorer: "https://snowtrace.io",             rpc: "https://api.avax.network/ext/bc/C/rpc",            alchemyErc20: false },
+  324:    { name: "zkSync Era",nativeSymbol: "ETH",  explorer: "https://explorer.zksync.io",       rpc: `https://zksync-mainnet.g.alchemy.com/v2/${KEY}`,   alchemyErc20: true  },
+  59144:  { name: "Linea",     nativeSymbol: "ETH",  explorer: "https://lineascan.build",          rpc: `https://linea-mainnet.g.alchemy.com/v2/${KEY}`,    alchemyErc20: true  },
+  100:    { name: "Gnosis",    nativeSymbol: "XDAI", explorer: "https://gnosisscan.io",            rpc: "https://rpc.gnosischain.com",                      alchemyErc20: false },
 };
 
 // ── known 4-byte method signatures ────────────────────────────────────────────
@@ -39,8 +46,20 @@ const METHOD_SIGS: Record<string, string> = {
 
 // ── internal helpers ──────────────────────────────────────────────────────────
 
+const TIMEOUT_MS = 8000;
+
+async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
@@ -54,6 +73,15 @@ async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T
 function hexToNum(hex: string | null | undefined, fallback = 0): number {
   if (!hex) return fallback;
   return parseInt(hex, 16);
+}
+
+function hexBalanceToFloat(hex: string, decimals: number): number {
+  if (!hex || hex === "0x0") return 0;
+  const raw = BigInt(hex);
+  const divisor = BigInt(10 ** decimals);
+  const whole = raw / divisor;
+  const remainder = raw % divisor;
+  return Number(whole) + Number(remainder) / 10 ** decimals;
 }
 
 // ── ENS resolution ────────────────────────────────────────────────────────────
@@ -159,7 +187,7 @@ export async function lookupAddress(address: string): Promise<AddressData> {
   const ethRpc = ALCHEMY_CHAINS[1].rpc;
 
   const fetchTransfers = (direction: "in" | "out") =>
-    fetch(ethRpc, {
+    fetchWithTimeout(ethRpc, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -198,28 +226,83 @@ export async function lookupAddress(address: string): Promise<AddressData> {
     .sort((a, b) => hexToNum(b.blockNum) - hexToNum(a.blockNum))
     .slice(0, 12);
 
-  // ERC-20 balances — only on chains where the address has native activity
-  const activeChainIds = new Set([
-    ...balances.map(b => b.chainId),
-    1,   // always include Ethereum (most tokens live here)
+  // ERC-20 balances — Alchemy chains + Ankr for non-Alchemy chains, in parallel
+  const activeAlchemyChainIds = new Set([
+    ...balances.filter(b => ALCHEMY_CHAINS[b.chainId]?.alchemyErc20).map(b => b.chainId),
+    1,    // always include Ethereum
     8453, // and Base
   ]);
 
-  const tokenResults = await Promise.allSettled(
-    [...activeChainIds].map(chainId => fetchErc20Balances(address, chainId))
-  );
+  const [tokenResults, ankrTokens] = await Promise.all([
+    Promise.allSettled([...activeAlchemyChainIds].map(chainId => fetchErc20Balances(address, chainId))),
+    fetchAnkrBalances(address),
+  ]);
 
-  const tokenBalances: TokenBalance[] = tokenResults
-    .flatMap(r => r.status === "fulfilled" ? r.value : [])
+  const tokenBalances: TokenBalance[] = [
+    ...tokenResults.flatMap(r => r.status === "fulfilled" ? r.value : []),
+    ...ankrTokens,
+  ]
     .filter(t => parseFloat(t.balance) > 0)
     .sort((a, b) => parseFloat(b.balance) - parseFloat(a.balance));
 
   return { address, balances, tokenBalances, recentTransfers };
 }
 
+// ── Ankr multichain — covers chains Alchemy doesn't support ──────────────────
+
+const ANKR_CHAINS: { ankrName: string; chainId: number; name: string }[] = [
+  { ankrName: "bsc",       chainId: 56,    name: "BSC"       },
+  { ankrName: "avalanche", chainId: 43114, name: "Avalanche" },
+  { ankrName: "gnosis",    chainId: 100,   name: "Gnosis"    },
+];
+
+async function fetchAnkrBalances(address: string): Promise<TokenBalance[]> {
+  try {
+    const res = await fetchWithTimeout("https://rpc.ankr.com/multichain/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1,
+        method: "ankr_getAccountBalance",
+        params: {
+          walletAddress: address,
+          blockchain: ANKR_CHAINS.map(c => c.ankrName),
+          onlyWhitelisted: false,
+          pageSize: 50,
+        },
+      }),
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const assets: any[] = json?.result?.assets ?? [];
+
+    const out: TokenBalance[] = [];
+    for (const a of assets) {
+      if (a.tokenType === "NATIVE") continue; // native already fetched via eth_getBalance
+      const chainMeta = ANKR_CHAINS.find(c => c.ankrName === a.blockchain);
+      if (!chainMeta) continue;
+      const balance = parseFloat(String(a.balance ?? "0"));
+      if (balance <= 0) continue;
+      out.push({
+        contractAddress: String(a.contractAddress ?? ""),
+        symbol:    String(a.tokenSymbol ?? ""),
+        name:      String(a.tokenName ?? a.tokenSymbol ?? ""),
+        decimals:  Number(a.tokenDecimals ?? 18),
+        balance:   balance.toFixed(4),
+        chainId:   chainMeta.chainId,
+        chainName: chainMeta.name,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 async function fetchErc20Balances(address: string, chainId: number): Promise<TokenBalance[]> {
   const chain = ALCHEMY_CHAINS[chainId];
-  if (!chain) return [];
+  if (!chain || !chain.alchemyErc20) return [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = await rpc<any>(chain.rpc, "alchemy_getTokenBalances", [address, "erc20"]);
@@ -244,8 +327,7 @@ async function fetchErc20Balances(address: string, chainId: number): Promise<Tok
     if (meta.status !== "fulfilled" || !meta.value) continue;
     const { decimals, symbol, name } = meta.value;
     if (!decimals || !symbol) continue;
-    const raw = hexToNum(top[i].tokenBalance);
-    const balance = (raw / 10 ** decimals).toFixed(4);
+    const balance = hexBalanceToFloat(top[i].tokenBalance, decimals).toFixed(4);
     if (parseFloat(balance) <= 0) continue;
     out.push({
       contractAddress: top[i].contractAddress as string,

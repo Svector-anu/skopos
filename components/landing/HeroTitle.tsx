@@ -59,7 +59,7 @@ export function HeroTitle() {
       const spacing  = `${Math.round(fontSize * 0.08)}px`;
 
       await Promise.race([
-        document.fonts.load(`400 ${Math.round(fontSize)}px "Bebas Neue"`),
+        document.fonts.load(`700 ${Math.round(fontSize)}px "Source Serif 4"`),
         new Promise(r => setTimeout(r, 1000)),
       ]);
 
@@ -68,7 +68,7 @@ export function HeroTitle() {
       off.width  = w;
       off.height = h;
       const oCtx = off.getContext("2d")!;
-      oCtx.font          = `400 ${fontSize}px "Bebas Neue", sans-serif`;
+      oCtx.font          = `700 ${fontSize}px "Source Serif 4", serif`;
       oCtx.letterSpacing = spacing;
       oCtx.fillStyle     = "#fff";
       oCtx.textAlign     = "center";
@@ -143,7 +143,7 @@ export function HeroTitle() {
 
         // Stroke outline guide — drawn first, under all particles
         ctx.save();
-        ctx.font          = `400 ${fontSize}px "Bebas Neue", sans-serif`;
+        ctx.font          = `700 ${fontSize}px "Source Serif 4", serif`;
         ctx.letterSpacing = spacing;
         ctx.textAlign     = "center";
         ctx.textBaseline  = "middle";
@@ -235,7 +235,8 @@ export function HeroTitle() {
       <div
         aria-hidden="true"
         style={{
-          fontFamily: "var(--font-bebas-neue), sans-serif",
+          fontFamily: "var(--font-display), serif",
+          fontWeight: 700,
           fontSize: "clamp(5rem, 14vw, 10rem)",
           letterSpacing: "0.08em",
           lineHeight: 1,

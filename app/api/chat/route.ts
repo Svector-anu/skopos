@@ -60,11 +60,9 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   let destDecimals   = NATIVE_DECIMALS[destChainId]   ?? 18;
 
   const isOriginNative =
-    intent.token.toUpperCase() === originNativeSymbol?.toUpperCase() ||
-    intent.token.toUpperCase() === "ETH";
+    intent.token.toUpperCase() === originNativeSymbol?.toUpperCase();
   const isDestNative =
-    destToken.toUpperCase() === destNativeSymbol?.toUpperCase() ||
-    destToken.toUpperCase() === "ETH";
+    destToken.toUpperCase() === destNativeSymbol?.toUpperCase();
 
   // For non-EVM chains (e.g. Solana), the native token has a chain-specific
   // address — fetch it from the Delora token list instead of using the EVM zero address.
@@ -173,11 +171,42 @@ export async function POST(req: NextRequest) {
   }
 
   // ── portfolio: connected wallet ──────────────────────────────────────────
-  if (/\b(my\s+)?(portfolio|wallet|balances?|holdings?|address)\b/i.test(trimmed)) {
+  if (/\b(my\s+)?(portfolio|wallet|balances?|holdings?)\b/i.test(trimmed)) {
     if (!senderAddress) {
       return NextResponse.json({ type: "text", text: "Connect your wallet first — I'll fetch your live balances across all supported chains." });
     }
     const data = await lookupAddress(senderAddress);
+
+    // Chain-specific filter: "show my portfolio on Base"
+    const chainMatch = trimmed.match(/\bon\s+([a-z][a-z\s]*?)(?:\s*[?]?\s*$)/i);
+    const requestedChain = chainMatch?.[1]?.trim().toLowerCase();
+    if (requestedChain) {
+      const requestedChainId = resolveChainId(requestedChain);
+      const filteredBalances = data.balances.filter(b =>
+        requestedChainId ? b.chainId === requestedChainId : b.chainName.toLowerCase().includes(requestedChain)
+      );
+      const filteredTokens = data.tokenBalances.filter(t =>
+        requestedChainId ? t.chainId === requestedChainId : t.chainName.toLowerCase().includes(requestedChain)
+      );
+
+      if (filteredBalances.length === 0 && filteredTokens.length === 0) {
+        const label = requestedChainId ? (CHAIN_NAMES[requestedChainId] ?? requestedChain) : requestedChain;
+        const activeChains = [
+          ...data.balances.map(b => b.chainName),
+          ...data.tokenBalances.map(t => t.chainName),
+        ];
+        const elsewhere = [...new Set(activeChains)].join(", ") || "no balances detected";
+        return NextResponse.json({
+          type: "text",
+          text: `No assets found on ${label} for this wallet. Active balances are on: ${elsewhere}.`,
+        });
+      }
+
+      const filteredData = { ...data, balances: filteredBalances, tokenBalances: filteredTokens };
+      const summary = await generateAddressSummary(filteredData);
+      return NextResponse.json({ type: "address", data: filteredData, summary });
+    }
+
     const summary = await generateAddressSummary(data);
     return NextResponse.json({ type: "address", data, summary });
   }
