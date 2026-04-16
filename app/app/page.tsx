@@ -537,35 +537,33 @@ export default function AppPage() {
             <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>GitHub</span>
           </a>
 
-          {/* Theme toggle + collapse in one row */}
-          <div style={{ display: "flex", gap: 2 }}>
-            <button
-              onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
-              title={`Switch to ${isDark ? "light" : "dark"} mode`}
-              style={{ flex: 1, height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 9, background: "none", border: "none", color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}
-            >
-              {isDark ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                  <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                </svg>
-              )}
-              <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>
-                {isDark ? "Light mode" : "Dark mode"}
-              </span>
-            </button>
-            <button
-              onClick={() => setSidebarExpanded(!sidebarExpanded)}
-              style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: T.textDim, cursor: "pointer" }}
-            >
-              <svg width="14" height="12" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <line x1="1" y1="1" x2="15" y2="1"/><line x1="1" y1="7" x2="15" y2="7"/><line x1="1" y1="13" x2="15" y2="13"/>
+          {/* Theme */}
+          <button
+            onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+            style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, background: "none", border: "none", color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}
+          >
+            {isDark ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
               </svg>
-            </button>
-          </div>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            )}
+            <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>Theme</span>
+          </button>
+
+          {/* Collapse */}
+          <button
+            onClick={() => setSidebarExpanded(!sidebarExpanded)}
+            style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, background: "none", border: "none", color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}
+          >
+            <svg width="14" height="12" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
+              <line x1="1" y1="1" x2="15" y2="1"/><line x1="1" y1="7" x2="15" y2="7"/><line x1="1" y1="13" x2="15" y2="13"/>
+            </svg>
+            <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>Collapse</span>
+          </button>
         </div>
       </aside>
 
@@ -690,6 +688,22 @@ export default function AppPage() {
                         {msg.result.text}
                       </p>
                     )}
+                    {/* Send feedback */}
+                    <div style={{ marginTop: 8 }}>
+                      <a
+                        href="https://github.com/Svector-anu/delora-copilot/issues/new"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ ...MONO, fontSize: "0.62rem", color: T.textFaint, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
+                        onMouseEnter={e => (e.currentTarget.style.color = T.textDim)}
+                        onMouseLeave={e => (e.currentTarget.style.color = T.textFaint)}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+                        </svg>
+                        Send feedback
+                      </a>
+                    </div>
                   </div>
                 )
               )}
@@ -703,11 +717,20 @@ export default function AppPage() {
           </div>
         ) : (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: isMobile ? "0 20px" : "0 28px", textAlign: "center" }}>
-            <h1 style={{ ...BEBAS, fontSize: "clamp(2rem, 4vw, 3.2rem)", color: T.textFaint, letterSpacing: "0.05em", margin: 0 }}>
-              WHAT DO YOU WANT TO DO?
-            </h1>
-            <p style={{ ...MONO, fontSize: "0.75rem", color: T.textFaint, marginTop: 10 }}>
-              Ask anything about cross-chain DeFi
+            {/* Skopos avatar mark */}
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "#F5B800", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+              <svg viewBox="0 0 32 32" width="22" height="22">
+                <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="#000" strokeWidth="2" strokeLinejoin="round"/>
+                <circle cx="16" cy="16" r="2.2" fill="#000"/>
+              </svg>
+            </div>
+            <p style={{ ...MONO, fontSize: isMobile ? "0.95rem" : "1.05rem", color: T.textMuted, lineHeight: 1.65, margin: 0, maxWidth: 440 }}>
+              Welcome to the Delora protocol. I&apos;m{" "}
+              <span style={{ color: "#F5B800", fontWeight: 600 }}>Skopos</span>
+              , your cross-chain DeFi copilot.
+            </p>
+            <p style={{ ...MONO, fontSize: "0.82rem", color: T.textDim, marginTop: 10, marginBottom: 0 }}>
+              What can I help you with today?
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 20, maxWidth: 520 }}>
               {EXAMPLE_PROMPTS.map(p => (
@@ -831,6 +854,9 @@ export default function AppPage() {
                 </div>
               </div>
             </form>
+            <p style={{ ...MONO, fontSize: "0.6rem", color: T.textFaint, textAlign: "center", marginTop: 10, lineHeight: 1.5 }}>
+              Skopos is AI and can make mistakes. Please double-check responses.
+            </p>
           </div>
         </div>
       </div>
