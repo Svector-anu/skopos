@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // ── config ────────────────────────────────────────────────────────────────────
 const CHARS = "AX70BZ91CY80xEFG2H3IJ4KL5MN6OP";
@@ -35,8 +35,14 @@ export function HeroTitle() {
   const particles = useRef<P[]>([]);
   const mouse     = useRef({ x: -9999, y: -9999 });
   const raf       = useRef(0);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
+    setIsMobile(window.innerWidth < 768);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) return;
     const wrap   = wrapRef.current;
     const canvas = canvasRef.current;
     if (!wrap || !canvas) return;
@@ -219,6 +225,26 @@ export function HeroTitle() {
       window.removeEventListener("mousemove", onMove);
     };
   }, []);
+
+  if (isMobile) {
+    return (
+      <div className="text-center leading-none select-none">
+        <h1
+          style={{
+            fontFamily: "var(--font-display), serif",
+            fontWeight: 700,
+            fontSize: "clamp(4.5rem, 22vw, 8rem)",
+            letterSpacing: "0.08em",
+            lineHeight: 1,
+            color: "#ffffff",
+            margin: 0,
+          }}
+        >
+          SKOPOS
+        </h1>
+      </div>
+    );
+  }
 
   return (
     <div

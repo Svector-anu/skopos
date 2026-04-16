@@ -377,7 +377,7 @@ export default function AppPage() {
       )}
 
       {/* Collapsible nav rail */}
-      <aside style={{
+      <aside className={`sidebar-rail${sidebarExpanded ? " sidebar-open" : ""}`} style={{
         width: isMobile ? (sidebarExpanded ? 240 : 0) : (sidebarExpanded ? 240 : 52),
         minWidth: isMobile ? (sidebarExpanded ? 240 : 0) : (sidebarExpanded ? 240 : 52),
         height: "100%", zIndex: 10, flexShrink: 0,

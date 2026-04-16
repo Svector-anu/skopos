@@ -28,6 +28,20 @@ body {
   padding: 0;
 }
 
+/* Sidebar: force hidden on mobile regardless of JS hydration state */
+@media (max-width: 599px) {
+  .sidebar-rail {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-right: none !important;
+  }
+  .sidebar-rail.sidebar-open {
+    width: 240px !important;
+    min-width: 240px !important;
+    border-right: 1px solid rgba(255,255,255,0.05) !important;
+  }
+}
+
 /* iPhone safe area — prevents content from hiding behind notch / home indicator */
 @supports (padding: env(safe-area-inset-bottom)) {
   body {
