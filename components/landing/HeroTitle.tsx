@@ -8,12 +8,12 @@ const PSIZE  = 11;
 const RADIUS = 120;
 
 const FG = {
-  step: 4, baseOp: 0.55, peakOp: 1.0,
+  step: 4, baseOp: 0.85, peakOp: 1.0,
   scatter: 28, ease: 0.12, floatX: 2.5, floatY: 1.5,
 } as const;
 
 const BG = {
-  step: 8, baseOp: 0.18, peakOp: 0.30,
+  step: 8, baseOp: 0.35, peakOp: 0.55,
   scatter: 6,  ease: 0.04, floatX: 1.0, floatY: 0.6,
 } as const;
 
@@ -153,11 +153,11 @@ export function HeroTitle() {
         ctx.letterSpacing = spacing;
         ctx.textAlign     = "center";
         ctx.textBaseline  = "middle";
-        ctx.strokeStyle   = "#EAC45A";
-        ctx.lineWidth     = 1;
-        ctx.globalAlpha   = 0.18;
-        ctx.shadowColor   = "#EAC45A";
-        ctx.shadowBlur    = 16;
+        ctx.strokeStyle   = "#F5B800";
+        ctx.lineWidth     = 1.5;
+        ctx.globalAlpha   = 0.35;
+        ctx.shadowColor   = "#F5B800";
+        ctx.shadowBlur    = 24;
         ctx.strokeText("SKOPOS", w / 2, h / 2);
         ctx.restore();
 
@@ -165,7 +165,7 @@ export function HeroTitle() {
 
         // Draw BG first, FG on top
         for (const drawBg of [true, false]) {
-          ctx.fillStyle    = "#EAC45A";
+          ctx.fillStyle    = "#F5B800";
           ctx.textAlign    = "center";
           ctx.textBaseline = "middle";
 
