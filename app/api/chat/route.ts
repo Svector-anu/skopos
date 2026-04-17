@@ -11,6 +11,8 @@ import {
   ParsedIntent,
 } from "@/lib/parseIntent";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
+import { scanToken } from "@/lib/dexscreener";
+import { getTopYields } from "@/lib/defillama";
 
 // ── in-memory rate limiter (sliding window, per IP) ──────────────────────────
 const RATE_WINDOW_MS = 60_000; // 1 minute
@@ -243,6 +245,34 @@ export async function POST(req: NextRequest) {
 
     const summary = await generateAddressSummary(data);
     return NextResponse.json({ type: "address", data, summary });
+  }
+
+  // ── token risk scanner ────────────────────────────────────────────────────
+  const riskMatch = trimmed.match(
+    /(?:scan|analyze|check|risk\s+of|is\s+(?:it\s+)?safe|rug(?:pull)?)\s+(?:token\s+)?(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})/i
+  ) ?? trimmed.match(
+    /(?:^|\s)(\$[a-z]{2,10}|0x[0-9a-f]{40})(?:\s|$)/i
+  );
+  if (riskMatch && /\b(scan|risk|safe|rug|analyze)\b/i.test(trimmed)) {
+    const query = riskMatch[1].replace(/^\$/, "");
+    const risk = await scanToken(query);
+    if (risk) return NextResponse.json({ type: "token_risk", risk });
+    return NextResponse.json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
+  }
+
+  // ── DeFi yield scanner ────────────────────────────────────────────────────
+  const yieldMatch = trimmed.match(
+    /\b(?:yield|earn|apy|apr|interest|highest|best|where.*put|where.*stake)\b.*\b([a-z]{2,10})\b/i
+  ) ?? trimmed.match(
+    /\b(?:find|show|get|what).*\b(?:yield|apy|apr|earn).*\b([a-z]{2,10})\b/i
+  );
+  if (yieldMatch && /\b(yield|apy|apr|earn|interest)\b/i.test(trimmed)) {
+    const symbol = yieldMatch[1].toUpperCase();
+    const pools = await getTopYields(symbol);
+    if (pools.length === 0) {
+      return NextResponse.json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
+    }
+    return NextResponse.json({ type: "yield_pools", symbol, pools });
   }
 
   // ── explorer: tx hash (0x + 64 hex chars) ───────────────────────────────

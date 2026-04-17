@@ -39,7 +39,27 @@ type ErrorResult     = { type: "error";     text: string };
 type RebalanceResult = { type: "rebalance"; mode: "preview"; legs: Array<QuoteResult | ErrorResult> };
 type TxResult        = { type: "tx";        tx: TxData;      summary: string };
 type AddressResult   = { type: "address";   data: AddressData; summary: string; ensName?: string };
-type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult | TxResult | AddressResult;
+
+type TokenRiskResult = {
+  type: "token_risk";
+  risk: {
+    symbol: string; name: string; priceUsd: string | null;
+    score: 1 | 2 | 3 | 4; label: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+    totalLiquidityUsd: number; volume24h: number;
+    marketCap: number | null; fdv: number | null;
+    priceChange24h: number | null; pairCount: number; dexCount: number;
+    flags: string[]; topPair: { url: string; dexId: string; chainId: string } | null;
+  };
+};
+
+type YieldPool = {
+  pool: string; chain: string; project: string; symbol: string;
+  tvlUsd: number; apy: number; apyBase: number | null; apyReward: number | null;
+  apyMean30d: number | null; rewardTokens: string[] | null;
+};
+type YieldPoolsResult = { type: "yield_pools"; symbol: string; pools: YieldPool[] };
+
+type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -776,6 +796,16 @@ export default function AppPage() {
                     {msg.result.type === "address" && (
                       <ErrorBoundary label="Address details failed to render.">
                         <AddressDisplay result={msg.result} onSwap={prompt => submit(prompt)} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "token_risk" && (
+                      <ErrorBoundary label="Risk scan failed to render.">
+                        <TokenRiskDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "yield_pools" && (
+                      <ErrorBoundary label="Yield data failed to render.">
+                        <YieldPoolsDisplay result={msg.result} onBridge={prompt => submit(prompt)} />
                       </ErrorBoundary>
                     )}
                     {(msg.result.type === "text" || msg.result.type === "error") && (
@@ -1554,6 +1584,149 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
         >
           view on etherscan →
         </a>
+      </div>
+    </div>
+  );
+}
+
+// ─── TokenRiskDisplay ─────────────────────────────────────────────────────────
+
+function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { risk } = result;
+
+  const SCORE_COLOR = { 1: "#22c55e", 2: "#f59e0b", 3: "#f97316", 4: "#ef4444" } as const;
+  const color = SCORE_COLOR[risk.score];
+
+  const fmt = (n: number) =>
+    n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M`
+    : n >= 1_000   ? `$${(n / 1_000).toFixed(1)}K`
+    : `$${n.toFixed(2)}`;
+
+  const FLAG_LABELS: Record<string, string> = {
+    NO_LIQUIDITY:   "No meaningful liquidity",
+    VOLUME_SPIKE:   "Abnormal volume spike",
+    SINGLE_POOL:    "Only 1 liquidity pool",
+    NEW_TOKEN:      "Token < 7 days old",
+    HIGH_VOLATILITY:"Price moved >50% in 24h",
+    HEAVY_SELLING:  "Heavy sell pressure",
+  };
+
+  return (
+    <div style={{ border: `1px solid ${color}30`, borderRadius: 14, overflow: "hidden", maxWidth: 420 }}>
+      <div style={{ padding: "14px 18px 12px", borderBottom: `1px solid ${color}20`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <span style={{ ...MONO, fontSize: "1rem", fontWeight: 700, color: "#fff" }}>{risk.symbol}</span>
+          <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.35)", marginLeft: 8 }}>{risk.name}</span>
+        </div>
+        <span style={{ ...MONO, fontSize: "0.72rem", fontWeight: 700, color, background: `${color}18`, border: `1px solid ${color}40`, borderRadius: 6, padding: "3px 10px" }}>
+          {risk.label} RISK
+        </span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, background: "rgba(255,255,255,0.04)" }}>
+        {[
+          ["Price",       risk.priceUsd ? `$${Number(risk.priceUsd).toPrecision(4)}` : "—"],
+          ["24h Change",  risk.priceChange24h != null ? `${risk.priceChange24h > 0 ? "+" : ""}${risk.priceChange24h.toFixed(2)}%` : "—"],
+          ["Liquidity",   fmt(risk.totalLiquidityUsd)],
+          ["Vol 24h",     fmt(risk.volume24h)],
+          ["Market Cap",  risk.marketCap ? fmt(risk.marketCap) : "—"],
+          ["Pools",       `${risk.pairCount} on ${risk.dexCount} DEX${risk.dexCount > 1 ? "es" : ""}`],
+        ].map(([label, val]) => (
+          <div key={label} style={{ padding: "10px 16px", background: "rgba(0,0,0,0.25)" }}>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.25)", margin: "0 0 3px", letterSpacing: "0.06em" }}>{label!.toUpperCase()}</p>
+            <p style={{ ...MONO, fontSize: "0.8rem", color: "#fff", margin: 0 }}>{val}</p>
+          </div>
+        ))}
+      </div>
+
+      {risk.flags.length > 0 && (
+        <div style={{ padding: "12px 18px", borderTop: `1px solid ${color}20` }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.25)", marginBottom: 8, letterSpacing: "0.06em" }}>RISK FLAGS</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {risk.flags.map(f => (
+              <div key={f} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <span style={{ color, fontSize: "0.6rem" }}>▲</span>
+                <span style={{ ...MONO, fontSize: "0.7rem", color: "rgba(255,255,255,0.55)" }}>{FLAG_LABELS[f] ?? f}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {risk.topPair?.url && (
+        <div style={{ padding: "10px 18px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+          <a href={risk.topPair.url} target="_blank" rel="noopener noreferrer"
+            style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.3)", textDecoration: "none" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")}
+            onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.3)")}
+          >
+            view on dexscreener · {risk.topPair.dexId} · {risk.topPair.chainId} ↗
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── YieldPoolsDisplay ────────────────────────────────────────────────────────
+
+function YieldPoolsDisplay({ result, onBridge }: { result: YieldPoolsResult; onBridge?: (prompt: string) => void }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { symbol, pools } = result;
+
+  const PROJECT_LABELS: Record<string, string> = {
+    "aave-v3": "Aave v3", "aave-v2": "Aave v2",
+    "morpho-blue": "Morpho", "morpho": "Morpho",
+    "compound-v3": "Compound v3", "compound-v2": "Compound v2",
+    "moonwell": "Moonwell", "uniswap-v3": "Uniswap v3",
+    "spark": "Spark", "fluid": "Fluid",
+    "yearn-finance": "Yearn", "convex-finance": "Convex",
+    "curve-dex": "Curve",
+  };
+
+  const fmtTvl = (n: number) =>
+    n >= 1_000_000_000 ? `$${(n / 1_000_000_000).toFixed(1)}B`
+    : n >= 1_000_000   ? `$${(n / 1_000_000).toFixed(0)}M`
+    : `$${(n / 1_000).toFixed(0)}K`;
+
+  return (
+    <div style={{ border: "1px solid rgba(245,184,0,0.2)", borderRadius: 14, overflow: "hidden", maxWidth: 480 }}>
+      <div style={{ padding: "13px 18px 11px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "rgba(255,255,255,0.25)" }}>YIELD SCANNER</span>
+        <span style={{ ...MONO, fontSize: "0.72rem", color: "#F5B800", fontWeight: 700 }}>{symbol}</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.2)", marginLeft: "auto" }}>via DeFiLlama</span>
+      </div>
+
+      <div>
+        {pools.map((pool, i) => (
+          <div key={pool.pool} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < pools.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+            <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.2)", width: 14, flexShrink: 0 }}>{i + 1}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ ...MONO, fontSize: "0.75rem", color: "#fff", margin: 0 }}>{PROJECT_LABELS[pool.project] ?? pool.project}</p>
+              <p style={{ ...MONO, fontSize: "0.62rem", color: "rgba(255,255,255,0.3)", margin: "2px 0 0" }}>
+                {pool.chain}
+                {pool.apyReward != null && pool.apyReward > 0 && (
+                  <span style={{ color: "#F5B800", marginLeft: 6 }}>+{pool.apyReward.toFixed(2)}% rewards</span>
+                )}
+              </p>
+            </div>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <p style={{ ...MONO, fontSize: "0.85rem", color: "#22c55e", fontWeight: 700, margin: 0 }}>{pool.apy.toFixed(2)}%</p>
+              <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.2)", margin: "2px 0 0" }}>{fmtTvl(pool.tvlUsd)} TVL</p>
+            </div>
+            {onBridge && (
+              <button
+                onClick={() => onBridge(`bridge my ${symbol} to ${pool.chain.toLowerCase()} for ${PROJECT_LABELS[pool.project] ?? pool.project} yield`)}
+                style={{ ...MONO, fontSize: "0.6rem", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(245,184,0,0.25)", background: "rgba(245,184,0,0.05)", color: "rgba(245,184,0,0.6)", cursor: "pointer", flexShrink: 0 }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.5)"; e.currentTarget.style.color = "#F5B800"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
+              >
+                bridge →
+              </button>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
