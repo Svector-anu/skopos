@@ -447,6 +447,10 @@ const BRIDGE_DESTS: Record<string, string[]> = {
 export interface SuggestionPrompt { label: string; command: string }
 
 export function buildSuggestions(input: string): SuggestionPrompt[] | null {
+  // Don't generate bridge suggestions for ENS lookups — "vitalik.eth" splits
+  // on "." and "eth" would match as the ETH token, causing wrong suggestions.
+  if (/[a-z0-9]\.eth\b/i.test(input)) return null;
+
   const lower = input.toLowerCase();
   const words = lower.split(/\W+/);
 

@@ -210,9 +210,11 @@ export async function POST(req: NextRequest) {
   const trimmed = message.trim();
 
   // ── explorer: ENS name (*.eth) — matches bare "vitalik.eth" or in a sentence ──
-  const ensMatch = trimmed.match(/\b([a-z0-9][a-z0-9-_.]*\.eth)\b/i);
+  // Character class must NOT include "." — otherwise the greedy * consumes ".eth"
+  // before the literal \.eth suffix can match.
+  const ensMatch = trimmed.match(/\b([a-z0-9][a-z0-9-]*)\.eth\b/i);
   if (ensMatch) {
-    const ensName = ensMatch[1].toLowerCase();
+    const ensName = (ensMatch[1] + ".eth").toLowerCase();
     const resolved = await resolveENS(ensName);
     if (!resolved) {
       return NextResponse.json({ type: "error", text: `Could not resolve ${ensName}. Make sure the ENS name is registered.` });
