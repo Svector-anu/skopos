@@ -4,23 +4,22 @@ import { PrivyProvider } from "@privy-io/react-auth";
 import { WagmiProvider } from "@privy-io/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { wagmiConfig } from "@/lib/wagmi";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import {
   ConnectionProvider as SolanaConnectionProvider,
   WalletProvider as SolanaWalletProvider,
 } from "@solana/wallet-adapter-react";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 
 const SOLANA_RPC =
   process.env.NEXT_PUBLIC_SOLANA_RPC ?? "https://api.mainnet-beta.solana.com";
 
 export function Web3Provider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
-  const solanaWallets = useMemo(() => [new PhantomWalletAdapter()], []);
 
   return (
     <SolanaConnectionProvider endpoint={SOLANA_RPC}>
-      <SolanaWalletProvider wallets={solanaWallets} autoConnect>
+      {/* Pass empty wallets array — Phantom self-registers via Wallet Standard */}
+      <SolanaWalletProvider wallets={[]} autoConnect>
         <PrivyProvider
           appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? ""}
           clientId={process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID}

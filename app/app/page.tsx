@@ -1316,10 +1316,13 @@ function SolanaExecuteButton({ result, onTxSubmitted }: {
           onClick={async () => {
             try {
               if (!wallet) {
+                // Phantom self-registers as a Standard Wallet — find it by name.
+                // autoConnect: true on WalletProvider will call connect() once selected.
                 const phantom = wallets.find(w => w.adapter.name === "Phantom");
                 if (phantom) select(phantom.adapter.name as WalletName<"Phantom">);
+              } else {
+                await connect();
               }
-              await connect();
             } catch (e) {
               setErr(e instanceof Error ? e.message : "Failed to connect wallet");
             }
