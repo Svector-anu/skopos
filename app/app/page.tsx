@@ -450,7 +450,6 @@ export default function AppPage() {
     textFaint:   "rgba(255,255,255,0.15)",
     surface:     "rgba(255,255,255,0.04)",
     msgBubble:   "rgba(255,255,255,0.05)",
-    gridLine:    "rgba(255,255,255,0.025)",
     inputBg:     "rgba(255,255,255,0.02)",
     fadeMask:    "linear-gradient(to right, transparent, rgba(0,0,0,0.85))",
   } : {
@@ -464,7 +463,6 @@ export default function AppPage() {
     textFaint:   "rgba(0,0,0,0.22)",
     surface:     "rgba(0,0,0,0.04)",
     msgBubble:   "rgba(0,0,0,0.05)",
-    gridLine:    "rgba(0,0,0,0.025)",
     inputBg:     "rgba(0,0,0,0.03)",
     fadeMask:    "linear-gradient(to right, transparent, rgba(240,240,236,0.95))",
   };
@@ -474,13 +472,6 @@ export default function AppPage() {
 
   return (
     <main style={{ position: "relative", height: "100vh", width: "100vw", background: T.bg, display: "flex", overflow: "hidden" }}>
-
-      {/* Subtle grid background */}
-      <div style={{
-        position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0,
-        backgroundImage: `linear-gradient(${T.gridLine} 1px, transparent 1px), linear-gradient(90deg, ${T.gridLine} 1px, transparent 1px)`,
-        backgroundSize: "48px 48px",
-      }} />
 
       {/* Mobile sidebar overlay backdrop */}
       {isMobile && sidebarExpanded && (
