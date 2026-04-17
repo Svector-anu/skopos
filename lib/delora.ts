@@ -32,8 +32,9 @@ export interface DeloraChain {
   blockExplorerUrls?: string;
 }
 
-// Module-level cache — populated once per process lifetime
+// Module-level caches — populated once per process lifetime
 let chainsCache: DeloraChain[] | null = null;
+let tokensCache: Record<string, DeloraToken[]> | null = null;
 
 export async function getChains(): Promise<DeloraChain[]> {
   if (chainsCache) return chainsCache;
@@ -97,16 +98,14 @@ export async function getToken(
   chainId: number,
   symbol: string
 ): Promise<DeloraToken | null> {
-  const res = await fetchWithTimeout(`${BASE}/v1/tokens`);
-  if (!res.ok) return null;
-  const data: Record<string, DeloraToken[]> = await res.json();
-  const chainTokens = data[String(chainId)];
+  if (!tokensCache) {
+    const res = await fetchWithTimeout(`${BASE}/v1/tokens`);
+    if (!res.ok) return null;
+    tokensCache = await res.json() as Record<string, DeloraToken[]>;
+  }
+  const chainTokens = tokensCache[String(chainId)];
   if (!Array.isArray(chainTokens)) return null;
-  return (
-    chainTokens.find(
-      (t) => t.symbol.toUpperCase() === symbol.toUpperCase()
-    ) ?? null
-  );
+  return chainTokens.find(t => t.symbol.toUpperCase() === symbol.toUpperCase()) ?? null;
 }
 
 export async function getQuote(params: {

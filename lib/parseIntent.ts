@@ -105,6 +105,7 @@ WHAT SKOPOS CAN DO RIGHT NOW (these all work — tell users exactly how to trigg
 - Bridge tokens across 25+ chains → "bridge 0.1 ETH from ethereum to base"
 - Swap tokens on any supported chain → "swap 100 USDC to ETH on arbitrum"
 - DeFi yield scanner → "find highest yield for USDC" or "best USDC APY" or "where can I earn on ETH" — shows live APY from Aave, Morpho, Compound, Moonwell, Uniswap via DeFiLlama
+- Prediction markets → "show polymarket markets" or "odds on Trump" or "what are the chances of X" — shows live market odds via Polymarket
 - Token risk scanner → "scan PEPE risk" or "analyze 0x... token" — shows liquidity, volume, market cap, risk score from DexScreener
 - Wallet portfolio → "show my portfolio" — live balances across all chains
 - Look up any transaction hash or wallet address — just paste it
@@ -112,11 +113,11 @@ WHAT SKOPOS CAN DO RIGHT NOW (these all work — tell users exactly how to trigg
 - Fund wallet → connect wallet → expand sidebar → "Fund Wallet"
 - Solana: bridge SOL cross-chain or swap Solana tokens — connect Phantom wallet
 
-COMING SOON (do NOT pretend these work today):
+NOT SUPPORTED — say so directly, no workarounds:
+- Whale tracking / top wallets / what others are bridging — not supported. Say: "Whale tracking isn't available yet. I can help you bridge, swap, or check your own portfolio."
 - Agent mode / DCA: recurring strategies. Not live yet.
 - Limit orders: price-triggered swaps. Not live yet.
 - Off-ramp to card: USDC → bank. Not live yet.
-- Whale signals / Polymarket. Not live yet.
 
 CRITICAL RULES:
 
@@ -128,10 +129,16 @@ CRITICAL RULES:
 - If asked about Jupiter, Uniswap, 1inch, etc. — explain Skopos uses Delora which aggregates across bridges and DEXs including those, and the user can just describe what they want in plain English.
 - If the user asks for balances → say "type 'show my portfolio' and I'll fetch live balances".
 - If the user asks how to get crypto → connect wallet → sidebar → "Fund Wallet".
-- If the request is unclear → ask one clarifying question, don't guess.
+
+- When the user's message mentions a token, chain, or action (bridge/swap/route/yield/risk) but is too vague to execute:
+  Keep your reply to 1 sentence, then end with exactly 2–3 copy-pasteable example commands on separate lines, each starting with "•". Use real amounts (1 ETH, 100 USDC, 1 SOL, 0.01 WBTC). Example format:
+  "Here are some commands to try:
+  • bridge 1 SOL from solana to base
+  • bridge 1 SOL from solana to ethereum
+  • swap 100 USDC to SOL on solana"
 
 Keep responses:
-- under 3 sentences
+- under 3 sentences before the bullet list
 - plain text only
 - clear and honest`;
 
@@ -170,6 +177,15 @@ async function groqParseIntent(input: string): Promise<ParsedIntent | null> {
       lower.includes(originChain.toLowerCase()) ||
       lower.includes(destinationChain.toLowerCase());
     if (!chainMentioned) return null;
+
+    // When Groq sets origin === destination, it likely hallucinated the source by copying
+    // the destination ("bridge 100 USDC to ethereum" → origin guessed as "ethereum").
+    // Only accept same-chain results when the user explicitly provided a "from X" or "on X" phrase.
+    if (originChain.toLowerCase() === destinationChain.toLowerCase()) {
+      const hasFromPhrase = /\bfrom\s+[a-z]/i.test(input);
+      const hasOnPhrase   = /\bon\s+[a-z]/i.test(input);
+      if (!hasFromPhrase && !hasOnPhrase) return null;
+    }
 
     return { originChain, destinationChain, token, amount, destinationToken: destinationToken ?? token };
   } catch {
@@ -213,7 +229,9 @@ export function looksLikeRebalance(input: string): boolean {
     lower.includes("rebalance") ||
     lower.includes("consolidate") ||
     lower.includes("move everything") ||
-    lower.includes("move all my")
+    lower.includes("move all my") ||
+    /\bsplit\b.{1,60}\bacross\b/i.test(input) ||
+    /\bsplit\b.{1,60}\band\b/i.test(input)
   ) return true;
   // Multiple "from" mentions + at least 2 amounts = multi-leg bridge
   const fromCount  = (lower.match(/\bfrom\b/g) || []).length;
@@ -378,6 +396,156 @@ export function streamSuggestion(
       controller.close();
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Approach B: keyword-based suggestion builder
+// Runs synchronously before the Groq fallback to return clickable prompts
+// when the user's message has recognisable signal (token / chain / action)
+// but not enough structure for parseIntent to extract a full intent.
+// ---------------------------------------------------------------------------
+
+const SUGGESTION_TOKENS: Record<string, string> = {
+  eth: "ETH", ether: "ETH",
+  btc: "WBTC", bitcoin: "WBTC", wbtc: "WBTC",
+  sol: "SOL",
+  usdc: "USDC", usdt: "USDT", dai: "DAI",
+  weth: "WETH", avax: "AVAX", bnb: "BNB",
+  matic: "POL", pol: "POL",
+  link: "LINK", uni: "UNI", aave: "AAVE",
+  gho: "GHO", frax: "FRAX",
+};
+
+const CHAIN_ALIASES: Record<string, string> = {
+  ethereum: "ethereum", mainnet: "ethereum",
+  base: "base",
+  arbitrum: "arbitrum", arb: "arbitrum",
+  optimism: "optimism", op: "optimism",
+  polygon: "polygon", matic: "polygon", poly: "polygon",
+  solana: "solana",
+  avalanche: "avalanche", avax: "avalanche",
+  bsc: "bsc", binance: "bsc", bnb: "bsc",
+};
+
+function suggestAmount(token: string): string {
+  if (["WBTC", "BTC"].includes(token)) return "0.01";
+  if (["USDC", "USDT", "DAI", "GHO", "FRAX"].includes(token)) return "100";
+  return "1";
+}
+
+const BRIDGE_DESTS: Record<string, string[]> = {
+  solana:    ["base", "ethereum", "arbitrum"],
+  ethereum:  ["base", "arbitrum", "bsc", "optimism"],
+  base:      ["ethereum", "arbitrum", "bsc", "optimism"],
+  arbitrum:  ["base", "ethereum", "bsc", "optimism"],
+  optimism:  ["base", "ethereum", "arbitrum"],
+  polygon:   ["base", "ethereum", "arbitrum"],
+  avalanche: ["base", "ethereum", "arbitrum"],
+  bsc:       ["ethereum", "base", "arbitrum"],
+};
+
+export interface SuggestionPrompt { label: string; command: string }
+
+export function buildSuggestions(input: string): SuggestionPrompt[] | null {
+  const lower = input.toLowerCase();
+  const words = lower.split(/\W+/);
+
+  const isBridge = /\b(bridge|route|routes?|send|transfer|move|cross.?chain|best\s+way|get\s+to)\b/i.test(input);
+  const isSwap   = /\b(swap|exchange|convert|trade)\b/i.test(input);
+  const isYield  = /\b(yield|apy|apr|earn|interest|return)\b/i.test(input);
+  const isRisk   = /\b(scan|risk|safe|rug|analyze)\b/i.test(input);
+
+  // Extract first recognisable token
+  let token: string | null = null;
+  for (const w of words) {
+    if (SUGGESTION_TOKENS[w]) { token = SUGGESTION_TOKENS[w]; break; }
+  }
+
+  // Extract first recognisable chain
+  let chain: string | null = null;
+  for (const w of words) {
+    if (CHAIN_ALIASES[w]) { chain = CHAIN_ALIASES[w]; break; }
+  }
+
+  // Infer token from chain when no explicit token found
+  if (!token && chain) {
+    const defaults: Record<string, string> = { solana: "SOL", avalanche: "AVAX", bsc: "BNB" };
+    token = defaults[chain] ?? "ETH";
+  }
+
+  // Need at least one recognisable signal
+  if (!isBridge && !isSwap && !isYield && !isRisk && !token && !chain) return null;
+
+  // ── Yield redirect ────────────────────────────────────────────────────────
+  if (isYield) {
+    const YIELD_TOKENS = new Set(["USDC", "ETH", "WBTC", "DAI", "USDT", "WETH", "GHO", "FRAX"]);
+    const yieldToken = token && YIELD_TOKENS.has(token) ? token : null;
+    const seen = new Set<string>();
+    const out: SuggestionPrompt[] = [];
+    for (const t of [yieldToken, "USDC", "ETH"].filter(Boolean) as string[]) {
+      const cmd = `find highest yield for ${t}`;
+      if (!seen.has(cmd)) { seen.add(cmd); out.push({ label: `Best ${t} yield`, command: cmd }); }
+    }
+    return out.slice(0, 3);
+  }
+
+  // ── Risk scanner redirect ─────────────────────────────────────────────────
+  if (isRisk && token) {
+    return [{ label: `Scan ${token} risk`, command: `scan ${token} risk` }];
+  }
+
+  // ── Swap suggestions ──────────────────────────────────────────────────────
+  if (isSwap) {
+    const c = chain ?? "ethereum";
+    const t = token ?? "ETH";
+    const counter = t === "USDC" ? "ETH" : "USDC";
+    return [
+      { label: `Swap ${t} → ${counter} on ${c}`, command: `swap ${suggestAmount(t)} ${t} to ${counter} on ${c}` },
+      { label: `Swap ${counter} → ${t} on ${c}`, command: `swap ${suggestAmount(counter)} ${counter} to ${t} on ${c}` },
+    ];
+  }
+
+  // ── Bridge / route suggestions ────────────────────────────────────────────
+
+  // Detect explicit direction: "to [chain]" means destination; "from [chain]" means source.
+  const toMatch   = lower.match(/\bto\s+([a-z]+)\b/);
+  const fromMatch = lower.match(/\bfrom\s+([a-z]+)\b/);
+  const destChain = toMatch   ? CHAIN_ALIASES[toMatch[1]]   ?? null : null;
+  const srcChain  = fromMatch ? CHAIN_ALIASES[fromMatch[1]] ?? null : null;
+
+  // When the destination chain's native token was used to name the chain
+  // (e.g. "bridge to bnb" → BNB is BSC's native, doesn't exist on source chains),
+  // use USDC instead so the suggestions are actually executable.
+  const CHAIN_NATIVE: Record<string, string> = {
+    bsc: "BNB", avalanche: "AVAX", polygon: "POL", solana: "SOL",
+  };
+  let bridgeToken = token ?? "ETH";
+  if (destChain && CHAIN_NATIVE[destChain] === bridgeToken) bridgeToken = "USDC";
+  const amt = suggestAmount(bridgeToken);
+
+  // If the user only specified a destination ("bridge 100 USDC to ethereum"),
+  // suggest several source chains rather than treating the destination as source.
+  if (destChain && !srcChain) {
+    const sources = Object.entries(BRIDGE_DESTS)
+      .filter(([s, dests]) => dests.includes(destChain) && s !== destChain)
+      .map(([s]) => s)
+      .slice(0, 3);
+    if (sources.length > 0) {
+      return sources.map(src => ({
+        label:   `${bridgeToken}: ${src} → ${destChain}`,
+        command: `bridge ${amt} ${bridgeToken} from ${src} to ${destChain}`,
+      }));
+    }
+  }
+
+  const src   = srcChain ?? chain ?? (bridgeToken === "SOL" ? "solana" : "ethereum");
+  const dests = BRIDGE_DESTS[src] ?? ["base", "ethereum", "arbitrum"];
+  return dests
+    .filter(dest => dest !== src)
+    .map(dest => ({
+      label:   `${bridgeToken}: ${src} → ${dest}`,
+      command: `bridge ${amt} ${bridgeToken} from ${src} to ${dest}`,
+    }));
 }
 
 export async function getSuggestion(

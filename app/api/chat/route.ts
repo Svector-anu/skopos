@@ -8,11 +8,13 @@ import {
   streamSuggestion,
   generateTxSummary,
   generateAddressSummary,
+  buildSuggestions,
   ParsedIntent,
 } from "@/lib/parseIntent";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken } from "@/lib/dexscreener";
 import { getTopYields } from "@/lib/defillama";
+import { getTopMarkets } from "@/lib/polymarket";
 
 // ── in-memory rate limiter (sliding window, per IP) ──────────────────────────
 const RATE_WINDOW_MS = 60_000; // 1 minute
@@ -56,6 +58,19 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   if (!originChainId || !destChainId) {
     const unknown = !originChainId ? intent.originChain : intent.destinationChain;
     return { ok: false, text: `Unknown chain: "${unknown}". Supported: ethereum, base, arbitrum, optimism, polygon, avalanche, bsc, and more.` };
+  }
+
+  // Guard: same-chain bridge with the same token is a no-op — Delora will 500.
+  // Catches cases where the LLM filled in originChain = destinationChain when only
+  // the destination was mentioned (e.g. "bridge 100 USDC to ethereum").
+  if (
+    originChainId === destChainId &&
+    intent.token.toUpperCase() === intent.destinationToken.toUpperCase()
+  ) {
+    return {
+      ok: false,
+      text: `Specify your source chain — e.g. "bridge 100 ${intent.token} from base to ${intent.destinationChain}". No bridge is needed if you're already on ${intent.destinationChain}.`,
+    };
   }
 
   // Fetch chain metadata from Delora — gives us native token address, symbol, decimals
@@ -146,7 +161,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
       text: noAdapters
         ? isSolana
           ? `No route found for ${intent.amount} ${intent.token} on Solana. Solana cross-chain routes require Mayan bridge — try a larger amount (≥0.1 SOL) or check back as liquidity improves.`
-          : `No route found for ${intent.amount} ${intent.token} — amount may be too small. Try at least 0.001 ETH or $1 worth.`
+          : `No route found for ${intent.amount} ${intent.token} — try a smaller amount. Minimum is roughly 0.001 ETH or $1 worth.`
         : `Could not get a quote: ${msg}`,
     };
   }
@@ -247,37 +262,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "address", data, summary });
   }
 
-  // ── token risk scanner ────────────────────────────────────────────────────
-  const riskMatch = trimmed.match(
-    /(?:scan|analyze|check|risk\s+of|is\s+(?:it\s+)?safe|rug(?:pull)?)\s+(?:token\s+)?(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})/i
-  ) ?? trimmed.match(
-    /(?:^|\s)(\$[a-z]{2,10}|0x[0-9a-f]{40})(?:\s|$)/i
-  );
-  if (riskMatch && /\b(scan|risk|safe|rug|analyze)\b/i.test(trimmed)) {
-    const query = riskMatch[1].replace(/^\$/, "");
-    const risk = await scanToken(query);
-    if (risk) return NextResponse.json({ type: "token_risk", risk });
-    return NextResponse.json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
-  }
-
-  // ── DeFi yield scanner ────────────────────────────────────────────────────
-  // Matches: "best yield for USDC", "highest APY USDC", "where earn USDC",
-  //          "best USDC rates", "USDC yield", "find yield ETH", "earn on DAI"
-  const YIELD_TOKENS = ["USDC", "ETH", "WBTC", "DAI", "USDT", "WETH", "CBBTC", "GHO", "LUSD", "FRAX", "CRVUSD"];
-  const yieldKeyword = /\b(yield|apy|apr|earn|interest|rate[s]?|return[s]?)\b/i.test(trimmed);
-  const yieldTrigger = /\b(best|highest|top|find|show|where|compare|scan|check)\b/i.test(trimmed);
-  const tokenInQuery = YIELD_TOKENS.find(t => new RegExp(`\\b${t}\\b`, "i").test(trimmed));
-  const yieldSymbolMatch = trimmed.match(/\b(USDC|USDT|ETH|WETH|WBTC|DAI|GHO|FRAX|LUSD|CRVUSD|CBBTC)\b/i);
-
-  if ((yieldKeyword || yieldTrigger) && (tokenInQuery || yieldSymbolMatch) && yieldKeyword) {
-    const symbol = (tokenInQuery ?? yieldSymbolMatch![1]).toUpperCase();
-    const pools = await getTopYields(symbol);
-    if (pools.length === 0) {
-      return NextResponse.json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
-    }
-    return NextResponse.json({ type: "yield_pools", symbol, pools });
-  }
-
   // ── explorer: tx hash (0x + 64 hex chars) ───────────────────────────────
   if (/^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
     const tx = await lookupTx(trimmed);
@@ -295,23 +279,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "address", data, summary });
   }
 
-  // ── single-leg intent ────────────────────────────────────────────────────
-  const intent = await parseIntent(message);
-
-  if (intent) {
-    const result = await resolveLeg(intent, senderAddress, slippage);
-    if (!result.ok) return NextResponse.json({ type: "error", text: result.text });
-    const { ok: _ok, ...rest } = result;
-    return NextResponse.json({ type: "quote", mode: "preview", quotedAt: Date.now(), ...rest });
-  }
-
-  // ── multi-leg rebalance ──────────────────────────────────────────────────
+  // ── multi-leg rebalance (checked before single-leg so "split X across Y and Z" isn't captured as a single bridge) ──
   if (looksLikeRebalance(message)) {
     const legs = await parseRebalanceIntent(message);
     if (legs && legs.length >= 2) {
+      // Validate that legs are actually cross-chain — same-chain legs indicate the LLM couldn't infer origin
+      const samechainLegs = legs.filter(l => resolveChainId(l.originChain) === resolveChainId(l.destinationChain));
+      if (samechainLegs.length > 0) {
+        return NextResponse.json({ type: "error", text: `Please specify the source chain. For example: "send 0.5 ETH from ethereum to base and 0.5 ETH from ethereum to arbitrum"` });
+      }
+
       const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, slippage)));
 
-      // Rule 4: fail fast — if any leg errored, surface the first failure
       const firstErr = results.find((r): r is LegErr => !r.ok);
       if (firstErr) {
         return NextResponse.json({ type: "error", text: `Rebalance aborted: ${firstErr.text}` });
@@ -328,6 +307,74 @@ export async function POST(req: NextRequest) {
         }),
       });
     }
+  }
+
+  // ── single-leg intent (runs before scanners so "bridge X for yield" parses as bridge) ──
+  const intent = await parseIntent(message);
+
+  if (intent) {
+    const result = await resolveLeg(intent, senderAddress, slippage);
+    if (!result.ok) return NextResponse.json({ type: "error", text: result.text });
+    const { ok: _ok, ...rest } = result;
+    return NextResponse.json({ type: "quote", mode: "preview", quotedAt: Date.now(), ...rest });
+  }
+
+  // ── token risk scanner ────────────────────────────────────────────────────
+  const riskMatch = trimmed.match(
+    /(?:scan|analyze|check|risk\s+of|is\s+(?:it\s+)?safe|rug(?:pull)?)\s+(?:token\s+)?(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})/i
+  ) ?? trimmed.match(
+    /(?:^|\s)(\$[a-z]{2,10}|0x[0-9a-f]{40})(?:\s|$)/i
+  );
+  if (riskMatch && /\b(scan|risk|safe|rug|analyze)\b/i.test(trimmed)) {
+    const query = riskMatch[1].replace(/^\$/, "");
+    const risk = await scanToken(query);
+    if (risk) return NextResponse.json({ type: "token_risk", risk });
+    return NextResponse.json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
+  }
+
+  // ── DeFi yield scanner ────────────────────────────────────────────────────
+  // Intentionally runs after parseIntent so "bridge X for yield" resolves as bridge.
+  const YIELD_TOKENS = ["USDC", "ETH", "WBTC", "DAI", "USDT", "WETH", "CBBTC", "GHO", "LUSD", "FRAX", "CRVUSD"];
+  const yieldKeyword = /\b(yield|apy|apr|earn|interest|rate[s]?|return[s]?)\b/i.test(trimmed);
+  const tokenInQuery = YIELD_TOKENS.find(t => new RegExp(`\\b${t}\\b`, "i").test(trimmed));
+  const yieldSymbolMatch = trimmed.match(/\b(USDC|USDT|ETH|WETH|WBTC|DAI|GHO|FRAX|LUSD|CRVUSD|CBBTC)\b/i);
+
+  if (yieldKeyword && (tokenInQuery ?? yieldSymbolMatch)) {
+    const symbol = (tokenInQuery ?? yieldSymbolMatch![1]).toUpperCase();
+    const pools = await getTopYields(symbol);
+    if (pools.length === 0) {
+      return NextResponse.json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
+    }
+    return NextResponse.json({ type: "yield_pools", symbol, pools });
+  }
+
+  // ── Polymarket prediction markets ────────────────────────────────────────
+  const polyKeyword = /\b(polymarket|prediction\s+market|odds|betting\s+odds|market\s+odds|chances?)\b/i.test(trimmed);
+  if (polyKeyword) {
+    // Only extract a topic when there's a clear subject.
+    // Generic queries ("show polymarket markets", "top prediction markets") get no filter → top by volume24hr.
+    const topicMatch = trimmed.match(
+      /\b(?:odds\s+(?:on|for|of)|chances?\s+(?:of|for|that)|polymarket\s+(?:on|for)|market\s+(?:for|on))\s+([a-z0-9][a-z0-9 ]{2,39}?)(?:\s+(?:win|winning|happen|pass|lose|hit))?$/i
+    );
+    // Fallback: extract known crypto tickers for price-prediction queries ("odds ETH hits $5k")
+    const cryptoMatch = trimmed.match(
+      /\b(bitcoin|btc|ethereum|eth|solana|sol|bnb|xrp|avax|matic|dogecoin|doge|cardano|ada|chainlink|link)\b/i
+    );
+    const topic = topicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
+    const markets = await getTopMarkets(topic);
+    if (markets.length === 0) {
+      return NextResponse.json({ type: "error", text: `No active Polymarket markets found${topic ? ` for "${topic}"` : ""}. Try a broader topic like "odds on Bitcoin" or "show polymarket markets".` });
+    }
+    return NextResponse.json({ type: "polymarket", topic: topic ?? null, markets });
+  }
+
+  // ── keyword-aware suggestions (synchronous, before LLM fallback) ─────────
+  // When the message has a recognisable token/chain/action but not enough
+  // structure for parseIntent, return clickable prompt chips instead of
+  // generic text so the user can immediately click to try something real.
+  const suggestions = buildSuggestions(trimmed);
+  if (suggestions && suggestions.length > 0) {
+    return NextResponse.json({ type: "suggestions", prompts: suggestions });
   }
 
   // ── general chat — stream tokens back as plain text ─────────────────────

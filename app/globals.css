@@ -65,25 +65,49 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Light mode surface tokens (consumed by DrawerSection/DrawerAction) ──── */
+/* ── Theme tokens ──────────────────────────────────────────────────────────── */
 :root {
   color-scheme: dark;
+  /* Drawer / sidebar */
   --drawer-label:        rgba(255,255,255,0.18);
   --drawer-action:       rgba(255,255,255,0.32);
   --drawer-action-hover: rgba(255,255,255,0.7);
   --recent-active:       rgba(255,255,255,0.75);
   --recent-inactive:     rgba(255,255,255,0.32);
   --recent-active-bg:    rgba(255,255,255,0.04);
+  /* Card / display components */
+  --card-container-bg:   #0D0D0D;
+  --card-bg:             rgba(255,255,255,0.04);
+  --card-border:         rgba(255,255,255,0.09);
+  --card-border-faint:   rgba(255,255,255,0.05);
+  --card-header-bg:      rgba(255,255,255,0.04);
+  --card-text:           #ffffff;
+  --card-text-muted:     rgba(255,255,255,0.7);
+  --card-text-dim:       rgba(255,255,255,0.45);
+  --card-text-faint:     rgba(255,255,255,0.3);
+  --card-surface:        rgba(255,255,255,0.05);
 }
 
 [data-theme="light"] {
   color-scheme: light;
+  /* Drawer / sidebar */
   --drawer-label:        rgba(0,0,0,0.3);
   --drawer-action:       rgba(0,0,0,0.5);
   --drawer-action-hover: rgba(0,0,0,0.85);
   --recent-active:       rgba(0,0,0,0.8);
   --recent-inactive:     rgba(0,0,0,0.38);
   --recent-active-bg:    rgba(0,0,0,0.05);
+  /* Card / display components */
+  --card-container-bg:   #FFFFFF;
+  --card-bg:             rgba(0,0,0,0.025);
+  --card-border:         rgba(0,0,0,0.1);
+  --card-border-faint:   rgba(0,0,0,0.06);
+  --card-header-bg:      rgba(0,0,0,0.03);
+  --card-text:           rgba(0,0,0,0.82);
+  --card-text-muted:     rgba(0,0,0,0.55);
+  --card-text-dim:       rgba(0,0,0,0.38);
+  --card-text-faint:     rgba(0,0,0,0.25);
+  --card-surface:        rgba(0,0,0,0.05);
 }
 
 /* Blinking cursor animation */

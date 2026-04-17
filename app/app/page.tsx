@@ -59,7 +59,19 @@ type YieldPool = {
 };
 type YieldPoolsResult = { type: "yield_pools"; symbol: string; pools: YieldPool[] };
 
-type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult;
+type PolymarketMarket = {
+  id: string; question: string; outcomes: string[]; outcomePrices: string[];
+  volume: number; endDate: string | null;
+};
+type PolymarketEventItem = {
+  title: string; slug: string; volume: number; image: string | null; url: string;
+  markets: PolymarketMarket[];
+};
+type PolymarketResult = { type: "polymarket"; topic: string | null; markets: PolymarketEventItem[] };
+
+type SuggestionsResult = { type: "suggestions"; prompts: { label: string; command: string }[] };
+
+type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -495,7 +507,7 @@ export default function AppPage() {
 
         {/* Header: back arrow + logo */}
         <div style={{ height: 52, display: "flex", alignItems: "center", paddingLeft: 8, paddingRight: 8, flexShrink: 0, gap: 2 }}>
-          <Link href="/" title="Home" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", textDecoration: "none" }}>
+          <Link href="/" title="Home" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--drawer-action)", textDecoration: "none" }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3L5 8l5 5"/></svg>
           </Link>
           <span style={{ ...BEBAS, fontSize: "1rem", letterSpacing: "0.06em", color: T.textPrimary, whiteSpace: "nowrap", paddingLeft: 6, flex: 1, opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>
@@ -505,7 +517,7 @@ export default function AppPage() {
 
         {/* New chat */}
         <div style={{ paddingLeft: 8, paddingRight: 8, paddingBottom: 8, flexShrink: 0 }}>
-          <button onClick={newChat} style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, border: "none", background: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}>
+          <button onClick={newChat} style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, border: "none", background: "none", color: "var(--drawer-action)", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M8 3v10M3 8h10"/></svg>
             <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>New chat</span>
           </button>
@@ -533,7 +545,7 @@ export default function AppPage() {
               {txHistory.slice(0, 4).map(tx => (
                 <a key={tx.hash} href={tx.explorerUrl} target="_blank" rel="noopener noreferrer" style={{
                   ...MONO, display: "block", padding: "7px 12px", fontSize: "0.72rem",
-                  color: "rgba(255,255,255,0.3)", textDecoration: "none", borderRadius: 6,
+                  color: "var(--recent-inactive)", textDecoration: "none", borderRadius: 6,
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                 }}>
                   ↗ {tx.label}
@@ -805,8 +817,16 @@ export default function AppPage() {
                     )}
                     {msg.result.type === "yield_pools" && (
                       <ErrorBoundary label="Yield data failed to render.">
-                        <YieldPoolsDisplay result={msg.result} onBridge={prompt => submit(prompt)} />
+                        <YieldPoolsDisplay result={msg.result} onBridge={prompt => { setValue(prompt); setTimeout(() => inputRef.current?.focus(), 0); }} />
                       </ErrorBoundary>
+                    )}
+                    {msg.result.type === "polymarket" && (
+                      <ErrorBoundary label="Polymarket data failed to render.">
+                        <PolymarketDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "suggestions" && (
+                      <SuggestionsDisplay result={msg.result} onSelect={(cmd: string) => submit(cmd)} />
                     )}
                     {(msg.result.type === "text" || msg.result.type === "error") && (
                       <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: msg.result.type === "error" ? "#ff5555" : T.textMuted, margin: 0 }}>
@@ -963,7 +983,7 @@ export default function AppPage() {
                       soon ✦
                     </span>
                   )}
-                  <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.15)" }}>slip</span>
+                  <span style={{ ...MONO, fontSize: "0.58rem", color: T.textFaint }}>slip</span>
                   {SLIPPAGE_OPTIONS.map(({ value, label }) => (
                     <button
                       key={value}
@@ -1002,7 +1022,7 @@ export default function AppPage() {
                     ) : (
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                         <path d="M7 12V2M2 7l5-5 5 5"
-                          stroke={value.trim() ? "#000" : "rgba(255,255,255,0.3)"}
+                          stroke={value.trim() ? "#000" : T.textDim}
                           strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
                     )}
@@ -1200,19 +1220,19 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
   const executionMode = !!txHash;
 
   return (
-    <div style={{ background: "#0D0D0D", border: `1px solid ${executionMode ? "rgba(245,184,0,0.18)" : "rgba(255,255,255,0.08)"}`, borderRadius: 16, overflow: "hidden", width: "100%" }}>
+    <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: `1px solid ${executionMode ? "rgba(245,184,0,0.18)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 16, overflow: "hidden", width: "100%" }}>
       {/* Header */}
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.22)", margin: 0 }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
           {executionMode ? "Transaction" : "Quote Preview"}
         </p>
         {!executionMode && (
           <span style={{
             ...MONO, fontSize: "0.6rem", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 4,
-            background: "rgba(255,255,255,0.04)",
+            background: "var(--card-border-faint, rgba(255,255,255,0.05))",
             color: isExpired ? "#F5B800"
               : secondsLeft <= 10 ? "rgba(245,184,0,0.65)"
-              : "rgba(255,255,255,0.18)",
+              : "var(--card-text-faint, rgba(255,255,255,0.3))",
           }}>
             {isExpired ? "expired" : secondsLeft <= 15 ? `${secondsLeft}s` : "preview"}
           </span>
@@ -1222,9 +1242,9 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
       {/* Rows */}
       <div style={{ padding: "4px 16px" }}>
         {rows.map(({ label, value, highlight }) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", gap: 8 }}>
-            <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.27)", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
-            <span style={{ ...MONO, fontSize: highlight ? "0.92rem" : "0.73rem", color: highlight ? "white" : "rgba(255,255,255,0.68)", fontWeight: highlight ? 500 : 400, display: "flex", alignItems: "center", gap: 4, textAlign: "right", wordBreak: "break-all" }}>
+          <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))", gap: 8 }}>
+            <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
+            <span style={{ ...MONO, fontSize: highlight ? "0.92rem" : "0.73rem", color: highlight ? "var(--card-text, #ffffff)" : "var(--card-text-muted, rgba(255,255,255,0.7))", fontWeight: highlight ? 500 : 400, display: "flex", alignItems: "center", gap: 4, textAlign: "right", wordBreak: "break-all" }}>
               {value}
             </span>
           </div>
@@ -1269,7 +1289,7 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
           </button>
         ) : (
           <button onClick={execute} disabled={!calldata || isSending}
-            style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${calldata ? "rgba(245,184,0,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 10, color: calldata ? "#F5B800" : "rgba(255,255,255,0.2)", cursor: calldata && !isSending ? "pointer" : "not-allowed" }}>
+            style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${calldata ? "rgba(245,184,0,0.3)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 10, color: calldata ? "#F5B800" : "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: calldata && !isSending ? "pointer" : "not-allowed" }}>
             {isSending ? "confirm in wallet…" : "execute transaction →"}
           </button>
         )}
@@ -1364,11 +1384,11 @@ function SolanaExecuteButton({ result, onTxSubmitted }: {
         <button
           onClick={execute}
           disabled={sending || !result.calldata}
-          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: result.calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${result.calldata ? "rgba(245,184,0,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 10, color: result.calldata ? "#F5B800" : "rgba(255,255,255,0.2)", cursor: sending || !result.calldata ? "not-allowed" : "pointer" }}>
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: result.calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${result.calldata ? "rgba(245,184,0,0.3)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 10, color: result.calldata ? "#F5B800" : "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: sending || !result.calldata ? "not-allowed" : "pointer" }}>
           {sending ? "confirm in phantom…" : "execute via phantom →"}
         </button>
       )}
-      <p style={{ ...MONO, fontSize: "0.6rem", color: "rgba(255,255,255,0.18)", margin: 0, textAlign: "center" }}>
+      <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, textAlign: "center" }}>
         {publicKey ? `${publicKey.toBase58().slice(0, 6)}…${publicKey.toBase58().slice(-4)}` : "phantom · solana"}
       </p>
     </div>
@@ -1388,7 +1408,7 @@ function RebalanceDisplay({ result, onTxSubmitted }: { result: RebalanceResult; 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Summary header */}
-      <p style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.35)", margin: 0 }}>
+      <p style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: 0 }}>
         <span style={{ color: "#F5B800" }}>{okLegs}</span>
         {` route${okLegs !== 1 ? "s" : ""}`}
         {destChain ? ` · consolidating to ${destChain}` : ""}
@@ -1398,19 +1418,19 @@ function RebalanceDisplay({ result, onTxSubmitted }: { result: RebalanceResult; 
       {/* One card per leg */}
       {result.legs.map((leg, i) => (
         <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.1em", color: "rgba(255,255,255,0.2)" }}>
+          <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
             STEP {i + 1} / {total}
           </span>
           {leg.type === "quote" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <p style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.35)", margin: 0 }}>
+              <p style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: 0 }}>
                 <span style={{ color: "#F5B800" }}>{leg.route.tool}</span>
                 {"  ·  "}
-                <span style={{ color: "rgba(255,255,255,0.75)" }}>
+                <span style={{ color: "var(--card-text, #ffffff)" }}>
                   ~{leg.route.outputAmount} {leg.intent.to.token}
                 </span>
                 {leg.route.feesUSD && (
-                  <span style={{ color: "rgba(255,255,255,0.28)" }}>
+                  <span style={{ color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>
                     {"  ·  "}${Number(leg.route.feesUSD).toFixed(2)} fees
                   </span>
                 )}
@@ -1453,28 +1473,28 @@ function TxDisplay({ result }: { result: TxResult }) {
   ];
 
   return (
-    <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, overflow: "hidden" }}>
-      <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.22)", margin: 0 }}>
+    <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 16, overflow: "hidden" }}>
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
           Transaction
         </p>
-        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: statusColor }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 4, background: "var(--card-border-faint, rgba(255,255,255,0.05))", color: statusColor }}>
           {tx.chainName}
         </span>
       </div>
 
       <div style={{ padding: "4px 16px" }}>
         {rows.map(({ label, value }) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-            <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.27)", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
-            <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.68)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{value}</span>
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
+            <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
+            <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{value}</span>
           </div>
         ))}
       </div>
 
       {summary && (
-        <div style={{ padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
-          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.38)", lineHeight: 1.65, margin: 0 }}>{summary}</p>
+        <div style={{ padding: "12px 16px", borderTop: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", lineHeight: 1.65, margin: 0 }}>{summary}</p>
         </div>
       )}
 
@@ -1483,7 +1503,7 @@ function TxDisplay({ result }: { result: TxResult }) {
           href={tx.explorerUrl}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ ...MONO, display: "block", width: "100%", padding: "10px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+          style={{ ...MONO, display: "block", width: "100%", padding: "10px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", background: "var(--card-header-bg, rgba(255,255,255,0.04))", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 10, color: "var(--card-text-muted, rgba(255,255,255,0.7))", textDecoration: "none" }}
         >
           view on explorer →
         </a>
@@ -1499,34 +1519,34 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
   const { data, summary, ensName } = result;
 
   return (
-    <div style={{ background: "#0D0D0D", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, overflow: "hidden" }}>
-      <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.22)", margin: 0 }}>
-          {ensName ? <span>{ensName} <span style={{ color: "rgba(255,255,255,0.3)" }}>· address</span></span> : "Address"}
+    <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 16, overflow: "hidden" }}>
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+          {ensName ? <span>{ensName} <span style={{ color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>· address</span></span> : "Address"}
         </p>
-        <span style={{ ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.35)" }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4, background: "var(--card-border-faint, rgba(255,255,255,0.05))", color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>
           {data.address.slice(0, 8)}…{data.address.slice(-6)}
         </span>
       </div>
 
       {(data.balances.length > 0 || data.tokenBalances.length > 0) && (
-        <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.2)", marginBottom: 10 }}>
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 10 }}>
             BALANCES
           </p>
           {data.balances.map(b => (
-            <div key={b.chainId} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-              <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.35)", flexShrink: 0 }}>{b.chainName}</span>
-              <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.72)", textAlign: "right" }}>{b.native} {b.nativeSymbol}</span>
+            <div key={b.chainId} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--card-header-bg, rgba(255,255,255,0.04))" }}>
+              <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", flexShrink: 0 }}>{b.chainName}</span>
+              <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))", textAlign: "right" }}>{b.native} {b.nativeSymbol}</span>
             </div>
           ))}
           {data.tokenBalances.slice(0, 10).map(t => (
-            <div key={`${t.chainId}-${t.contractAddress}`} style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-              <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.28)", flexShrink: 0 }}>
-                {t.symbol} <span style={{ color: "rgba(255,255,255,0.15)" }}>· {t.chainName}</span>
+            <div key={`${t.chainId}-${t.contractAddress}`} style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--card-header-bg, rgba(255,255,255,0.04))" }}>
+              <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", flexShrink: 0 }}>
+                {t.symbol} <span style={{ color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>· {t.chainName}</span>
               </span>
               <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                <span style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.6)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.balance}</span>
+                <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.balance}</span>
                 {onSwap && (
                   <button
                     onClick={() => onSwap(`swap ${t.balance} ${t.symbol} to USDC on ${t.chainName.toLowerCase()}`)}
@@ -1544,23 +1564,23 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       )}
 
       {data.recentTransfers.length > 0 && (
-        <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.2)", marginBottom: 10 }}>
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 10 }}>
             RECENT TRANSFERS
           </p>
           {data.recentTransfers.slice(0, 8).map((t, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.03)", minWidth: 0 }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--card-header-bg, rgba(255,255,255,0.04))", minWidth: 0 }}>
               <span style={{ ...MONO, fontSize: "0.6rem", color: t.direction === "in" ? "#4ade80" : "#F5B800", letterSpacing: "0.04em", flexShrink: 0, width: 26 }}>
                 {t.direction === "in" ? "IN" : "OUT"}
               </span>
-              <span style={{ ...MONO, fontSize: "0.7rem", color: "rgba(255,255,255,0.65)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {t.value} {t.asset}
               </span>
               <a
                 href={`https://etherscan.io/tx/${t.hash}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ ...MONO, fontSize: "0.6rem", color: "rgba(255,255,255,0.25)", textDecoration: "none", flexShrink: 0 }}
+                style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", textDecoration: "none", flexShrink: 0 }}
               >
                 {t.hash.slice(0, 8)}…
               </a>
@@ -1570,8 +1590,8 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       )}
 
       {summary && (
-        <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.38)", lineHeight: 1.65, margin: 0 }}>{summary}</p>
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", lineHeight: 1.65, margin: 0 }}>{summary}</p>
         </div>
       )}
 
@@ -1580,7 +1600,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
           href={`https://etherscan.io/address/${data.address}`}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ ...MONO, display: "block", width: "100%", padding: "10px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, color: "rgba(255,255,255,0.45)", textDecoration: "none" }}
+          style={{ ...MONO, display: "block", width: "100%", padding: "10px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", background: "var(--card-header-bg, rgba(255,255,255,0.04))", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 10, color: "var(--card-text-muted, rgba(255,255,255,0.7))", textDecoration: "none" }}
         >
           view on etherscan →
         </a>
@@ -1616,15 +1636,15 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
     <div style={{ border: `1px solid ${color}30`, borderRadius: 14, overflow: "hidden", maxWidth: 420 }}>
       <div style={{ padding: "14px 18px 12px", borderBottom: `1px solid ${color}20`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <span style={{ ...MONO, fontSize: "1rem", fontWeight: 700, color: "#fff" }}>{risk.symbol}</span>
-          <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.35)", marginLeft: 8 }}>{risk.name}</span>
+          <span style={{ ...MONO, fontSize: "1rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>{risk.symbol}</span>
+          <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", marginLeft: 8 }}>{risk.name}</span>
         </div>
         <span style={{ ...MONO, fontSize: "0.72rem", fontWeight: 700, color, background: `${color}18`, border: `1px solid ${color}40`, borderRadius: 6, padding: "3px 10px" }}>
           {risk.label} RISK
         </span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, background: "rgba(255,255,255,0.04)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, background: "var(--card-border-faint, rgba(255,255,255,0.05))" }}>
         {[
           ["Price",       risk.priceUsd ? `$${Number(risk.priceUsd).toPrecision(4)}` : "—"],
           ["24h Change",  risk.priceChange24h != null ? `${risk.priceChange24h > 0 ? "+" : ""}${risk.priceChange24h.toFixed(2)}%` : "—"],
@@ -1633,21 +1653,21 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
           ["Market Cap",  risk.marketCap ? fmt(risk.marketCap) : "—"],
           ["Pools",       `${risk.pairCount} on ${risk.dexCount} DEX${risk.dexCount > 1 ? "es" : ""}`],
         ].map(([label, val]) => (
-          <div key={label} style={{ padding: "10px 16px", background: "rgba(0,0,0,0.25)" }}>
-            <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.25)", margin: "0 0 3px", letterSpacing: "0.06em" }}>{label!.toUpperCase()}</p>
-            <p style={{ ...MONO, fontSize: "0.8rem", color: "#fff", margin: 0 }}>{val}</p>
+          <div key={label} style={{ padding: "10px 16px", background: "var(--card-container-bg, #0D0D0D)" }}>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 3px", letterSpacing: "0.06em" }}>{label!.toUpperCase()}</p>
+            <p style={{ ...MONO, fontSize: "0.8rem", color: "var(--card-text, #ffffff)", margin: 0 }}>{val}</p>
           </div>
         ))}
       </div>
 
       {risk.flags.length > 0 && (
         <div style={{ padding: "12px 18px", borderTop: `1px solid ${color}20` }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.25)", marginBottom: 8, letterSpacing: "0.06em" }}>RISK FLAGS</p>
+          <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 8, letterSpacing: "0.06em" }}>RISK FLAGS</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {risk.flags.map(f => (
               <div key={f} style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <span style={{ color, fontSize: "0.6rem" }}>▲</span>
-                <span style={{ ...MONO, fontSize: "0.7rem", color: "rgba(255,255,255,0.55)" }}>{FLAG_LABELS[f] ?? f}</span>
+                <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))" }}>{FLAG_LABELS[f] ?? f}</span>
               </div>
             ))}
           </div>
@@ -1655,11 +1675,11 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
       )}
 
       {risk.topPair?.url && (
-        <div style={{ padding: "10px 18px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ padding: "10px 18px 14px", borderTop: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
           <a href={risk.topPair.url} target="_blank" rel="noopener noreferrer"
-            style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.3)", textDecoration: "none" }}
-            onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")}
-            onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.3)")}
+            style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", textDecoration: "none" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "var(--card-text-muted, rgba(255,255,255,0.7))")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--card-text-dim, rgba(255,255,255,0.45))")}
           >
             view on dexscreener · {risk.topPair.dexId} · {risk.topPair.chainId} ↗
           </a>
@@ -1692,19 +1712,19 @@ function YieldPoolsDisplay({ result, onBridge }: { result: YieldPoolsResult; onB
 
   return (
     <div style={{ border: "1px solid rgba(245,184,0,0.2)", borderRadius: 14, overflow: "hidden", maxWidth: 480 }}>
-      <div style={{ padding: "13px 18px 11px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "rgba(255,255,255,0.25)" }}>YIELD SCANNER</span>
+      <div style={{ padding: "13px 18px 11px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>YIELD SCANNER</span>
         <span style={{ ...MONO, fontSize: "0.72rem", color: "#F5B800", fontWeight: 700 }}>{symbol}</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.2)", marginLeft: "auto" }}>via DeFiLlama</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginLeft: "auto" }}>via DeFiLlama</span>
       </div>
 
       <div>
         {pools.map((pool, i) => (
-          <div key={pool.pool} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < pools.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
-            <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.2)", width: 14, flexShrink: 0 }}>{i + 1}</span>
+          <div key={pool.pool} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < pools.length - 1 ? "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" : "none" }}>
+            <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", width: 14, flexShrink: 0 }}>{i + 1}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ ...MONO, fontSize: "0.75rem", color: "#fff", margin: 0 }}>{PROJECT_LABELS[pool.project] ?? pool.project}</p>
-              <p style={{ ...MONO, fontSize: "0.62rem", color: "rgba(255,255,255,0.3)", margin: "2px 0 0" }}>
+              <p style={{ ...MONO, fontSize: "0.75rem", color: "var(--card-text, #ffffff)", margin: 0 }}>{PROJECT_LABELS[pool.project] ?? pool.project}</p>
+              <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: "2px 0 0" }}>
                 {pool.chain}
                 {pool.apyReward != null && pool.apyReward > 0 && (
                   <span style={{ color: "#F5B800", marginLeft: 6 }}>+{pool.apyReward.toFixed(2)}% rewards</span>
@@ -1713,11 +1733,11 @@ function YieldPoolsDisplay({ result, onBridge }: { result: YieldPoolsResult; onB
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <p style={{ ...MONO, fontSize: "0.85rem", color: "#22c55e", fontWeight: 700, margin: 0 }}>{pool.apy.toFixed(2)}%</p>
-              <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(255,255,255,0.2)", margin: "2px 0 0" }}>{fmtTvl(pool.tvlUsd)} TVL</p>
+              <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "2px 0 0" }}>{fmtTvl(pool.tvlUsd)} TVL</p>
             </div>
             {onBridge && (
               <button
-                onClick={() => onBridge(`bridge my ${symbol} to ${pool.chain.toLowerCase()} for ${PROJECT_LABELS[pool.project] ?? pool.project} yield`)}
+                onClick={() => onBridge(`bridge 100 ${symbol} to ${pool.chain.toLowerCase()}`)}
                 style={{ ...MONO, fontSize: "0.6rem", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(245,184,0,0.25)", background: "rgba(245,184,0,0.05)", color: "rgba(245,184,0,0.6)", cursor: "pointer", flexShrink: 0 }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.5)"; e.currentTarget.style.color = "#F5B800"; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
@@ -1726,6 +1746,135 @@ function YieldPoolsDisplay({ result, onBridge }: { result: YieldPoolsResult; onB
               </button>
             )}
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── PolymarketDisplay ────────────────────────────────────────────────────────
+
+function PolymarketDisplay({ result }: { result: PolymarketResult }) {
+  const { topic, markets } = result;
+
+  function fmtVolume(v: number): string {
+    if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M vol`;
+    if (v >= 1_000)     return `$${(v / 1_000).toFixed(0)}K vol`;
+    return `$${v.toFixed(0)} vol`;
+  }
+
+  function fmtPrice(price: string): string {
+    const n = parseFloat(price);
+    if (isNaN(n)) return "—";
+    return `${Math.round(n * 100)}%`;
+  }
+
+  return (
+    <div style={{ width: "100%" }}>
+      <div style={{ marginBottom: 12 }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+          PREDICTION MARKETS {topic ? `· ${topic.toUpperCase()}` : "· TRENDING"} · via Polymarket
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {markets.map((event, i) => {
+          const topMarket = event.markets[0];
+          if (!topMarket) return null;
+          const yesPct = parseFloat(topMarket.outcomePrices[0] ?? "0") * 100;
+
+          return (
+            <a
+              key={event.slug}
+              href={event.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ textDecoration: "none" }}
+            >
+              <div
+                style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "10px 12px", borderRadius: 8,
+                  border: "1px solid var(--card-border, rgba(255,255,255,0.09))",
+                  background: "var(--card-bg, rgba(255,255,255,0.04))",
+                  cursor: "pointer", transition: "border-color 0.15s",
+                }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--card-border-faint, rgba(255,255,255,0.05))")}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--card-border, rgba(255,255,255,0.09))")}
+              >
+                <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", width: 16, flexShrink: 0 }}>{i + 1}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ ...MONO, fontSize: "0.75rem", color: "var(--card-text, #ffffff)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {topMarket.question}
+                  </p>
+                  <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "3px 0 0" }}>
+                    {fmtVolume(event.volume)}
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                  {topMarket.outcomes.slice(0, 2).map((outcome, j) => (
+                    <div key={j} style={{
+                      display: "flex", flexDirection: "column", alignItems: "center",
+                      padding: "3px 8px", borderRadius: 5,
+                      background: j === 0 ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.08)",
+                      border: `1px solid ${j === 0 ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.15)"}`,
+                    }}>
+                      <span style={{ ...MONO, fontSize: "0.8rem", fontWeight: 700, color: j === 0 ? "#22c55e" : "#ef4444" }}>
+                        {fmtPrice(topMarket.outcomePrices[j] ?? "0")}
+                      </span>
+                      <span style={{ ...MONO, fontSize: "0.5rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", marginTop: 1 }}>{outcome}</span>
+                    </div>
+                  ))}
+                </div>
+                {yesPct > 0 && (
+                  <div style={{ width: 60, height: 4, borderRadius: 2, background: "var(--card-border, rgba(255,255,255,0.09))", flexShrink: 0, overflow: "hidden" }}>
+                    <div style={{ width: `${yesPct}%`, height: "100%", background: "#22c55e", borderRadius: 2 }} />
+                  </div>
+                )}
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── SuggestionsDisplay ───────────────────────────────────────────────────────
+
+function SuggestionsDisplay({ result, onSelect }: { result: SuggestionsResult; onSelect: (cmd: string) => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+        Try one of these
+      </span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {result.prompts.map((p, i) => (
+          <button
+            key={i}
+            onClick={() => onSelect(p.command)}
+            style={{
+              ...MONO, textAlign: "left", padding: "11px 16px", borderRadius: 8,
+              border: "1px solid var(--card-border, rgba(255,255,255,0.09))",
+              background: "var(--card-bg, rgba(255,255,255,0.04))",
+              color: "var(--card-text, #ffffff)",
+              cursor: "pointer", fontSize: "0.8rem",
+              transition: "border-color 0.15s, background 0.15s",
+              display: "flex", alignItems: "center", gap: 10,
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = "rgba(245,184,0,0.4)";
+              e.currentTarget.style.background  = "rgba(245,184,0,0.04)";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = "var(--card-border, rgba(255,255,255,0.09))";
+              e.currentTarget.style.background  = "var(--card-bg, rgba(255,255,255,0.04))";
+            }}
+          >
+            <span style={{ color: "#F5B800", flexShrink: 0 }}>→</span>
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {p.command}
+            </span>
+          </button>
         ))}
       </div>
     </div>
