@@ -9,15 +9,42 @@ interface ButtonProps {
   external?: boolean;
 }
 
+const btnStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "10px 20px",
+  fontSize: "0.7rem",
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
+  border: "1px solid var(--landing-btn-border)",
+  color: "var(--landing-btn-text)",
+  background: "transparent",
+  cursor: "pointer",
+  textDecoration: "none",
+  transition: "color 0.2s, border-color 0.2s",
+};
+
 function OutlineButton({ href, label, icon, external }: ButtonProps) {
-  const cls =
-    "flex items-center gap-2 px-5 py-2.5 text-xs tracking-widest uppercase transition-all duration-200 " +
-    "border text-white/70 hover:text-white hover:border-white/40 " +
-    "border-white/20 bg-transparent cursor-pointer";
+  function handleEnter(e: React.MouseEvent<HTMLElement>) {
+    e.currentTarget.style.color = "var(--landing-btn-hover-text)";
+    e.currentTarget.style.borderColor = "var(--landing-btn-hover-border)";
+  }
+  function handleLeave(e: React.MouseEvent<HTMLElement>) {
+    e.currentTarget.style.color = "var(--landing-btn-text)";
+    e.currentTarget.style.borderColor = "var(--landing-btn-border)";
+  }
 
   if (external) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={btnStyle}
+        onMouseEnter={handleEnter}
+        onMouseLeave={handleLeave}
+      >
         {icon}
         {label}
       </a>
@@ -25,7 +52,12 @@ function OutlineButton({ href, label, icon, external }: ButtonProps) {
   }
 
   return (
-    <Link href={href} className={cls}>
+    <Link
+      href={href}
+      style={btnStyle}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+    >
       {icon}
       {label}
     </Link>

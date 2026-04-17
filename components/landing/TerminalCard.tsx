@@ -10,14 +10,15 @@ export function TerminalCard() {
     <div
       className="w-full max-w-xl mx-auto rounded-2xl overflow-hidden"
       style={{
-        background: "#0A0A0A",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "var(--landing-terminal-bg)",
+        border: "1px solid var(--landing-terminal-border)",
+        transition: "background 0.25s, border-color 0.25s",
       }}
     >
       {/* Traffic lights */}
       <div
         className="flex items-center gap-2 px-4"
-        style={{ height: 36, borderBottom: "1px solid rgba(255,255,255,0.05)" }}
+        style={{ height: 36, borderBottom: "1px solid var(--landing-terminal-header)" }}
       >
         <span className="w-3 h-3 rounded-full bg-[#FF5F57]" />
         <span className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
@@ -32,10 +33,10 @@ export function TerminalCard() {
           style={{ fontFamily: "var(--font-jetbrains-mono), monospace" }}
         >
           <span style={{ color: "#F5B800" }}>{">"}</span>
-          <span className="text-white">{displayText}</span>
+          <span style={{ color: "var(--landing-text)" }}>{displayText}</span>
           <span
-            className="cursor-blink inline-block w-[2px] h-[14px] bg-white"
-            style={{ marginLeft: 1 }}
+            className="cursor-blink inline-block w-[2px] h-[14px]"
+            style={{ marginLeft: 1, background: "var(--landing-text)" }}
           />
         </div>
 
@@ -45,7 +46,7 @@ export function TerminalCard() {
             className="text-xs leading-relaxed pl-4"
             style={{
               fontFamily: "var(--font-jetbrains-mono), monospace",
-              color: "rgba(255,255,255,0.45)",
+              color: "var(--landing-terminal-text)",
               opacity: previewVisible ? 1 : 0,
               transition: "opacity 300ms ease",
               whiteSpace: "pre-line",

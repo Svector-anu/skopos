@@ -236,7 +236,7 @@ export function HeroTitle() {
             fontSize: "clamp(4.5rem, 22vw, 8rem)",
             letterSpacing: "0.08em",
             lineHeight: 1,
-            color: "#ffffff",
+            color: "var(--landing-text)",
             margin: 0,
           }}
         >

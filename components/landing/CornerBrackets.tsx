@@ -1,7 +1,7 @@
 export function CornerBrackets() {
   const size = 24;
   const thickness = 1.5;
-  const color = "rgba(255,255,255,0.1)";
+  const color = "var(--landing-bracket)";
   const style = { position: "fixed" as const, pointerEvents: "none" as const };
 
   return (

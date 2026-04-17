@@ -48,7 +48,11 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${sourceSerif.variable} ${sourceSans.variable} ${jetbrainsMono.variable} h-full`}
     >
-      <body className="h-full bg-black text-white antialiased">
+      <head>
+        {/* Apply saved theme before first paint to prevent flash */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('skopos-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}` }} />
+      </head>
+      <body className="h-full antialiased">
         <PageTransitionWrapper>{children}</PageTransitionWrapper>
       </body>
     </html>
