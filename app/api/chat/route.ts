@@ -209,15 +209,17 @@ export async function POST(req: NextRequest) {
 
   const trimmed = message.trim();
 
-  // ── explorer: ENS name (*.eth) ──────────────────────────────────────────
-  if (/^[a-z0-9][a-z0-9-_.]*\.eth$/i.test(trimmed)) {
-    const resolved = await resolveENS(trimmed);
+  // ── explorer: ENS name (*.eth) — matches bare "vitalik.eth" or in a sentence ──
+  const ensMatch = trimmed.match(/\b([a-z0-9][a-z0-9-_.]*\.eth)\b/i);
+  if (ensMatch) {
+    const ensName = ensMatch[1].toLowerCase();
+    const resolved = await resolveENS(ensName);
     if (!resolved) {
-      return NextResponse.json({ type: "error", text: `Could not resolve ${trimmed}. Make sure the ENS name is registered.` });
+      return NextResponse.json({ type: "error", text: `Could not resolve ${ensName}. Make sure the ENS name is registered.` });
     }
     const data = await lookupAddress(resolved);
     const summary = await generateAddressSummary(data);
-    return NextResponse.json({ type: "address", data, summary, ensName: trimmed });
+    return NextResponse.json({ type: "address", data, summary, ensName });
   }
 
   // ── portfolio: connected wallet ──────────────────────────────────────────
@@ -307,6 +309,19 @@ export async function POST(req: NextRequest) {
         }),
       });
     }
+  }
+
+  // ── missing-source guard: "bridge X TOKEN to CHAIN" with no "from" ─────────
+  // Catch this before parseIntent so Groq never gets a chance to hallucinate a source.
+  const missingSource = trimmed.match(
+    /^(?:bridge|move|send|transfer|swap)\s+[\d.]+\s+[a-z]+\s+to\s+([a-z][a-z\s]*?)(?:\s*[?.]?\s*)$/i
+  );
+  if (missingSource && !/\bfrom\b/i.test(trimmed) && !/\bon\b/i.test(trimmed)) {
+    const dest = missingSource[1].trim();
+    return NextResponse.json({
+      type: "error",
+      text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 USDC from base to ${dest}" or "bridge 100 USDC from arbitrum to ${dest}".`,
+    });
   }
 
   // ── single-leg intent (runs before scanners so "bridge X for yield" parses as bridge) ──
