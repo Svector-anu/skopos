@@ -1,11 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Black rounded background -->
-  <rect width="32" height="32" rx="7" fill="#000000"/>
-
-  <!-- Yellow diamond mark — matches ◆ used throughout the UI -->
-  <path d="M16 5 L27 16 L16 27 L5 16 Z" fill="none" stroke="#F5B800" stroke-width="2" stroke-linejoin="round"/>
-  <!-- Inner fill, lighter -->
-  <path d="M16 9 L23 16 L16 23 L9 16 Z" fill="#F5B800" opacity="0.15"/>
-  <!-- Center dot -->
-  <circle cx="16" cy="16" r="2.2" fill="#F5B800"/>
+  <style>
+    @keyframes eq {
+      0%, 100% { transform: scaleY(0.2); }
+      50%       { transform: scaleY(1);   }
+    }
+    rect {
+      fill: #F5B800;
+      transform-box: fill-box;
+      transform-origin: bottom center;
+    }
+    .b1 { animation: eq 0.80s ease-in-out infinite 0.00s; }
+    .b2 { animation: eq 0.95s ease-in-out infinite 0.15s; }
+    .b3 { animation: eq 0.72s ease-in-out infinite 0.05s; }
+    .b4 { animation: eq 0.88s ease-in-out infinite 0.25s; }
+    .b5 { animation: eq 1.00s ease-in-out infinite 0.10s; }
+  </style>
+  <rect class="b1" x="0"  y="4" width="4" height="24" rx="2"/>
+  <rect class="b2" x="7"  y="4" width="4" height="24" rx="2"/>
+  <rect class="b3" x="14" y="4" width="4" height="24" rx="2"/>
+  <rect class="b4" x="21" y="4" width="4" height="24" rx="2"/>
+  <rect class="b5" x="28" y="4" width="4" height="24" rx="2"/>
 </svg>
