@@ -105,7 +105,15 @@ export async function getToken(
   }
   const chainTokens = tokensCache[String(chainId)];
   if (!Array.isArray(chainTokens)) return null;
-  return chainTokens.find(t => t.symbol.toUpperCase() === symbol.toUpperCase()) ?? null;
+  const upper = symbol.toUpperCase();
+  // Exact match first
+  const exact = chainTokens.find(t => t.symbol.toUpperCase() === upper);
+  if (exact) return exact;
+  // Chain-suffixed variants: "USDC-BNB", "USDC.e", "USDC.BASE", etc.
+  return chainTokens.find(t => {
+    const s = t.symbol.toUpperCase();
+    return s.startsWith(upper + "-") || s.startsWith(upper + ".");
+  }) ?? null;
 }
 
 export async function getQuote(params: {
