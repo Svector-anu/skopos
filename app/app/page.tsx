@@ -1142,11 +1142,13 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
 
   const needsApproval = !!approval && (allowance === undefined || BigInt(allowance as bigint) < BigInt(approval.amount));
 
-  const { mutateAsync: writeContract, data: approvalHash, isPending: isApproving } = useWriteContract();
+  const { mutateAsync: writeContract, isPending: isApproving } = useWriteContract();
+  const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>();
   const { isSuccess: approvalConfirmed } = useWaitForTransactionReceipt({ hash: approvalHash });
   useEffect(() => { if (approvalConfirmed) refetchAllowance(); }, [approvalConfirmed, refetchAllowance]);
 
-  const { mutateAsync: sendTransaction, data: txHash, isPending: isSending } = useSendTransaction();
+  const { mutateAsync: sendTransaction, isPending: isSending } = useSendTransaction();
+  const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const { isLoading: isConfirming, isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
   const [switchErr, setSwitchErr]     = useState<string | null>(null);
@@ -1190,7 +1192,8 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
     setSwitchErr(null);
     try {
       if (!onCorrectChain) await switchChain({ chainId: originChainId });
-      await writeContract({ address: approval.tokenAddress as `0x${string}`, abi: ERC20_ABI, functionName: "approve", args: [approval.spender as `0x${string}`, BigInt(approval.amount)], chainId: originChainId });
+      const hash = await writeContract({ address: approval.tokenAddress as `0x${string}`, abi: ERC20_ABI, functionName: "approve", args: [approval.spender as `0x${string}`, BigInt(approval.amount)], chainId: originChainId });
+      setApprovalHash(hash);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
@@ -1202,7 +1205,8 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
     setSwitchErr(null);
     try {
       if (!onCorrectChain) await switchChain({ chainId: originChainId });
-      await sendTransaction({ to: calldata.to as `0x${string}`, value: BigInt(calldata.value || "0x0"), data: calldata.data as `0x${string}`, chainId: originChainId });
+      const hash = await sendTransaction({ to: calldata.to as `0x${string}`, value: BigInt(calldata.value || "0x0"), data: calldata.data as `0x${string}`, chainId: originChainId });
+      setTxHash(hash);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
