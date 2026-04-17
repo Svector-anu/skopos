@@ -323,9 +323,12 @@ export async function POST(req: NextRequest) {
   const riskMatch = trimmed.match(
     /(?:scan|analyze|check|risk\s+of|is\s+(?:it\s+)?safe|rug(?:pull)?)\s+(?:token\s+)?(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})/i
   ) ?? trimmed.match(
+    // "is PEPE safe to buy?" / "is SHIB legit?" — token comes BETWEEN "is" and the qualifier
+    /\bis\s+(\$?[a-z0-9]{2,20})\s+(?:safe|legit|good|risky|a\s+rug)/i
+  ) ?? trimmed.match(
     /(?:^|\s)(\$[a-z]{2,10}|0x[0-9a-f]{40})(?:\s|$)/i
   );
-  if (riskMatch && /\b(scan|risk|safe|rug|analyze)\b/i.test(trimmed)) {
+  if (riskMatch && /\b(scan|risk|safe|rug|analyze|legit)\b/i.test(trimmed)) {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
     if (risk) return NextResponse.json({ type: "token_risk", risk });

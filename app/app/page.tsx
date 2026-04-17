@@ -933,7 +933,7 @@ export default function AppPage() {
                   onBlur={() => setInputFocused(false)}
                   placeholder="ask skopos…"
                   className={isDark ? "placeholder:text-white/15" : "placeholder:text-black/20"}
-                  style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: T.textMuted, fontSize: "0.95rem" }}
+                  style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: T.textPrimary, caretColor: T.textPrimary, fontSize: "0.95rem" }}
                 />
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
                   {/* Horizon pills — coming soon features */}
@@ -1279,10 +1279,17 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
             {isApproving ? "approving…" : approvalHash && !approvalConfirmed ? "confirming approval…" : `approve ${intent.from.token} →`}
           </button>
         ) : (
-          <button onClick={execute} disabled={!calldata || isSending}
-            style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${calldata ? "rgba(245,184,0,0.3)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 10, color: calldata ? "#F5B800" : "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: calldata && !isSending ? "pointer" : "not-allowed" }}>
-            {isSending ? "confirm in wallet…" : "execute transaction →"}
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {approvalConfirmed && (
+              <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0, letterSpacing: "0.06em" }}>
+                approval confirmed ✓ — now execute the bridge
+              </p>
+            )}
+            <button onClick={execute} disabled={!calldata || isSending}
+              style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${calldata ? "rgba(245,184,0,0.3)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 10, color: calldata ? "#F5B800" : "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: calldata && !isSending ? "pointer" : "not-allowed" }}>
+              {isSending ? "confirm in wallet…" : "execute transaction →"}
+            </button>
+          </div>
         )}
       </div>
     </div>
