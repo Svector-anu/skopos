@@ -1689,6 +1689,22 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
 
 // ─── YieldPoolsDisplay ────────────────────────────────────────────────────────
 
+const PROJECT_URLS: Record<string, string> = {
+  "aave-v3":        "https://app.aave.com",
+  "aave-v2":        "https://app.aave.com",
+  "morpho-blue":    "https://app.morpho.org",
+  "morpho":         "https://app.morpho.org",
+  "compound-v3":    "https://app.compound.finance",
+  "compound-v2":    "https://app.compound.finance",
+  "moonwell":       "https://moonwell.fi/discover",
+  "uniswap-v3":     "https://app.uniswap.org",
+  "spark":          "https://app.spark.fi",
+  "fluid":          "https://fluid.instadapp.io",
+  "yearn-finance":  "https://yearn.fi",
+  "convex-finance": "https://www.convexfinance.com/stake",
+  "curve-dex":      "https://curve.fi/#/ethereum/pools",
+};
+
 function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { symbol, pools } = result;
@@ -1733,6 +1749,18 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
               <p style={{ ...MONO, fontSize: "0.85rem", color: "#22c55e", fontWeight: 700, margin: 0 }}>{pool.apy.toFixed(2)}%</p>
               <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "2px 0 0" }}>{fmtTvl(pool.tvlUsd)} TVL</p>
             </div>
+            {PROJECT_URLS[pool.project] && (
+              <a
+                href={PROJECT_URLS[pool.project]}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...MONO, fontSize: "0.6rem", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(245,184,0,0.25)", background: "rgba(245,184,0,0.05)", color: "rgba(245,184,0,0.6)", textDecoration: "none", flexShrink: 0 }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.5)"; e.currentTarget.style.color = "#F5B800"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
+              >
+                deposit ↗
+              </a>
+            )}
           </div>
         ))}
       </div>
