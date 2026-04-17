@@ -238,6 +238,8 @@ export default function AppPage() {
   const [slippage, setSlippage]        = useState(0.005);
   const [horizonToast, setHorizonToast] = useState<string | null>(null);
   const [theme, setTheme]              = useState<"dark" | "light">("dark");
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { address }                            = useConnection();
   const currentChainId                         = useChainId();
@@ -279,6 +281,17 @@ export default function AppPage() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("skopos-theme", theme);
   }, [theme]);
+
+  function handleDisconnectClick() {
+    if (confirmDisconnect) {
+      if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
+      setConfirmDisconnect(false);
+      logout();
+    } else {
+      setConfirmDisconnect(true);
+      disconnectTimerRef.current = setTimeout(() => setConfirmDisconnect(false), 3000);
+    }
+  }
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -624,24 +637,24 @@ export default function AppPage() {
           {/* Collapsed wallet dot */}
           {ready && !sidebarExpanded && (
             <button
-              onClick={authenticated ? () => { if (window.confirm("Disconnect wallet?")) logout(); } : login}
+              onClick={authenticated ? handleDisconnectClick : login}
               style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer" }}
-              title={authenticated && address ? `${shortAddr(address)} — disconnect` : "Connect wallet"}
+              title={authenticated && address ? (confirmDisconnect ? "click again to disconnect" : `${shortAddr(address)} — disconnect`) : "Connect wallet"}
             >
-              <div style={{ width: 8, height: 8, borderRadius: 999, background: authenticated ? "#F5B800" : T.textFaint }} />
+              <div style={{ width: 8, height: 8, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : authenticated ? "#F5B800" : T.textFaint }} />
             </button>
           )}
 
           {/* Expanded address chip */}
           {ready && authenticated && address && sidebarExpanded && (
             <button
-              onClick={() => { if (window.confirm("Disconnect wallet?")) logout(); }}
-              style={{ width: "100%", height: 32, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 8, background: "none", border: "none", cursor: "pointer" }}
-              title={`${shortAddr(address)} — click to disconnect`}
+              onClick={handleDisconnectClick}
+              style={{ width: "100%", height: 32, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 8, background: confirmDisconnect ? "rgba(255,107,107,0.06)" : "none", border: confirmDisconnect ? "1px solid rgba(255,107,107,0.2)" : "none", cursor: "pointer", transition: "background 0.2s" }}
+              title={confirmDisconnect ? "click again to confirm disconnect" : `${shortAddr(address)} — click to disconnect`}
             >
-              <div style={{ width: 7, height: 7, borderRadius: 999, background: "#F5B800", flexShrink: 0 }} />
-              <span style={{ ...MONO, fontSize: "0.68rem", color: T.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {shortAddr(address)}
+              <div style={{ width: 7, height: 7, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : "#F5B800", flexShrink: 0, transition: "background 0.2s" }} />
+              <span style={{ ...MONO, fontSize: "0.68rem", color: confirmDisconnect ? "#ff6b6b" : T.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "color 0.2s" }}>
+                {confirmDisconnect ? "disconnect?" : shortAddr(address)}
               </span>
             </button>
           )}
@@ -719,13 +732,13 @@ export default function AppPage() {
             {/* Wallet quick-connect / status */}
             {ready && (
               <button
-                onClick={authenticated ? () => { if (window.confirm("Disconnect wallet?")) logout(); } : login}
-                style={{ height: 32, paddingLeft: 12, paddingRight: 12, display: "flex", alignItems: "center", gap: 6, background: authenticated ? "rgba(245,184,0,0.08)" : "#F5B800", border: authenticated ? "1px solid rgba(245,184,0,0.2)" : "none", borderRadius: 8, cursor: "pointer", flexShrink: 0 }}
+                onClick={authenticated ? handleDisconnectClick : login}
+                style={{ height: 32, paddingLeft: 12, paddingRight: 12, display: "flex", alignItems: "center", gap: 6, background: confirmDisconnect ? "rgba(255,107,107,0.08)" : authenticated ? "rgba(245,184,0,0.08)" : "#F5B800", border: confirmDisconnect ? "1px solid rgba(255,107,107,0.25)" : authenticated ? "1px solid rgba(245,184,0,0.2)" : "none", borderRadius: 8, cursor: "pointer", flexShrink: 0, transition: "background 0.2s, border-color 0.2s" }}
               >
                 {authenticated && address ? (
                   <>
-                    <div style={{ width: 6, height: 6, borderRadius: 999, background: "#F5B800" }} />
-                    <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(245,184,0,0.85)" }}>{shortAddr(address)}</span>
+                    <div style={{ width: 6, height: 6, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : "#F5B800", transition: "background 0.2s" }} />
+                    <span style={{ ...MONO, fontSize: "0.65rem", color: confirmDisconnect ? "#ff6b6b" : "rgba(245,184,0,0.85)", transition: "color 0.2s" }}>{confirmDisconnect ? "disconnect?" : shortAddr(address)}</span>
                   </>
                 ) : (
                   <span style={{ ...MONO, fontSize: "0.68rem", color: "#000", fontWeight: 700 }}>Connect</span>
