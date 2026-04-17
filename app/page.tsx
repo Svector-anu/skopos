@@ -14,10 +14,11 @@ export default function LandingPage() {
       <CornerBrackets />
 
       {/* Header */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
+      <div className="absolute top-6 left-1/2 -translate-x-1/2">
         <HeaderIcons />
-        <ThemeToggle />
       </div>
+
+      <ThemeToggle />
 
       {/* Center content */}
       <div className="flex flex-col items-center gap-8 w-full max-w-xl">
