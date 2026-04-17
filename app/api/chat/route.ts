@@ -1,17 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  CHAIN_NAMES,
-  NATIVE_ADDRESS,
-  NATIVE_DECIMALS,
-  NATIVE_SYMBOLS,
-  resolveChainId,
-  toWei,
-} from "@/lib/chains";
-
-const SOLANA_CHAIN_ID    = 1000000001;
-const SOLANA_SOL_ADDRESS = "11111111111111111111111111111111";
-const SOLANA_SYSTEM_PROGRAM = "11111111111111111111111111111111"; // system program — valid Solana placeholder
-import { getToken, getQuote } from "@/lib/delora";
+import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
+import { getToken, getQuote, getChainById, solanaPlaceholder } from "@/lib/delora";
 import {
   parseIntent,
   parseRebalanceIntent,
@@ -54,22 +43,27 @@ type LegOk = {
 type LegErr = { ok: false; text: string };
 
 async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage?: number): Promise<LegOk | LegErr> {
-  // Rule 3: validate amount before touching the API
   const parsedAmount = parseFloat(intent.amount);
   if (!isFinite(parsedAmount) || parsedAmount <= 0) {
     return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
   }
 
-  const originChainId  = resolveChainId(intent.originChain);
-  const destChainId    = resolveChainId(intent.destinationChain);
+  const originChainId = resolveChainId(intent.originChain);
+  const destChainId   = resolveChainId(intent.destinationChain);
 
   if (!originChainId || !destChainId) {
     const unknown = !originChainId ? intent.originChain : intent.destinationChain;
     return { ok: false, text: `Unknown chain: "${unknown}". Supported: ethereum, base, arbitrum, optimism, polygon, avalanche, bsc, and more.` };
   }
 
-  const originNativeSymbol = NATIVE_SYMBOLS[originChainId];
-  const destNativeSymbol   = NATIVE_SYMBOLS[destChainId];
+  // Fetch chain metadata from Delora — gives us native token address, symbol, decimals
+  const [originChain, destChain] = await Promise.all([
+    getChainById(originChainId),
+    getChainById(destChainId),
+  ]);
+
+  const originNativeSymbol = originChain?.nativeToken.symbol;
+  const destNativeSymbol   = destChain?.nativeToken.symbol;
 
   // When bridging a native token cross-chain without an explicit destination token,
   // the parser defaults destToken = originToken. Remap to the dest chain's native instead
@@ -86,47 +80,43 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
     return raw;
   })();
 
-  let originCurrency = NATIVE_ADDRESS;
-  let destCurrency   = NATIVE_ADDRESS;
-  let originDecimals = NATIVE_DECIMALS[originChainId] ?? 18;
-  let destDecimals   = NATIVE_DECIMALS[destChainId]   ?? 18;
+  // Native token address and decimals come directly from Delora chain data
+  const originNativeAddress = originChain?.nativeToken.address ?? NATIVE_ADDRESS;
+  const destNativeAddress   = destChain?.nativeToken.address   ?? NATIVE_ADDRESS;
 
-  const isOriginNative =
-    intent.token.toUpperCase() === originNativeSymbol?.toUpperCase();
-  const isDestNative =
-    destToken.toUpperCase() === destNativeSymbol?.toUpperCase();
+  let originCurrency = originNativeAddress;
+  let destCurrency   = destNativeAddress;
+  let originDecimals = originChain?.nativeToken.decimals ?? 18;
+  let destDecimals   = destChain?.nativeToken.decimals   ?? 18;
 
-  // Solana native SOL: address is a fixed base58 system program, not EVM zero address
-  if (isOriginNative && originChainId === SOLANA_CHAIN_ID) {
-    originCurrency = SOLANA_SOL_ADDRESS;
-    originDecimals = 9;
-  } else if (isOriginNative && NATIVE_DECIMALS[originChainId] !== undefined) {
+  const isOriginNative = intent.token.toUpperCase() === originNativeSymbol?.toUpperCase();
+  const isDestNative   = destToken.toUpperCase()    === destNativeSymbol?.toUpperCase();
+
+  // For EVM native tokens Delora expects the token contract address, not the zero address
+  if (isOriginNative && originChain?.chainType === "EVM") {
     const tokenData = await getToken(originChainId, originNativeSymbol ?? intent.token);
-    if (!tokenData) return { ok: false, text: `${intent.token} on ${CHAIN_NAMES[originChainId]} is not yet supported. Try an EVM-to-EVM route instead.` };
+    if (!tokenData) return { ok: false, text: `${intent.token} on ${originChain?.name ?? originChainId} is not yet supported. Try an EVM-to-EVM route instead.` };
     originCurrency = tokenData.address;
     originDecimals = tokenData.decimals;
   }
 
-  if (isDestNative && destChainId === SOLANA_CHAIN_ID) {
-    destCurrency = SOLANA_SOL_ADDRESS;
-    destDecimals = 9;
-  } else if (isDestNative && NATIVE_DECIMALS[destChainId] !== undefined) {
+  if (isDestNative && destChain?.chainType === "EVM") {
     const tokenData = await getToken(destChainId, destNativeSymbol ?? destToken);
-    if (!tokenData) return { ok: false, text: `${destToken} on ${CHAIN_NAMES[destChainId]} is not yet supported as a destination.` };
+    if (!tokenData) return { ok: false, text: `${destToken} on ${destChain?.name ?? destChainId} is not yet supported as a destination.` };
     destCurrency = tokenData.address;
     destDecimals = tokenData.decimals;
   }
 
   if (!isOriginNative) {
     const tokenData = await getToken(originChainId, intent.token);
-    if (!tokenData) return { ok: false, text: `Could not find ${intent.token} on ${CHAIN_NAMES[originChainId]}.` };
+    if (!tokenData) return { ok: false, text: `Could not find ${intent.token} on ${originChain?.name ?? originChainId}.` };
     originCurrency = tokenData.address;
     originDecimals = tokenData.decimals;
   }
 
   if (!isDestNative) {
     const tokenData = await getToken(destChainId, destToken);
-    if (!tokenData) return { ok: false, text: `Could not find ${destToken} on ${CHAIN_NAMES[destChainId]}.` };
+    if (!tokenData) return { ok: false, text: `Could not find ${destToken} on ${destChain?.name ?? destChainId}.` };
     destCurrency = tokenData.address;
     destDecimals = tokenData.decimals;
   }
@@ -141,14 +131,14 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
       amount: amountWei,
       originCurrency,
       destinationCurrency: destCurrency,
-      senderAddress:   originChainId === SOLANA_CHAIN_ID ? SOLANA_SYSTEM_PROGRAM : senderAddress,
-      receiverAddress: destChainId   === SOLANA_CHAIN_ID ? SOLANA_SYSTEM_PROGRAM : senderAddress,
+      senderAddress:   originChain?.chainType === "SVM" ? solanaPlaceholder("SVM") : senderAddress,
+      receiverAddress: destChain?.chainType   === "SVM" ? solanaPlaceholder("SVM") : senderAddress,
       slippage,
     });
   } catch (err) {
     const msg        = err instanceof Error ? err.message : "Unknown error";
     const noAdapters = msg.includes("No adapters available");
-    const isSolana   = originChainId === 1000000001 || destChainId === 1000000001;
+    const isSolana   = originChain?.chainType === "SVM" || destChain?.chainType === "SVM";
     return {
       ok: false,
       text: noAdapters
@@ -163,17 +153,17 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
     ? (Number(quote.outputAmount) / 10 ** destDecimals).toFixed(6)
     : "unknown";
 
-  const tool           = quote.adapter ?? "best route";
-  const feeBreakdown   = quote.fees?.breakdown ?? [];
-  const gasFee         = feeBreakdown.find((f) => f.type === "gas");
-  const totalFeesUSD   = quote.fees?.totalUsd ?? null;
-  const gasUSD         = gasFee?.amountUsd ?? null;
+  const tool         = quote.adapter ?? "best route";
+  const feeBreakdown = quote.fees?.breakdown ?? [];
+  const gasFee       = feeBreakdown.find((f) => f.type === "gas");
+  const totalFeesUSD = quote.fees?.totalUsd ?? null;
+  const gasUSD       = gasFee?.amountUsd ?? null;
 
   return {
     ok: true,
     intent: {
-      from: { chain: CHAIN_NAMES[originChainId], chainId: originChainId, token: intent.token, amount: intent.amount },
-      to:   { chain: CHAIN_NAMES[destChainId],   chainId: destChainId,   token: destToken },
+      from: { chain: originChain?.name ?? String(originChainId), chainId: originChainId, token: intent.token, amount: intent.amount },
+      to:   { chain: destChain?.name   ?? String(destChainId),   chainId: destChainId,   token: destToken },
     },
     route:    { tool, outputAmount: outputFormatted, feesUSD: totalFeesUSD, gasUSD },
     approval: isOriginNative ? null : {
@@ -233,7 +223,8 @@ export async function POST(req: NextRequest) {
       );
 
       if (filteredBalances.length === 0 && filteredTokens.length === 0) {
-        const label = requestedChainId ? (CHAIN_NAMES[requestedChainId] ?? requestedChain) : requestedChain;
+        const chainData = requestedChainId ? await getChainById(requestedChainId) : null;
+        const label = chainData?.name ?? requestedChain;
         const activeChains = [
           ...data.balances.map(b => b.chainName),
           ...data.tokenBalances.map(t => t.chainName),
