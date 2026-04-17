@@ -1689,6 +1689,20 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
 
 // ─── YieldPoolsDisplay ────────────────────────────────────────────────────────
 
+// Maps DeFiLlama chain names → Delora chain names (only chains Delora actually supports).
+// Any chain not in this map gets no bridge button.
+const DEFILLAMA_TO_DELORA: Record<string, string> = {
+  "ethereum": "ethereum", "op mainnet": "optimism", "optimism": "optimism",
+  "arbitrum": "arbitrum", "base": "base", "polygon": "polygon",
+  "avalanche": "avalanche", "bsc": "bsc", "gnosis": "gnosis",
+  "scroll": "scroll", "linea": "linea", "mantle": "mantle",
+  "blast": "blast", "metis": "metis", "celo": "celo",
+  "berachain": "berachain", "sonic": "sonic", "unichain": "unichain",
+  "monad": "monad", "ink": "ink", "soneium": "soneium",
+  "hyperevm": "hyperevm", "world chain": "world chain",
+  "cronos": "cronos", "plasma": "plasma",
+};
+
 function YieldPoolsDisplay({ result, onBridge }: { result: YieldPoolsResult; onBridge?: (prompt: string) => void }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { symbol, pools } = result;
@@ -1733,16 +1747,22 @@ function YieldPoolsDisplay({ result, onBridge }: { result: YieldPoolsResult; onB
               <p style={{ ...MONO, fontSize: "0.85rem", color: "#22c55e", fontWeight: 700, margin: 0 }}>{pool.apy.toFixed(2)}%</p>
               <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "2px 0 0" }}>{fmtTvl(pool.tvlUsd)} TVL</p>
             </div>
-            {onBridge && (
-              <button
-                onClick={() => onBridge(`bridge 100 ${symbol} to ${pool.chain.toLowerCase()}`)}
-                style={{ ...MONO, fontSize: "0.6rem", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(245,184,0,0.25)", background: "rgba(245,184,0,0.05)", color: "rgba(245,184,0,0.6)", cursor: "pointer", flexShrink: 0 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.5)"; e.currentTarget.style.color = "#F5B800"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
-              >
-                bridge →
-              </button>
-            )}
+            {onBridge && (() => {
+              // Strip reward suffix e.g. "OP Mainnet+5.25% rewards" → "OP Mainnet"
+              const rawChain = pool.chain.replace(/\s*\+.*$/, "").trim().toLowerCase();
+              const deloraChain = DEFILLAMA_TO_DELORA[rawChain];
+              if (!deloraChain) return null;
+              return (
+                <button
+                  onClick={() => onBridge(`bridge 100 ${symbol} to ${deloraChain}`)}
+                  style={{ ...MONO, fontSize: "0.6rem", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(245,184,0,0.25)", background: "rgba(245,184,0,0.05)", color: "rgba(245,184,0,0.6)", cursor: "pointer", flexShrink: 0 }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.5)"; e.currentTarget.style.color = "#F5B800"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
+                >
+                  bridge →
+                </button>
+              );
+            })()}
           </div>
         ))}
       </div>

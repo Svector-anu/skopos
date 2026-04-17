@@ -316,13 +316,14 @@ export async function POST(req: NextRequest) {
   // ── missing-source guard: "bridge X TOKEN to CHAIN" with no "from" ─────────
   // Catch this before parseIntent so Groq never gets a chance to hallucinate a source.
   const missingSource = trimmed.match(
-    /^(?:bridge|move|send|transfer|swap)\s+[\d.]+\s+[a-z]+\s+to\s+([a-z][a-z\s]*?)(?:\s*[?.]?\s*)$/i
+    /^(?:bridge|move|send|transfer|swap)\s+[\d.]+\s+([a-z]+)\s+to\s+([a-z][a-z\s]*?)(?:\s*[?.]?\s*)$/i
   );
   if (missingSource && !/\bfrom\b/i.test(trimmed) && !/\bon\b/i.test(trimmed)) {
-    const dest = missingSource[1].trim();
+    const token = missingSource[1].toUpperCase();
+    const dest  = missingSource[2].trim();
     return NextResponse.json({
       type: "error",
-      text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 USDC from base to ${dest}" or "bridge 100 USDC from arbitrum to ${dest}".`,
+      text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 ${token} from base to ${dest}" or "bridge 100 ${token} from arbitrum to ${dest}".`,
     });
   }
 
