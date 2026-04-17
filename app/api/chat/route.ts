@@ -261,13 +261,16 @@ export async function POST(req: NextRequest) {
   }
 
   // ── DeFi yield scanner ────────────────────────────────────────────────────
-  const yieldMatch = trimmed.match(
-    /\b(?:yield|earn|apy|apr|interest|highest|best|where.*put|where.*stake)\b.*\b([a-z]{2,10})\b/i
-  ) ?? trimmed.match(
-    /\b(?:find|show|get|what).*\b(?:yield|apy|apr|earn).*\b([a-z]{2,10})\b/i
-  );
-  if (yieldMatch && /\b(yield|apy|apr|earn|interest)\b/i.test(trimmed)) {
-    const symbol = yieldMatch[1].toUpperCase();
+  // Matches: "best yield for USDC", "highest APY USDC", "where earn USDC",
+  //          "best USDC rates", "USDC yield", "find yield ETH", "earn on DAI"
+  const YIELD_TOKENS = ["USDC", "ETH", "WBTC", "DAI", "USDT", "WETH", "CBBTC", "GHO", "LUSD", "FRAX", "CRVUSD"];
+  const yieldKeyword = /\b(yield|apy|apr|earn|interest|rate[s]?|return[s]?)\b/i.test(trimmed);
+  const yieldTrigger = /\b(best|highest|top|find|show|where|compare|scan|check)\b/i.test(trimmed);
+  const tokenInQuery = YIELD_TOKENS.find(t => new RegExp(`\\b${t}\\b`, "i").test(trimmed));
+  const yieldSymbolMatch = trimmed.match(/\b(USDC|USDT|ETH|WETH|WBTC|DAI|GHO|FRAX|LUSD|CRVUSD|CBBTC)\b/i);
+
+  if ((yieldKeyword || yieldTrigger) && (tokenInQuery || yieldSymbolMatch) && yieldKeyword) {
+    const symbol = (tokenInQuery ?? yieldSymbolMatch![1]).toUpperCase();
     const pools = await getTopYields(symbol);
     if (pools.length === 0) {
       return NextResponse.json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
