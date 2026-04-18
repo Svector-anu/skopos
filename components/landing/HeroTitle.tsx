@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 // ── config ────────────────────────────────────────────────────────────────────
 const CHARS = "AX70BZ91CY80xEFG2H3IJ4KL5MN6OP";
@@ -25,8 +25,8 @@ interface P {
   ch: string;
   op: number;
   sc: number;
-  ph: number;   // letter-zone phase + small random jitter
-  bg: boolean;  // true = background layer (interior, dim, slow)
+  ph: number;
+  bg: boolean;
 }
 
 export function HeroTitle() {
@@ -35,24 +35,22 @@ export function HeroTitle() {
   const particles = useRef<P[]>([]);
   const mouse     = useRef({ x: -9999, y: -9999 });
   const raf       = useRef(0);
-  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    setIsMobile(window.innerWidth < 768);
-  }, []);
-
-  useEffect(() => {
-    if (isMobile) return;
     const wrap   = wrapRef.current;
     const canvas = canvasRef.current;
     if (!wrap || !canvas) return;
 
-    const ctx = canvas.getContext("2d")!;
-    const dpr = window.devicePixelRatio || 1;
+    const ctx     = canvas.getContext("2d")!;
+    const dpr     = window.devicePixelRatio || 1;
+    const mobile  = window.innerWidth < 768;
+    // On mobile: coarser grid → fewer particles → less GPU load
+    const fgStep  = mobile ? 7 : FG.step;
+    const bgStep  = mobile ? 14 : BG.step;
     let alive = true;
 
     async function build() {
-      const w = wrap!.offsetWidth  || 800;
+      const w = wrap!.offsetWidth  || (mobile ? window.innerWidth : 800);
       const h = wrap!.offsetHeight || 160;
 
       canvas!.width  = w * dpr;
@@ -61,7 +59,9 @@ export function HeroTitle() {
       canvas!.style.height = `${h}px`;
       ctx.scale(dpr, dpr);
 
-      const fontSize = Math.max(80, Math.min(160, window.innerWidth * 0.14));
+      const fontSize = mobile
+        ? Math.max(60, window.innerWidth * 0.185)
+        : Math.max(80, Math.min(160, window.innerWidth * 0.14));
       const spacing  = `${Math.round(fontSize * 0.08)}px`;
 
       await Promise.race([
@@ -95,8 +95,6 @@ export function HeroTitle() {
                alpha(px, py - 4) < 40 || alpha(px, py + 4) < 40;
       }
 
-      // Letters stagger: each of the 6 letter zones gets a distinct phase,
-      // so ambient drift ripples gently across the word instead of moving in sync.
       function letterPhase(px: number): number {
         const idx = Math.max(0, Math.min(5, Math.floor((px - textLeft) / textW * 6)));
         return idx * (Math.PI / 3);
@@ -104,13 +102,13 @@ export function HeroTitle() {
 
       const ps: P[] = [];
 
-      // FG pass — fine grid, edge pixels always included, very sparse interior
-      for (let py = 0; py < h; py += FG.step) {
-        for (let px = 0; px < w; px += FG.step) {
+      // FG pass
+      for (let py = 0; py < h; py += fgStep) {
+        for (let px = 0; px < w; px += fgStep) {
           if (alpha(px, py) <= 80) continue;
           if (!isEdge(px, py) && Math.random() > INTERIOR_KEEP) continue;
-          const jx = px + (Math.random() - 0.5) * FG.step * 0.4;
-          const jy = py + (Math.random() - 0.5) * FG.step * 0.4;
+          const jx = px + (Math.random() - 0.5) * fgStep * 0.4;
+          const jy = py + (Math.random() - 0.5) * fgStep * 0.4;
           ps.push({
             x: jx, y: jy, ox: jx, oy: jy,
             ch: CHARS[Math.floor(Math.random() * CHARS.length)],
@@ -121,14 +119,14 @@ export function HeroTitle() {
         }
       }
 
-      // BG pass — coarse grid, interior only, thinned further
-      for (let py = 0; py < h; py += BG.step) {
-        for (let px = 0; px < w; px += BG.step) {
+      // BG pass
+      for (let py = 0; py < h; py += bgStep) {
+        for (let px = 0; px < w; px += bgStep) {
           if (alpha(px, py) <= 80) continue;
           if (isEdge(px, py)) continue;
           if (Math.random() > 0.45) continue;
-          const jx = px + (Math.random() - 0.5) * BG.step * 0.4;
-          const jy = py + (Math.random() - 0.5) * BG.step * 0.4;
+          const jx = px + (Math.random() - 0.5) * bgStep * 0.4;
+          const jy = py + (Math.random() - 0.5) * bgStep * 0.4;
           ps.push({
             x: jx, y: jy, ox: jx, oy: jy,
             ch: CHARS[Math.floor(Math.random() * CHARS.length)],
@@ -147,7 +145,7 @@ export function HeroTitle() {
         const t = performance.now();
         ctx.clearRect(0, 0, w, h);
 
-        // Stroke outline guide — drawn first, under all particles
+        // Yellow stroke outline
         ctx.save();
         ctx.font          = `700 ${fontSize}px "Source Serif 4", serif`;
         ctx.letterSpacing = spacing;
@@ -163,7 +161,6 @@ export function HeroTitle() {
 
         const { x: mx, y: my } = mouse.current;
 
-        // Draw BG first, FG on top
         for (const drawBg of [true, false]) {
           ctx.fillStyle    = "#F5B800";
           ctx.textAlign    = "center";
@@ -173,28 +170,33 @@ export function HeroTitle() {
             if (p.bg !== drawBg) continue;
             const cfg = p.bg ? BG : FG;
 
-            // Ambient float — BG drifts at half speed, creating depth separation
             const spd    = p.bg ? 0.0003 : 0.0006;
             const floatX = p.ox + Math.sin(t * spd       + p.ph) * cfg.floatX;
             const floatY = p.oy + Math.cos(t * spd * 1.4 + p.ph * 1.3) * cfg.floatY;
 
-            // Smooth repel — push outward from cursor, ease back when cursor leaves
-            const dx    = p.ox - mx;
-            const dy    = p.oy - my;
-            const dist2 = dx * dx + dy * dy;
+            // Skip repel physics on mobile — no cursor
+            if (!mobile) {
+              const dx    = p.ox - mx;
+              const dy    = p.oy - my;
+              const dist2 = dx * dx + dy * dy;
 
-            if (dist2 < RADIUS * RADIUS) {
-              const str   = 1 - Math.sqrt(dist2) / RADIUS;
-              const angle = Math.atan2(dy, dx);
-              p.x  += (floatX + Math.cos(angle) * cfg.scatter * str - p.x) * cfg.ease * 2.5;
-              p.y  += (floatY + Math.sin(angle) * cfg.scatter * str - p.y) * cfg.ease * 2.5;
-              p.op += (cfg.baseOp + (cfg.peakOp - cfg.baseOp) * str - p.op) * cfg.ease * 2;
-              p.sc += (1 + (p.bg ? 0.15 : 0.45) * str - p.sc) * cfg.ease * 2;
+              if (dist2 < RADIUS * RADIUS) {
+                const str   = 1 - Math.sqrt(dist2) / RADIUS;
+                const angle = Math.atan2(dy, dx);
+                p.x  += (floatX + Math.cos(angle) * cfg.scatter * str - p.x) * cfg.ease * 2.5;
+                p.y  += (floatY + Math.sin(angle) * cfg.scatter * str - p.y) * cfg.ease * 2.5;
+                p.op += (cfg.baseOp + (cfg.peakOp - cfg.baseOp) * str - p.op) * cfg.ease * 2;
+                p.sc += (1 + (p.bg ? 0.15 : 0.45) * str - p.sc) * cfg.ease * 2;
+              } else {
+                p.x  += (floatX - p.x) * cfg.ease;
+                p.y  += (floatY - p.y) * cfg.ease;
+                p.op += (cfg.baseOp - p.op) * cfg.ease * 1.5;
+                p.sc += (1 - p.sc)           * cfg.ease * 1.5;
+              }
             } else {
+              // Mobile: pure ambient float only
               p.x  += (floatX - p.x) * cfg.ease;
               p.y  += (floatY - p.y) * cfg.ease;
-              p.op += (cfg.baseOp - p.op) * cfg.ease * 1.5;
-              p.sc += (1 - p.sc)           * cfg.ease * 1.5;
             }
 
             if (p.op < 0.01) continue;
@@ -218,54 +220,33 @@ export function HeroTitle() {
       mouse.current = { x: e.clientX - r.left, y: e.clientY - r.top };
     }
 
-    window.addEventListener("mousemove", onMove);
+    if (!mobile) window.addEventListener("mousemove", onMove);
     return () => {
       alive = false;
       cancelAnimationFrame(raf.current);
-      window.removeEventListener("mousemove", onMove);
+      if (!mobile) window.removeEventListener("mousemove", onMove);
     };
   }, []);
-
-  if (isMobile) {
-    return (
-      <div className="text-center leading-none select-none">
-        <h1
-          style={{
-            fontFamily: "var(--font-display), serif",
-            fontWeight: 700,
-            fontSize: "clamp(4.5rem, 22vw, 8rem)",
-            letterSpacing: "0.08em",
-            lineHeight: 1,
-            color: "var(--landing-text)",
-            margin: 0,
-          }}
-        >
-          SKOPOS
-        </h1>
-      </div>
-    );
-  }
 
   return (
     <div
       ref={wrapRef}
       className="text-center leading-none select-none"
-      style={{ position: "relative" }}
+      style={{ position: "relative", width: "100%" }}
     >
-      {/* Particle + guide canvas — same coordinate space as offscreen sampler */}
       <canvas
         ref={canvasRef}
         style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 2 }}
       />
-      {/* Invisible layout spacer — gives the wrapper its height */}
+      {/* Invisible spacer — gives wrapper its dimensions for canvas sizing */}
       <div
         aria-hidden="true"
         style={{
           fontFamily: "var(--font-display), serif",
           fontWeight: 700,
-          fontSize: "clamp(5rem, 14vw, 10rem)",
+          fontSize: "clamp(4rem, 18vw, 10rem)",
           letterSpacing: "0.08em",
-          lineHeight: 1,
+          lineHeight: 1.1,
           opacity: 0,
           userSelect: "none",
           pointerEvents: "none",

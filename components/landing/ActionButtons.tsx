@@ -17,8 +17,8 @@ const btnStyle: React.CSSProperties = {
   fontSize: "0.7rem",
   letterSpacing: "0.1em",
   textTransform: "uppercase",
-  border: "1px solid var(--landing-btn-border)",
-  color: "var(--landing-btn-text)",
+  border: "1px solid rgba(255,255,255,0.2)",
+  color: "rgba(255,255,255,0.7)",
   background: "transparent",
   cursor: "pointer",
   textDecoration: "none",
@@ -27,12 +27,12 @@ const btnStyle: React.CSSProperties = {
 
 function OutlineButton({ href, label, icon, external }: ButtonProps) {
   function handleEnter(e: React.MouseEvent<HTMLElement>) {
-    e.currentTarget.style.color = "var(--landing-btn-hover-text)";
-    e.currentTarget.style.borderColor = "var(--landing-btn-hover-border)";
+    e.currentTarget.style.color = "#ffffff";
+    e.currentTarget.style.borderColor = "rgba(255,255,255,0.4)";
   }
   function handleLeave(e: React.MouseEvent<HTMLElement>) {
-    e.currentTarget.style.color = "var(--landing-btn-text)";
-    e.currentTarget.style.borderColor = "var(--landing-btn-border)";
+    e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+    e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)";
   }
 
   if (external) {

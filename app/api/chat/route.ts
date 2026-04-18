@@ -315,16 +315,29 @@ export async function POST(req: NextRequest) {
 
   // ── missing-source guard: "bridge X TOKEN to CHAIN" with no "from" ─────────
   // Catch this before parseIntent so Groq never gets a chance to hallucinate a source.
+  // Skip the guard when the token itself implies a source chain (e.g. SOL → Solana,
+  // BNB → BSC) — the LLM can infer the origin without the user spelling it out.
+  const TOKEN_IMPLIES_SOURCE: Record<string, string> = {
+    SOL:  "solana",
+    MATIC: "polygon",
+    BNB:  "bsc",
+    AVAX: "avalanche",
+    FTM:  "fantom",
+    CELO: "celo",
+  };
   const missingSource = trimmed.match(
     /^(?:bridge|move|send|transfer|swap)\s+[\d.]+\s+([a-z]+)\s+to\s+([a-z][a-z\s]*?)(?:\s*[?.]?\s*)$/i
   );
   if (missingSource && !/\bfrom\b/i.test(trimmed) && !/\bon\b/i.test(trimmed)) {
     const token = missingSource[1].toUpperCase();
-    const dest  = missingSource[2].trim();
-    return NextResponse.json({
-      type: "error",
-      text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 ${token} from base to ${dest}" or "bridge 100 ${token} from arbitrum to ${dest}".`,
-    });
+    if (!TOKEN_IMPLIES_SOURCE[token]) {
+      // Take only the first word of the dest to avoid "base eth" appearing as a chain name
+      const dest = missingSource[2].trim().split(/\s+/)[0];
+      return NextResponse.json({
+        type: "error",
+        text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 ${token} from base to ${dest}" or "bridge 100 ${token} from arbitrum to ${dest}".`,
+      });
+    }
   }
 
   // ── single-leg intent (runs before scanners so "bridge X for yield" parses as bridge) ──
