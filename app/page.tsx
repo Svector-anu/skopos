@@ -14,10 +14,12 @@ export default function LandingPage() {
         <HeaderIcons />
       </div>
 
-      <div className="flex flex-col items-center gap-8 w-full max-w-xl">
+      <div className="flex flex-col items-center gap-8 w-full">
         <HeroTitle />
-        <TerminalCard />
-        <ActionButtons />
+        <div className="flex flex-col items-center gap-8 w-full max-w-xl">
+          <TerminalCard />
+          <ActionButtons />
+        </div>
       </div>
     </main>
   );

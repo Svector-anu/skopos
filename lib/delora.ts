@@ -1,4 +1,5 @@
-const BASE = "https://api.delora.build";
+const BASE    = "https://api.delora.build";
+const API_KEY = process.env.DELORA_API_KEY ?? "";
 
 // For preview quotes where no real wallet is connected yet
 const EVM_PLACEHOLDER  = "0x0000000000000000000000000000000000000001";
@@ -9,8 +10,10 @@ const TIMEOUT_MS = 8000;
 async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const headers = new Headers(init?.headers);
+  if (API_KEY) headers.set("x-api-key", API_KEY);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetch(input, { ...init, headers, signal: controller.signal });
   } finally {
     clearTimeout(id);
   }
@@ -139,6 +142,7 @@ export async function getQuote(params: {
 
   const res = await fetchWithTimeout(`${BASE}/v1/quotes?${query}`);
   if (!res.ok) {
+    if (res.status === 429) throw new Error("Rate limit reached — please wait a moment and try again.");
     const text = await res.text();
     throw new Error(`Delora quote failed ${res.status}: ${text}`);
   }
