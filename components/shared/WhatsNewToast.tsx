@@ -8,7 +8,7 @@ const TTL_MS  = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 const CHANGES = [
   "Skopos now answers any DeFi question, not just transactions",
-  "Your chat persists across page reloads",
+  "API keys secured — stored as encrypted Sensitive variables",
   "Responses are 2× faster",
 ];
 

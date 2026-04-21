@@ -1,5 +1,7 @@
-const BASE    = "https://api.delora.build";
-const API_KEY = process.env.DELORA_API_KEY ?? "";
+const BASE       = "https://api.delora.build";
+const API_KEY    = process.env.DELORA_API_KEY ?? "";
+const INTEGRATOR = process.env.DELORA_INTEGRATOR ?? "skopos";
+const FEE        = 0.0005; // 0.05% integrator fee
 
 // For preview quotes where no real wallet is connected yet
 const EVM_PLACEHOLDER  = "0x0000000000000000000000000000000000000001";
@@ -139,6 +141,8 @@ export async function getQuote(params: {
     receiverAddress: params.receiverAddress ?? EVM_PLACEHOLDER,
   });
   if (params.slippage != null) query.set("slippage", String(params.slippage));
+  query.set("integrator", INTEGRATOR);
+  query.set("fee", String(FEE));
 
   const res = await fetchWithTimeout(`${BASE}/v1/quotes?${query}`);
   if (!res.ok) {
