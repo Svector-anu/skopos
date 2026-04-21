@@ -579,11 +579,11 @@ export async function getSuggestion(
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
-      max_tokens: 256,
-      temperature:0.2,
+      max_tokens: 200,
+      temperature: 0.1,
       messages: [
         { role: "system", content: GROQ_CHAT_SYSTEM + walletCtx },
-        ...(history?.slice(-6) ?? []),
+        ...(history?.slice(-4) ?? []),
         { role: "user", content: input },
       ],
     });

@@ -270,6 +270,7 @@ export default function AppPage() {
       sessionIdRef.current = last.id;
       setActiveId(last.id);
       setMessages(last.messages);
+      localStorage.setItem("skopos-active-session", last.id);
     } else {
       const id = crypto.randomUUID();
       sessionIdRef.current = id;
@@ -358,7 +359,7 @@ export default function AppPage() {
     setSidebarExpanded(false);
 
     // Build history snapshot before state update (last 6 turns)
-    const history = messages.slice(-6).flatMap((m): { role: "user" | "assistant"; content: string }[] => {
+    const history = messages.slice(-4).flatMap((m): { role: "user" | "assistant"; content: string }[] => {
       if (m.role === "user") return [{ role: "user", content: m.text }];
       if (m.result.type === "text")  return [{ role: "assistant", content: m.result.text }];
       if (m.result.type === "error") return [{ role: "assistant", content: m.result.text }];
@@ -406,7 +407,7 @@ export default function AppPage() {
         let displayed = "";
         const buf = { text: "" };
 
-        // Drip one word unit (word + trailing whitespace) every 90ms
+        // Drip one word unit (word + trailing whitespace) every 40ms
         const drip = setInterval(() => {
           if (abort.signal.aborted) { clearInterval(drip); dripRef.current = null; return; }
           if (!buf.text) return;
@@ -416,7 +417,7 @@ export default function AppPage() {
           buf.text = buf.text.slice(match[1].length);
           displayed += match[1];
           setStreamingText(displayed);
-        }, 90);
+        }, 40);
         dripRef.current = drip;
 
         while (true) {
