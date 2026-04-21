@@ -15,6 +15,7 @@ import {
 } from "@solana/wallet-adapter-react";
 import type { WalletName } from "@solana/wallet-adapter-base";
 import { VersionedTransaction } from "@solana/web3.js";
+import { WhatsNewToast } from "@/components/shared/WhatsNewToast";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -497,6 +498,7 @@ export default function AppPage() {
   const hasMessages = messages.length > 0;
 
   return (
+    <>
     <main style={{ position: "relative", height: "100vh", width: "100vw", background: T.bg, display: "flex", overflow: "hidden" }}>
 
       {/* Mobile sidebar overlay backdrop */}
@@ -1042,6 +1044,8 @@ export default function AppPage() {
         </div>
       </div>
     </main>
+    <WhatsNewToast />
+    </>
   );
 }
 
