@@ -3,27 +3,26 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const KEY     = "skopos-whatsnew-v1";
-const TTL_MS  = 3 * 24 * 60 * 60 * 1000; // 3 days
+const KEY    = "skopos-whatsnew-v2";
+const TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 const CHANGES = [
-  "Skopos now answers any DeFi question, not just transactions",
-  "API keys secured — stored as encrypted Sensitive variables",
+  "Ask Skopos anything — bridges, swaps, gas, yields, market odds",
+  "Live prediction market odds directly in chat",
   "Responses are 2× faster",
 ];
 
 export function WhatsNewToast() {
   const [visible, setVisible] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
+    setIsMobile(window.innerWidth < 600);
     try {
       const raw = localStorage.getItem(KEY);
       if (raw === "dismissed") return;
       if (raw) {
-        if (Date.now() - Number(raw) > TTL_MS) {
-          localStorage.removeItem(KEY);
-          return;
-        }
+        if (Date.now() - Number(raw) > TTL_MS) { localStorage.removeItem(KEY); return; }
         setVisible(true);
         return;
       }
@@ -47,10 +46,11 @@ export function WhatsNewToast() {
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           style={{
             position:     "fixed",
-            bottom:       24,
-            right:        24,
+            bottom:       isMobile ? 80 : 24,
+            right:        isMobile ? 12 : 24,
+            left:         isMobile ? 12 : "auto",
             zIndex:       50,
-            width:        296,
+            width:        isMobile ? "auto" : 296,
             background:   "#0D0D0D",
             border:       "1px solid rgba(255,255,255,0.09)",
             borderRadius: 12,
@@ -58,7 +58,6 @@ export function WhatsNewToast() {
             boxShadow:    "0 8px 32px rgba(0,0,0,0.5)",
           }}
         >
-          {/* Header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ color: "#F5B800", fontSize: "0.75rem" }}>✦</span>
@@ -77,7 +76,6 @@ export function WhatsNewToast() {
             </button>
           </div>
 
-          {/* Changes */}
           <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 9 }}>
             {CHANGES.map((c, i) => (
               <li key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>

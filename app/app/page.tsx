@@ -180,7 +180,7 @@ const FEATURE_SLIDES: FeatureCard[][] = [
   [
     { label: "Plain Language", sub: "Just describe what you want", icon: <IcChat /> },
     { label: "5 Bridges",      sub: "Relay, Across, Mayan & more", icon: <IcNet /> },
-    { label: "Live Quotes",    sub: "Real-time Delora pricing",    icon: <IcChart /> },
+    { label: "Live Quotes",    sub: "Real-time cross-chain pricing", icon: <IcChart /> },
   ],
   [
     { label: "Tx History",  sub: "Track all your moves",    icon: <IcClock /> },
@@ -675,7 +675,7 @@ export default function AppPage() {
           )}
 
           {/* GitHub */}
-          <a href="https://github.com/deloraprotocol/delora-copilot" target="_blank" rel="noopener noreferrer"
+          <a href="https://github.com/Svector-anu/skopos" target="_blank" rel="noopener noreferrer"
             style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, color: T.textDim, textDecoration: "none", whiteSpace: "nowrap" }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
@@ -896,7 +896,7 @@ export default function AppPage() {
                   </svg>
                 </div>
                 <p style={{ ...MONO, fontSize: "0.95rem", color: T.textMuted, lineHeight: 1.65, margin: 0, maxWidth: 440 }}>
-                  Welcome to the Delora protocol. I&apos;m{" "}
+                  Hey, I&apos;m{" "}
                   <span style={{ color: "#F5B800", fontWeight: 600 }}>Skopos</span>
                   , your cross-chain DeFi copilot.
                 </p>
