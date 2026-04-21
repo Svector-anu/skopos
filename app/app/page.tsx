@@ -34,7 +34,7 @@ type QuoteResult = {
   calldata: { to: string; value: string; data: string } | null;
 };
 
-type TextResult      = { type: "text";      text: string };
+type TextResult      = { type: "text";      text: string; suggestions?: { label: string; command: string }[] };
 type ErrorResult     = { type: "error";     text: string };
 type RebalanceResult = { type: "rebalance"; mode: "preview"; legs: Array<QuoteResult | ErrorResult> };
 type TxResult        = { type: "tx";        tx: TxData;      summary: string };
@@ -819,6 +819,9 @@ export default function AppPage() {
                       <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: msg.result.type === "error" ? "#ff5555" : T.textMuted, margin: 0 }}>
                         {msg.result.text}
                       </p>
+                    )}
+                    {msg.result.type === "text" && msg.result.suggestions && msg.result.suggestions.length > 0 && (
+                      <SuggestionsDisplay result={{ type: "suggestions", prompts: msg.result.suggestions }} onSelect={(cmd: string) => submit(cmd)} />
                     )}
                     {/* Send feedback */}
                     <div style={{ marginTop: 8 }}>

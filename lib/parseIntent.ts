@@ -355,6 +355,33 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
   }
 }
 
+export async function getGroqReply(
+  input: string,
+  history?: { role: "user" | "assistant"; content: string }[],
+  senderAddress?: string,
+): Promise<string> {
+  const groq = getGroq();
+  const FALLBACK = "I can help you bridge, swap, and manage assets across chains. What would you like to do?";
+  if (!groq) return FALLBACK;
+  const walletCtx = senderAddress ? `\n\nUser's connected wallet address: ${senderAddress}.` : "";
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      max_tokens: 256,
+      temperature: 0.2,
+      stream: false,
+      messages: [
+        { role: "system", content: GROQ_CHAT_SYSTEM + walletCtx },
+        ...(history?.slice(-6) ?? []),
+        { role: "user", content: input },
+      ],
+    });
+    return completion.choices[0]?.message?.content?.trim() ?? FALLBACK;
+  } catch {
+    return FALLBACK;
+  }
+}
+
 export function streamSuggestion(
   input: string,
   history?: { role: "user" | "assistant"; content: string }[],

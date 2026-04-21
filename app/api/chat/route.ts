@@ -6,6 +6,7 @@ import {
   parseRebalanceIntent,
   looksLikeRebalance,
   streamSuggestion,
+  getGroqReply,
   generateTxSummary,
   generateAddressSummary,
   buildSuggestions,
@@ -408,7 +409,8 @@ export async function POST(req: NextRequest) {
   // generic text so the user can immediately click to try something real.
   const suggestions = buildSuggestions(trimmed);
   if (suggestions && suggestions.length > 0) {
-    return NextResponse.json({ type: "suggestions", prompts: suggestions });
+    const text = await getGroqReply(message, history, senderAddress);
+    return NextResponse.json({ type: "text", text, suggestions });
   }
 
   // ── general chat — stream tokens back as plain text ─────────────────────
