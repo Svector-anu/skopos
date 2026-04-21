@@ -261,6 +261,9 @@ export default function AppPage() {
   const usdcDisplay = usdcRaw != null
     ? `${(Number(usdcRaw as bigint) / 1e6).toFixed(2)} USDC`
     : null;
+  const hasNoFunds = !!address && !balanceLoading &&
+    (!nativeBal || nativeBal.value === BigInt(0)) &&
+    (!usdcRaw || (usdcRaw as bigint) === BigInt(0));
 
   useEffect(() => {
     const stored = loadJson<Session[]>("skopos-sessions", []);
@@ -763,6 +766,17 @@ export default function AppPage() {
                   <div key={i}>
                     {msg.result.type === "quote" && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {hasNoFunds && (
+                          <div style={{ background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                            <span style={{ ...MONO, fontSize: "0.74rem", color: "rgba(255,255,255,0.55)" }}>No funds detected on this chain</span>
+                            <button
+                              onClick={() => fundWallet({ address })}
+                              style={{ ...MONO, fontSize: "0.7rem", fontWeight: 700, background: "#F5B800", color: "#000", border: "none", borderRadius: 7, padding: "6px 14px", cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              Fund Wallet →
+                            </button>
+                          </div>
+                        )}
                         <p style={{ ...MONO, fontSize: "0.75rem", color: T.textDim, lineHeight: 1.7, margin: 0 }}>
                           <span style={{ color: "#F5B800" }}>{msg.result.route.tool}</span>
                           {"  ·  "}
@@ -801,6 +815,17 @@ export default function AppPage() {
                     )}
                     {msg.result.type === "rebalance" && (
                       <ErrorBoundary label="Rebalance failed to render.">
+                        {hasNoFunds && (
+                          <div style={{ background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+                            <span style={{ ...MONO, fontSize: "0.74rem", color: "rgba(255,255,255,0.55)" }}>No funds detected on this chain</span>
+                            <button
+                              onClick={() => fundWallet({ address })}
+                              style={{ ...MONO, fontSize: "0.7rem", fontWeight: 700, background: "#F5B800", color: "#000", border: "none", borderRadius: 7, padding: "6px 14px", cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              Fund Wallet →
+                            </button>
+                          </div>
+                        )}
                         <RebalanceDisplay result={msg.result} onTxSubmitted={saveTx} />
                       </ErrorBoundary>
                     )}
