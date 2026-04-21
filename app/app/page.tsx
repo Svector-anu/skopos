@@ -262,10 +262,21 @@ export default function AppPage() {
     : null;
 
   useEffect(() => {
-    const id = crypto.randomUUID();
-    sessionIdRef.current = id;
-    setActiveId(id);
-    setSessions(loadJson("skopos-sessions", []));
+    const stored = loadJson<Session[]>("skopos-sessions", []);
+    const lastId = localStorage.getItem("skopos-active-session");
+    const last   = lastId ? stored.find(s => s.id === lastId) : null;
+
+    if (last) {
+      sessionIdRef.current = last.id;
+      setActiveId(last.id);
+      setMessages(last.messages);
+    } else {
+      const id = crypto.randomUUID();
+      sessionIdRef.current = id;
+      setActiveId(id);
+    }
+
+    setSessions(stored);
     setTxHistory(loadJson("skopos-tx-history", []));
     setTimeout(() => inputRef.current?.focus(), 100);
 
@@ -300,6 +311,7 @@ export default function AppPage() {
     const stored = loadJson<Session[]>("skopos-sessions", []);
     const updated = [...stored.filter(s => s.id !== sid), { id: sid, title, messages }].slice(-10);
     localStorage.setItem("skopos-sessions", JSON.stringify(updated));
+    localStorage.setItem("skopos-active-session", sid);
     setSessions(updated);
   }, [messages]);
 
@@ -320,6 +332,7 @@ export default function AppPage() {
     sessionIdRef.current = id;
     setActiveId(id);
     setMessages([]);
+    localStorage.setItem("skopos-active-session", id);
     setSessions(loadJson("skopos-sessions", []));
     setTimeout(() => inputRef.current?.focus(), 0);
   }
@@ -328,6 +341,7 @@ export default function AppPage() {
     sessionIdRef.current = s.id;
     setActiveId(s.id);
     setMessages(s.messages);
+    localStorage.setItem("skopos-active-session", s.id);
     setSidebarExpanded(false);
   }
 
