@@ -1,11 +1,9 @@
 const BASE       = "https://api.delora.build";
 const API_KEY    = process.env.DELORA_API_KEY ?? "";
-const INTEGRATOR = process.env.DELORA_INTEGRATOR ?? "skopos";
+const INTEGRATOR = process.env.DELORA_INTEGRATOR ?? "ANU";
 const FEE        = 0.0005; // 0.05% integrator fee
 
-// For preview quotes where no real wallet is connected yet
-const EVM_PLACEHOLDER  = "0x0000000000000000000000000000000000000001";
-const SOL_PLACEHOLDER  = "11111111111111111111111111111111"; // system program
+
 
 const TIMEOUT_MS = 8000;
 
@@ -55,9 +53,7 @@ export async function getChainById(chainId: number): Promise<DeloraChain | null>
   return chains.find(c => c.id === chainId) ?? null;
 }
 
-export function solanaPlaceholder(chainType: "EVM" | "SVM" | undefined): string {
-  return chainType === "SVM" ? SOL_PLACEHOLDER : EVM_PLACEHOLDER;
-}
+
 
 // ── Token types ───────────────────────────────────────────────────────────────
 
@@ -131,15 +127,19 @@ export async function getQuote(params: {
   receiverAddress?: string;
   slippage?: number;
 }): Promise<DeloraQuote> {
-  const query = new URLSearchParams({
-    originChainId: String(params.originChainId),
-    destinationChainId: String(params.destinationChainId),
-    amount: params.amount,
-    originCurrency: params.originCurrency,
-    destinationCurrency: params.destinationCurrency,
-    senderAddress: params.senderAddress ?? EVM_PLACEHOLDER,
-    receiverAddress: params.receiverAddress ?? EVM_PLACEHOLDER,
-  });
+ if (!params.senderAddress || !params.receiverAddress) {
+  throw new Error("senderAddress and receiverAddress are required for Delora quotes.");
+}
+
+const query = new URLSearchParams({
+  originChainId: String(params.originChainId),
+  destinationChainId: String(params.destinationChainId),
+  amount: params.amount,
+  originCurrency: params.originCurrency,
+  destinationCurrency: params.destinationCurrency,
+  senderAddress: params.senderAddress,
+  receiverAddress: params.receiverAddress,
+});
   if (params.slippage != null) query.set("slippage", String(params.slippage));
   query.set("integrator", INTEGRATOR);
   query.set("fee", String(FEE));

@@ -3,9 +3,9 @@
 import { useRef, useEffect, useState, useCallback, Component } from "react";
 import Link from "next/link";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
-import { usePrivy, useFundWallet } from "@privy-io/react-auth";
+import { usePrivy, useFundWallet, useWallets } from "@privy-io/react-auth";
 import {
-  useConnection, useBalance, useChainId, useSwitchChain,
+useAccount, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
@@ -241,18 +241,23 @@ export default function AppPage() {
   const [theme, setTheme]              = useState<"dark" | "light">("dark");
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const { address }                            = useConnection();
+  const { address }                            = useAccount();
   const currentChainId                         = useChainId();
   const { login, logout, authenticated, ready }= usePrivy();
   const { fundWallet }                         = useFundWallet();
+  const { wallets }                            = useWallets();
+  const connectedAddress                       = address ?? (wallets.length > 0 ? wallets[0].address : null) ?? null;  
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
-  const usdcAddress                            = USDC_ADDRESSES[currentChainId];
-  const { data: usdcRaw, isLoading: usdcLoading } = useReadContract({
-    address: usdcAddress, abi: ERC20_ABI, functionName: "balanceOf",
-    args: address ? [address] : undefined, chainId: currentChainId,
-    query: { enabled: !!address && !!usdcAddress },
-  });
+  // Clear stale quotes when wallet changes
+  useEffect(() => {
+    setMessages(prev => prev.filter(m => m.role !== "assistant" || !m.result || m.result.type !== "quote"));
+  }, [connectedAddress]);
+    const usdcAddress                            = USDC_ADDRESSES[currentChainId];
+    const { data: usdcRaw, isLoading: usdcLoading } = useReadContract({
+      address: usdcAddress, abi: ERC20_ABI, functionName: "balanceOf",
+      args: address ? [address] : undefined, chainId: currentChainId,
+      query: { enabled: !!address && !!usdcAddress },
+    });
   const balanceLoading = nativeLoading || usdcLoading;
 
   const nativeDisplay = nativeBal
@@ -394,7 +399,7 @@ export default function AppPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, senderAddress: address, history, slippage }),
+        body: JSON.stringify({ message: text, senderAddress: connectedAddress, history, slippage }),
         signal: abort.signal,
       });
 
@@ -791,8 +796,7 @@ export default function AppPage() {
                         </p>
                         <ErrorBoundary label="Quote failed to render.">
                           <QuoteDisplay
-                            result={msg.result}
-                            onTxSubmitted={saveTx}
+                            result={msg.result} connectedAddress={connectedAddress}  onTxSubmitted={saveTx}
                             onRefresh={async () => {
                               const origin = (msg.result as QuoteResult).originMessage;
                               if (!origin) return;
@@ -800,8 +804,7 @@ export default function AppPage() {
                                 const res = await fetch("/api/chat", {
                                   method: "POST",
                                   headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ message: origin, senderAddress: address, history: [], slippage }),
-                                });
+                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, history: [], slippage }),                                });
                                 const data: AssistantResult = await res.json();
                                 if (data.type === "quote") data.originMessage = origin;
                                 setMessages(prev => prev.map((m, j) =>
@@ -826,8 +829,7 @@ export default function AppPage() {
                             </button>
                           </div>
                         )}
-                        <RebalanceDisplay result={msg.result} onTxSubmitted={saveTx} />
-                      </ErrorBoundary>
+                  <RebalanceDisplay result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} />                      </ErrorBoundary>
                     )}
                     {msg.result.type === "tx" && (
                       <ErrorBoundary label="Transaction details failed to render.">
@@ -1147,13 +1149,14 @@ function DrawerAction({ label, onClick }: { label: string; onClick: () => void }
 
 const QUOTE_TTL = 30;
 
-function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
+function QuoteDisplay({ result,connectedAddress, onTxSubmitted, onRefresh }: {
   result: QuoteResult;
+  connectedAddress: string| null;
   onTxSubmitted?: (r: TxRecord) => void;
   onRefresh?: () => Promise<void>;
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-  const { address }              = useConnection();
+  const { address }              = useAccount();
   const chainId                  = useChainId();
   const { mutateAsync: switchChain } = useSwitchChain();
   const { login, authenticated } = usePrivy();
@@ -1248,7 +1251,7 @@ function QuoteDisplay({ result, onTxSubmitted, onRefresh }: {
   type Row = { label: string; value: React.ReactNode; highlight?: boolean };
   const rows: Row[] = [
     { label: "From", value: address ? <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: addrColor(address), flexShrink: 0 }} />{shortAddr(address)}</span> : "—" },
-    { label: "To",   value: calldata?.to ? <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: addrColor(calldata.to), flexShrink: 0 }} />{shortAddr(calldata.to)}</span> : "—" },
+    { label: "To", value: connectedAddress ? <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: addrColor(connectedAddress), flexShrink: 0 }} />{shortAddr(connectedAddress)}</span> : "—" },    
     { label: "Send",    value: `${intent.from.amount} ${intent.from.token}` },
     { label: "Receive", value: `~${route.outputAmount} ${intent.to.token}`, highlight: true },
     { label: "Network", value: `${intent.from.chain} → ${intent.to.chain}` },
@@ -1442,7 +1445,7 @@ function SolanaExecuteButton({ result, onTxSubmitted }: {
 
 // ─── RebalanceDisplay ─────────────────────────────────────────────────────────
 
-function RebalanceDisplay({ result, onTxSubmitted }: { result: RebalanceResult; onTxSubmitted?: (r: TxRecord) => void }) {
+function RebalanceDisplay({ result, connectedAddress, onTxSubmitted }: { result: RebalanceResult; connectedAddress: string | null; onTxSubmitted?: (r: TxRecord) => void }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const total     = result.legs.length;
   const okLegs    = result.legs.filter(l => l.type === "quote").length;
@@ -1480,7 +1483,7 @@ function RebalanceDisplay({ result, onTxSubmitted }: { result: RebalanceResult; 
                   </span>
                 )}
               </p>
-              <QuoteDisplay result={leg} onTxSubmitted={onTxSubmitted} />
+              <QuoteDisplay result={leg} connectedAddress={connectedAddress} onTxSubmitted={onTxSubmitted} />
             </div>
           ) : (
             <div style={{ ...MONO, fontSize: "0.78rem", color: "#ff6b6b", padding: "12px 16px", background: "rgba(255,107,107,0.05)", border: "1px solid rgba(255,107,107,0.12)", borderRadius: 12 }}>

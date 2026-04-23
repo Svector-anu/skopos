@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
-import { getToken, getQuote, getChainById, solanaPlaceholder } from "@/lib/delora";
+import { getToken, getQuote, getChainById,} from "@/lib/delora";
 import {
   parseIntent,
   parseRebalanceIntent,
@@ -141,6 +141,14 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
 
   const amountWei = toWei(intent.amount, originDecimals);
 
+if (!senderAddress || !senderAddress.startsWith("0x")) {
+  return {
+    ok: false,
+    text: "Invalid or missing wallet. Reconnect your wallet.",
+  };
+}
+console.log("senderAddress used:", senderAddress);
+
   let quote;
   try {
     quote = await getQuote({
@@ -149,8 +157,8 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
       amount: amountWei,
       originCurrency,
       destinationCurrency: destCurrency,
-      senderAddress:   originChain?.chainType === "SVM" ? solanaPlaceholder("SVM") : senderAddress,
-      receiverAddress: destChain?.chainType   === "SVM" ? solanaPlaceholder("SVM") : senderAddress,
+    senderAddress,
+receiverAddress: senderAddress,
       slippage,
     });
   } catch (err) {
