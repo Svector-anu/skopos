@@ -859,10 +859,37 @@ export default function AppPage() {
                     {msg.result.type === "suggestions" && (
                       <SuggestionsDisplay result={msg.result} onSelect={(cmd: string) => submit(cmd)} />
                     )}
-                    {(msg.result.type === "text" || msg.result.type === "error") && (
-                      <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: msg.result.type === "error" ? "#ff5555" : T.textMuted, margin: 0 }}>
+                    {msg.result.type === "text" && (
+                      <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: T.textMuted, margin: 0 }}>
                         {msg.result.text}
                       </p>
+                    )}
+                    {msg.result.type === "error" && (
+                      /wallet|reconnect/i.test(msg.result.text) ? (
+                        <div style={{ background: isDark ? "rgba(245,184,0,0.04)" : "rgba(245,184,0,0.07)", border: "1px solid rgba(245,184,0,0.18)", borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 360 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(245,184,0,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(245,184,0,0.85)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="2" y="6" width="20" height="14" rx="2"/><path d="M16 14h2"/><path d="M2 10h20"/>
+                              </svg>
+                            </div>
+                            <div>
+                              <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.07em", margin: "0 0 5px" }}>WALLET</p>
+                              <p style={{ ...MONO, fontSize: "0.82rem", color: T.textMuted, margin: 0, lineHeight: 1.55 }}>{msg.result.text}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={login}
+                            style={{ ...MONO, width: "100%", padding: "9px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.04em", color: "#000", background: "#F5B800", border: "none", borderRadius: 9, cursor: "pointer" }}
+                          >
+                            Connect Wallet
+                          </button>
+                        </div>
+                      ) : (
+                        <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: "#ff5555", margin: 0 }}>
+                          {msg.result.text}
+                        </p>
+                      )
                     )}
                     {msg.result.type === "text" && msg.result.suggestions && msg.result.suggestions.length > 0 && (
                       <SuggestionsDisplay result={{ type: "suggestions", prompts: msg.result.suggestions }} onSelect={(cmd: string) => submit(cmd)} />
