@@ -24,13 +24,39 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.tryskopos.xyz"),
+
   title: "Skopos",
   description: "Cross-chain intent execution. Say what you want, it executes.",
+
+  openGraph: {
+    title: "Skopos",
+    description: "Cross-chain intent execution. Say what you want, it executes.",
+    url: "https://www.tryskopos.xyz",
+    siteName: "Skopos",
+    images: [
+      {
+        url: "/api/header",
+        width: 1500,
+        height: 500,
+      },
+    ],
+    type: "website",
+  },
+
+  twitter: {
+    card: "summary_large_image",
+    title: "Skopos",
+    description: "Cross-chain intent execution. Say what you want, it executes.",
+    images: ["/api/header"],
+  },
+
   viewport: {
     width: "device-width",
     initialScale: 1,
     viewportFit: "cover",
   },
+
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -39,9 +65,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html
       lang="en"
@@ -49,8 +75,12 @@ export default function RootLayout({
       className={`${sourceSerif.variable} ${sourceSans.variable} ${jetbrainsMono.variable} h-full`}
     >
       <head>
-        {/* Force dark mode — clear any stale light-mode value from localStorage */}
-        <script dangerouslySetInnerHTML={{ __html: `try{localStorage.removeItem('skopos-theme');}catch(e){}` }} />
+        {/* Force dark mode — clear any stale light-mode value */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{localStorage.removeItem('skopos-theme');}catch(e){}`,
+          }}
+        />
       </head>
       <body className="h-full antialiased">
         <PageTransitionWrapper>{children}</PageTransitionWrapper>
