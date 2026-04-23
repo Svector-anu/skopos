@@ -245,7 +245,97 @@ export async function lookupAddress(address: string): Promise<AddressData> {
     .filter(t => parseFloat(t.balance) > 0)
     .sort((a, b) => parseFloat(b.balance) - parseFloat(a.balance));
 
-  return { address, balances, tokenBalances, recentTransfers };
+  // Price enrichment — non-critical, runs in parallel
+  const [nativePrices, tokenPriceMap] = await Promise.all([
+    fetchNativePrices([...new Set(balances.map(b => b.nativeSymbol))]),
+    fetchTokenPricesByAddress(tokenBalances.map(t => t.contractAddress)),
+  ]);
+
+  const enrichedBalances = balances.map(b => {
+    const price = nativePrices[b.nativeSymbol];
+    const usdValue = price != null ? parseFloat(b.native) * price : undefined;
+    return { ...b, usdPrice: price, usdValue };
+  });
+
+  const enrichedTokenBalances = tokenBalances.map(t => {
+    const price = tokenPriceMap.get(t.contractAddress.toLowerCase());
+    const usdValue = price != null ? parseFloat(t.balance) * price : undefined;
+    return { ...t, usdPrice: price, usdValue };
+  });
+
+  const totalUsdValue =
+    enrichedBalances.reduce((s, b) => s + (b.usdValue ?? 0), 0) +
+    enrichedTokenBalances.reduce((s, t) => s + (t.usdValue ?? 0), 0);
+
+  return {
+    address,
+    balances: enrichedBalances,
+    tokenBalances: enrichedTokenBalances.sort((a, b) => (b.usdValue ?? 0) - (a.usdValue ?? 0)),
+    recentTransfers,
+    totalUsdValue: totalUsdValue > 0 ? totalUsdValue : undefined,
+  };
+}
+
+// ── Price helpers ─────────────────────────────────────────────────────────────
+
+const NATIVE_COINGECKO_IDS: Record<string, string> = {
+  ETH:  "ethereum",
+  POL:  "matic-network",
+  BNB:  "binancecoin",
+  AVAX: "avalanche-2",
+  XDAI: "xdai",
+};
+
+async function fetchNativePrices(symbols: string[]): Promise<Record<string, number>> {
+  const ids = [...new Set(symbols.map(s => NATIVE_COINGECKO_IDS[s]).filter(Boolean))];
+  if (ids.length === 0) return {};
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd`
+    );
+    if (!res.ok) return {};
+    const data = await res.json();
+    const out: Record<string, number> = {};
+    for (const [sym, id] of Object.entries(NATIVE_COINGECKO_IDS)) {
+      if (data[id]?.usd) out[sym] = data[id].usd;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+async function fetchTokenPricesByAddress(addresses: string[]): Promise<Map<string, number>> {
+  const priceMap = new Map<string, number>();
+  const unique = [...new Set(addresses.map(a => a.toLowerCase()))].filter(Boolean).slice(0, 30);
+  if (unique.length === 0) return priceMap;
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.dexscreener.com/latest/dex/tokens/${unique.join(",")}`
+    );
+    if (!res.ok) return priceMap;
+    const data = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pairs: any[] = data.pairs ?? [];
+    // Use highest-liquidity pair per token for price
+    for (const pair of pairs) {
+      const addr = (pair.baseToken?.address ?? "").toLowerCase();
+      if (!addr || !pair.priceUsd) continue;
+      const existing = priceMap.get(addr);
+      const liq = pair.liquidity?.usd ?? 0;
+      if (!existing || liq > (priceMap.get(`${addr}_liq`) ?? 0)) {
+        priceMap.set(addr, parseFloat(pair.priceUsd));
+        priceMap.set(`${addr}_liq`, liq);
+      }
+    }
+    // Remove liquidity tracking keys
+    for (const key of [...priceMap.keys()]) {
+      if (key.endsWith("_liq")) priceMap.delete(key);
+    }
+  } catch {
+    // price enrichment is non-critical
+  }
+  return priceMap;
 }
 
 // ── Ankr multichain — covers chains Alchemy doesn't support ──────────────────

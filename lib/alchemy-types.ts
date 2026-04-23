@@ -30,6 +30,8 @@ export interface ChainBalance {
   chainName: string;
   nativeSymbol: string;
   native: string;
+  usdPrice?: number;
+  usdValue?: number;
 }
 
 export interface TokenBalance {
@@ -37,9 +39,11 @@ export interface TokenBalance {
   symbol: string;
   name: string;
   decimals: number;
-  balance: string;    // human-readable
+  balance: string;
   chainId: number;
   chainName: string;
+  usdPrice?: number;
+  usdValue?: number;
 }
 
 export interface AddressData {
@@ -47,4 +51,5 @@ export interface AddressData {
   balances: ChainBalance[];
   tokenBalances: TokenBalance[];
   recentTransfers: Transfer[];
+  totalUsdValue?: number;
 }
