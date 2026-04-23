@@ -29,6 +29,11 @@ export const metadata: Metadata = {
   title: "Skopos",
   description: "Cross-chain intent execution. Say what you want, it executes.",
 
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-touch-icon.png",
+  },
+
   openGraph: {
     title: "Skopos",
     description: "Cross-chain intent execution. Say what you want, it executes.",
