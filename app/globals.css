@@ -43,8 +43,8 @@ body {
     overflow: hidden !important;
   }
   .sidebar-rail.sidebar-open {
-    width: 240px !important;
-    min-width: 240px !important;
+    width: min(300px, 88vw) !important;
+    min-width: min(300px, 88vw) !important;
     pointer-events: auto !important;
   }
 }
@@ -101,6 +101,29 @@ body {
   --card-surface:        rgba(255,255,255,0.05);
 }
 
+
+/* ── Light-mode overrides ──────────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+  /* Drawer / sidebar */
+  --drawer-label:        rgba(0,0,0,0.22);
+  --drawer-action:       rgba(0,0,0,0.45);
+  --drawer-action-hover: rgba(0,0,0,0.82);
+  --recent-active:       rgba(0,0,0,0.82);
+  --recent-inactive:     rgba(0,0,0,0.38);
+  --recent-active-bg:    rgba(0,0,0,0.05);
+  /* Card / display components */
+  --card-container-bg:   #F4F4F0;
+  --card-bg:             rgba(0,0,0,0.03);
+  --card-border:         rgba(0,0,0,0.1);
+  --card-border-faint:   rgba(0,0,0,0.06);
+  --card-header-bg:      rgba(0,0,0,0.04);
+  --card-text:           #111111;
+  --card-text-muted:     rgba(0,0,0,0.72);
+  --card-text-dim:       rgba(0,0,0,0.45);
+  --card-text-faint:     rgba(0,0,0,0.3);
+  --card-surface:        rgba(0,0,0,0.04);
+}
 
 /* Blinking cursor animation */
 @keyframes blink {

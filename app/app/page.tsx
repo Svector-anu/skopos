@@ -525,8 +525,8 @@ export default function AppPage() {
 
       {/* Collapsible nav rail */}
       <aside className={`sidebar-rail${sidebarExpanded ? " sidebar-open" : ""}`} style={{
-        width: isMobile ? (sidebarExpanded ? 240 : 0) : (sidebarExpanded ? 240 : 52),
-        minWidth: isMobile ? (sidebarExpanded ? 240 : 0) : (sidebarExpanded ? 240 : 52),
+        width: isMobile ? (sidebarExpanded ? "min(300px, 88vw)" : 0) : (sidebarExpanded ? 240 : 52),
+        minWidth: isMobile ? (sidebarExpanded ? "min(300px, 88vw)" : 0) : (sidebarExpanded ? 240 : 52),
         height: "100%", zIndex: 10, flexShrink: 0,
         background: T.sidebar,
         borderRight: `1px solid ${T.border}`,
@@ -732,30 +732,48 @@ export default function AppPage() {
 
         {/* Mobile top bar */}
         {isMobile && (
-          <div style={{ height: 52, flexShrink: 0, display: "flex", alignItems: "center", paddingLeft: 8, paddingRight: 8, borderBottom: `1px solid ${T.border}`, gap: 4 }}>
-            {/* Hamburger */}
-            <button onClick={() => setSidebarExpanded(true)} style={{ width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: T.textDim, cursor: "pointer", borderRadius: 10, flexShrink: 0 }}>
-              <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <line x1="1" y1="1" x2="15" y2="1"/><line x1="1" y1="7" x2="15" y2="7"/><line x1="1" y1="13" x2="15" y2="13"/>
+          <div style={{ height: 56, flexShrink: 0, display: "flex", alignItems: "center", paddingLeft: 12, paddingRight: 12, gap: 8 }}>
+            {/* Circular hamburger */}
+            <button onClick={() => setSidebarExpanded(true)} style={{
+              width: 40, height: 40, borderRadius: 999, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "none", border: `1.5px solid ${T.borderStrong}`,
+              color: T.textMuted, cursor: "pointer",
+            }}>
+              <svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <line x1="0.5" y1="1" x2="14.5" y2="1"/>
+                <line x1="0.5" y1="5.5" x2="14.5" y2="5.5"/>
+                <line x1="0.5" y1="10" x2="14.5" y2="10"/>
               </svg>
             </button>
-            {/* Logo */}
-            <span style={{ fontFamily: "var(--font-display), serif", fontSize: "1.05rem", letterSpacing: "0.06em", color: T.textPrimary, flex: 1 }}>
-              SKOP<span style={{ color: "#F5B800" }}>OS</span>
-            </span>
-            {/* Wallet quick-connect / status */}
+
+            {/* Centered title + subtitle */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+              <span style={{ fontFamily: "var(--font-display), serif", fontSize: "1.1rem", fontWeight: 700, letterSpacing: "0.07em", color: T.textPrimary, lineHeight: 1 }}>
+                SKOP<span style={{ color: "#F5B800" }}>OS</span>
+              </span>
+              <span style={{ ...MONO, fontSize: "0.58rem", color: T.textDim, letterSpacing: "0.04em" }}>cross-chain copilot</span>
+            </div>
+
+            {/* Circular wallet / connect button */}
             {ready && (
               <button
                 onClick={authenticated ? handleDisconnectClick : login}
-                style={{ height: 32, paddingLeft: 12, paddingRight: 12, display: "flex", alignItems: "center", gap: 6, background: confirmDisconnect ? "rgba(255,107,107,0.08)" : authenticated ? "rgba(245,184,0,0.08)" : "#F5B800", border: confirmDisconnect ? "1px solid rgba(255,107,107,0.25)" : authenticated ? "1px solid rgba(245,184,0,0.2)" : "none", borderRadius: 8, cursor: "pointer", flexShrink: 0, transition: "background 0.2s, border-color 0.2s" }}
+                style={{
+                  width: 40, height: 40, borderRadius: 999, flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: confirmDisconnect ? "rgba(255,107,107,0.08)" : authenticated ? "rgba(245,184,0,0.08)" : "none",
+                  border: confirmDisconnect ? "1.5px solid rgba(255,107,107,0.35)" : authenticated ? "1.5px solid rgba(245,184,0,0.35)" : `1.5px solid ${T.borderStrong}`,
+                  cursor: "pointer", transition: "background 0.2s, border-color 0.2s",
+                }}
               >
                 {authenticated && address ? (
-                  <>
-                    <div style={{ width: 6, height: 6, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : "#F5B800", transition: "background 0.2s" }} />
-                    <span style={{ ...MONO, fontSize: "0.65rem", color: confirmDisconnect ? "#ff6b6b" : "rgba(245,184,0,0.85)", transition: "color 0.2s" }}>{confirmDisconnect ? "disconnect?" : shortAddr(address)}</span>
-                  </>
+                  <div style={{ width: 9, height: 9, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : "#F5B800" }} />
                 ) : (
-                  <span style={{ ...MONO, fontSize: "0.68rem", color: "#000", fontWeight: 700 }}>Connect</span>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textMuted} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 12V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/>
+                    <path d="M16 8h6v8h-6a3 3 0 0 1 0-6Z"/>
+                  </svg>
                 )}
               </button>
             )}
@@ -779,7 +797,7 @@ export default function AppPage() {
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {hasNoFunds && (
                           <div style={{ background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                            <span style={{ ...MONO, fontSize: "0.74rem", color: "rgba(255,255,255,0.55)" }}>No funds detected on this chain</span>
+                            <span style={{ ...MONO, fontSize: "0.74rem", color: T.textMuted }}>No funds detected on this chain</span>
                             <button
                               onClick={() => fundWallet({ address })}
                               style={{ ...MONO, fontSize: "0.7rem", fontWeight: 700, background: "#F5B800", color: "#000", border: "none", borderRadius: 7, padding: "6px 14px", cursor: "pointer", whiteSpace: "nowrap" }}
@@ -826,7 +844,7 @@ export default function AppPage() {
                       <ErrorBoundary label="Rebalance failed to render.">
                         {hasNoFunds && (
                           <div style={{ background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-                            <span style={{ ...MONO, fontSize: "0.74rem", color: "rgba(255,255,255,0.55)" }}>No funds detected on this chain</span>
+                            <span style={{ ...MONO, fontSize: "0.74rem", color: T.textMuted }}>No funds detected on this chain</span>
                             <button
                               onClick={() => fundWallet({ address })}
                               style={{ ...MONO, fontSize: "0.7rem", fontWeight: 700, background: "#F5B800", color: "#000", border: "none", borderRadius: 7, padding: "6px 14px", cursor: "pointer", whiteSpace: "nowrap" }}
