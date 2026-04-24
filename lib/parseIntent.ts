@@ -1,5 +1,29 @@
 import Groq from "groq-sdk";
 
+// ---------------------------------------------------------------------------
+// Intent classifier — runs before any LLM call
+// ---------------------------------------------------------------------------
+
+export type IntentType = "price" | "execution" | "analysis" | "informational" | "unknown";
+
+export function classifyIntent(input: string): IntentType {
+  const t = input.trim();
+
+  const hasPriceKeyword = /\b(price|worth|how\s+much|trading\s+at|usd\s+value|cost)\b/i.test(t);
+  const hasKnownToken   = /\b(eth|bitcoin|btc|sol|bnb|matic|pol|avax|usdc|usdt|dai|doge|shib|pepe|link|uni|aave|wbtc|xrp|ada|op|arb|mkr|crv|snx|ldo)\b/i.test(t);
+  if (hasPriceKeyword && hasKnownToken) return "price";
+
+  const hasExecVerb  = /\b(swap|bridge|send|transfer|move|convert)\b/i.test(t);
+  const hasAmount    = /\b\d[\d.,]*\b/.test(t);
+  if (hasExecVerb && hasAmount) return "execution";
+
+  if (/\b(scan|rug|rugpull|is\s+\w+\s+(safe|legit|risky|a\s+rug)|analyze\s+token|check\s+token|risk\s+of)\b/i.test(t)) return "analysis";
+
+  if (/\b(what\s+is|what\s+are|how\s+does|how\s+do|explain|tell\s+me\s+about|define|describe|difference\s+between|compare|why\s+(does|is|are|do)|who\s+(created|built|founded))\b/i.test(t)) return "informational";
+
+  return "unknown";
+}
+
 export interface ParsedIntent {
   originChain: string;
   destinationChain: string;
@@ -345,6 +369,38 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
     return completion.choices[0]?.message?.content?.trim() ?? "";
   } catch {
     return "";
+  }
+}
+
+const GROQ_INFORMATIONAL_SYSTEM = `You are Skopos, a DeFi knowledge assistant. Answer the user's question directly and accurately.
+
+STRICT RULES — no exceptions:
+1. Answer ONLY what was asked. Never suggest swaps, bridges, or any transactions.
+2. NEVER quote live prices, APYs, TVLs, fees, or any time-sensitive number. You have no live data access. If a live number is needed, say exactly: "I don't have live data for that."
+3. NEVER hallucinate. If unsure, say: "I don't have reliable information on that right now."
+4. Plain text only. No markdown headers or bold. Bullets only for factual lists.
+5. Maximum 3 sentences unless listing items. Lead with the direct answer.`;
+
+export async function getGroqInformationalReply(
+  input: string,
+  history?: { role: "user" | "assistant"; content: string }[],
+): Promise<string> {
+  const groq = getGroq();
+  if (!groq) return "I don't have reliable information on that right now.";
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      max_tokens: 200,
+      temperature: 0,
+      messages: [
+        { role: "system", content: GROQ_INFORMATIONAL_SYSTEM },
+        ...(history?.slice(-4) ?? []),
+        { role: "user", content: input },
+      ],
+    });
+    return completion.choices[0]?.message?.content?.trim() ?? "I don't have reliable information on that right now.";
+  } catch {
+    return "I don't have reliable information on that right now.";
   }
 }
 

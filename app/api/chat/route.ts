@@ -7,15 +7,56 @@ import {
   looksLikeRebalance,
   streamSuggestion,
   getGroqReply,
+  getGroqInformationalReply,
   generateTxSummary,
   generateAddressSummary,
   buildSuggestions,
+  classifyIntent,
   ParsedIntent,
 } from "@/lib/parseIntent";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken } from "@/lib/dexscreener";
 import { getTopYields } from "@/lib/defillama";
 import { getTopMarkets } from "@/lib/polymarket";
+
+// ── live price lookup (CoinGecko free tier, no API key) ──────────────────────
+
+const PRICE_COINGECKO_IDS: Record<string, string> = {
+  ETH:  "ethereum",   WETH: "weth",          BTC:  "bitcoin",       WBTC: "wrapped-bitcoin",
+  SOL:  "solana",     BNB:  "binancecoin",    MATIC:"matic-network", POL:  "matic-network",
+  AVAX: "avalanche-2",ARB:  "arbitrum",       OP:   "optimism",      LINK: "chainlink",
+  UNI:  "uniswap",    AAVE: "aave",           MKR:  "maker",         CRV:  "curve-dao-token",
+  LDO:  "lido-dao",   SNX:  "havven",         PEPE: "pepe",          SHIB: "shiba-inu",
+  DOGE: "dogecoin",   XRP:  "ripple",         ADA:  "cardano",       DOT:  "polkadot",
+  USDC: "usd-coin",   USDT: "tether",         DAI:  "dai",           FRAX: "frax",
+};
+
+const PRICE_TOKEN_RE = new RegExp(
+  `\\b(${Object.keys(PRICE_COINGECKO_IDS).join("|")}|bitcoin|ethereum|solana)\\b`,
+  "i"
+);
+
+const TOKEN_NAME_TO_SYMBOL: Record<string, string> = {
+  bitcoin: "BTC", ethereum: "ETH", solana: "SOL",
+};
+
+async function fetchLivePrice(symbol: string): Promise<{ price: number; change24h: number | null } | null> {
+  const id = PRICE_COINGECKO_IDS[symbol.toUpperCase()];
+  if (!id) return null;
+  try {
+    const res = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`,
+      { next: { revalidate: 0 } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const entry = data[id];
+    if (!entry?.usd) return null;
+    return { price: entry.usd, change24h: entry.usd_24h_change ?? null };
+  } catch {
+    return null;
+  }
+}
 
 // ── in-memory rate limiter (sliding window, per IP) ──────────────────────────
 const RATE_WINDOW_MS = 60_000; // 1 minute
@@ -147,7 +188,6 @@ if (!senderAddress || !senderAddress.startsWith("0x")) {
     text: "Invalid or missing wallet. Reconnect your wallet.",
   };
 }
-console.log("senderAddress used:", senderAddress);
 
   let quote;
   try {
@@ -216,7 +256,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No message provided" }, { status: 400 });
   }
 
-  const trimmed = message.trim();
+  const trimmed   = message.trim();
+  const queryType = classifyIntent(trimmed);
+
+  // ── price query (live fetch, no LLM) ─────────────────────────────────────
+  if (queryType === "price") {
+    const tokenMatch = trimmed.match(PRICE_TOKEN_RE);
+    const rawSymbol  = tokenMatch?.[1] ?? "";
+    const symbol     = (TOKEN_NAME_TO_SYMBOL[rawSymbol.toLowerCase()] ?? rawSymbol).toUpperCase();
+    const result     = await fetchLivePrice(symbol);
+    if (!result) {
+      return NextResponse.json({ type: "error", text: "Unable to fetch reliable data right now." });
+    }
+    const { price, change24h } = result;
+    const fmtPrice  = price >= 1000
+      ? `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : price >= 1 ? `$${price.toFixed(4)}` : `$${price.toPrecision(4)}`;
+    const fmtChange = change24h != null
+      ? ` (${change24h >= 0 ? "+" : ""}${change24h.toFixed(2)}% 24h)`
+      : "";
+    return NextResponse.json({ type: "text", text: `${symbol} is ${fmtPrice}${fmtChange}.` });
+  }
 
   // ── explorer: ENS name (*.eth) — matches bare "vitalik.eth" or in a sentence ──
   // Character class must NOT include "." — otherwise the greedy * consumes ".eth"
@@ -419,14 +479,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "polymarket", topic: topic ?? null, markets });
   }
 
-  // ── keyword-aware suggestions (synchronous, before LLM fallback) ─────────
-  // When the message has a recognisable token/chain/action but not enough
-  // structure for parseIntent, return clickable prompt chips instead of
-  // generic text so the user can immediately click to try something real.
-  const suggestions = buildSuggestions(trimmed);
-  if (suggestions && suggestions.length > 0) {
-    const text = await getGroqReply(message, history, senderAddress);
-    return NextResponse.json({ type: "text", text, suggestions });
+  // ── informational — strict LLM, no suggestions, no hallucinated data ────
+  if (queryType === "informational") {
+    const text = await getGroqInformationalReply(message, history);
+    return NextResponse.json({ type: "text", text });
+  }
+
+  // ── keyword-aware suggestions — only for execution/unknown intents ────────
+  if (queryType === "execution" || queryType === "unknown") {
+    const suggestions = buildSuggestions(trimmed);
+    if (suggestions && suggestions.length > 0) {
+      const text = await getGroqReply(message, history, senderAddress);
+      return NextResponse.json({ type: "text", text, suggestions });
+    }
   }
 
   // ── general chat — stream tokens back as plain text ─────────────────────
