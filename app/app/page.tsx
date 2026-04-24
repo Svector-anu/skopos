@@ -2,7 +2,6 @@
 
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet, useWallets } from "@privy-io/react-auth";
 import {
@@ -239,7 +238,10 @@ export default function AppPage() {
   const [isMobile, setIsMobile]        = useState(false);
   const [slippage, setSlippage]        = useState(0.005);
   const [horizonToast, setHorizonToast] = useState<string | null>(null);
-  const [theme, setTheme]              = useState<"dark" | "light">("dark");
+  const [theme, setTheme]              = useState<"dark" | "light">(() => {
+    if (typeof window === "undefined") return "dark";
+    return (localStorage.getItem("skopos-theme") as "dark" | "light") ?? "dark";
+  });
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { address }                            = useAccount();
@@ -538,11 +540,20 @@ export default function AppPage() {
         left: isMobile ? 0 : undefined,
       }}>
 
-        {/* Header: back arrow + logo */}
+        {/* Header: toggle + logo */}
         <div style={{ height: 52, display: "flex", alignItems: "center", paddingLeft: 8, paddingRight: 8, flexShrink: 0, gap: 2 }}>
-          <Link href="/" title="Home" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--drawer-action)", textDecoration: "none" }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3L5 8l5 5"/></svg>
-          </Link>
+          {/* Collapse / expand toggle — always visible at top left */}
+          <button
+            onClick={() => setSidebarExpanded(v => !v)}
+            title={sidebarExpanded ? "Collapse" : "Expand"}
+            style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: "var(--drawer-action)", cursor: "pointer" }}
+          >
+            <svg width="15" height="12" viewBox="0 0 15 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <line x1="0.5" y1="1" x2="14.5" y2="1"/>
+              <line x1="0.5" y1="6" x2="14.5" y2="6"/>
+              <line x1="0.5" y1="11" x2="14.5" y2="11"/>
+            </svg>
+          </button>
           <span style={{ ...BEBAS, fontSize: "1rem", letterSpacing: "0.06em", color: T.textPrimary, whiteSpace: "nowrap", paddingLeft: 6, flex: 1, opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>
             SKOP<span style={{ color: "#F5B800" }}>OS</span>
           </span>
@@ -714,16 +725,6 @@ export default function AppPage() {
             <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>Theme</span>
           </button>
 
-          {/* Collapse */}
-          <button
-            onClick={() => setSidebarExpanded(!sidebarExpanded)}
-            style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, background: "none", border: "none", color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}
-          >
-            <svg width="14" height="12" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
-              <line x1="1" y1="1" x2="15" y2="1"/><line x1="1" y1="7" x2="15" y2="7"/><line x1="1" y1="13" x2="15" y2="13"/>
-            </svg>
-            <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>Collapse</span>
-          </button>
         </div>
       </aside>
 
