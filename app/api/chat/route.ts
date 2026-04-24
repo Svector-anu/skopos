@@ -88,7 +88,9 @@ type LegOk = {
 
 type LegErr = { ok: false; text: string };
 
-async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage?: number): Promise<LegOk | LegErr> {
+const SOLANA_CHAIN_ID = 1000000001;
+
+async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage?: number, solanaAddress?: string): Promise<LegOk | LegErr> {
   const parsedAmount = parseFloat(intent.amount);
   if (!isFinite(parsedAmount) || parsedAmount <= 0) {
     return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
@@ -182,12 +184,31 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
 
   const amountWei = toWei(intent.amount, originDecimals);
 
-if (!senderAddress || !senderAddress.startsWith("0x")) {
-  return {
-    ok: false,
-    text: "Invalid or missing wallet. Reconnect your wallet.",
-  };
-}
+  if (!senderAddress || !senderAddress.startsWith("0x")) {
+    return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
+  }
+
+  const isSolanaOrigin = originChainId === SOLANA_CHAIN_ID;
+  const isSolanaDest   = destChainId   === SOLANA_CHAIN_ID;
+
+  // EVM → Solana: receiverAddress must be a Solana pubkey (base58), not an EVM 0x address
+  if (isSolanaDest && !solanaAddress) {
+    return {
+      ok: false,
+      text: "To bridge to Solana you need a Phantom wallet connected. Connect Phantom first, then try again.",
+    };
+  }
+
+  // Solana → EVM: senderAddress must be the Solana pubkey
+  if (isSolanaOrigin && !solanaAddress) {
+    return {
+      ok: false,
+      text: "Connect your Phantom wallet to bridge from Solana.",
+    };
+  }
+
+  const effectiveSender   = isSolanaOrigin ? (solanaAddress ?? senderAddress) : senderAddress;
+  const effectiveReceiver = isSolanaDest   ? (solanaAddress ?? senderAddress) : senderAddress;
 
   let quote;
   try {
@@ -197,8 +218,8 @@ if (!senderAddress || !senderAddress.startsWith("0x")) {
       amount: amountWei,
       originCurrency,
       destinationCurrency: destCurrency,
-    senderAddress,
-receiverAddress: senderAddress,
+      senderAddress: effectiveSender,
+      receiverAddress: effectiveReceiver,
       slippage,
     });
   } catch (err) {
@@ -250,7 +271,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429 });
   }
 
-  const { message, senderAddress, history, slippage } = await req.json();
+  const { message, senderAddress, solanaAddress, history, slippage } = await req.json();
 
   if (!message?.trim()) {
     return NextResponse.json({ error: "No message provided" }, { status: 400 });
@@ -370,7 +391,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ type: "error", text: `Please specify the source chain. For example: "send 0.5 ETH from ethereum to base and 0.5 ETH from ethereum to arbitrum"` });
       }
 
-      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, slippage)));
+      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, slippage, solanaAddress)));
 
       const firstErr = results.find((r): r is LegErr => !r.ok);
       if (firstErr) {
@@ -421,7 +442,7 @@ export async function POST(req: NextRequest) {
   const intent = await parseIntent(message);
 
   if (intent) {
-    const result = await resolveLeg(intent, senderAddress, slippage);
+    const result = await resolveLeg(intent, senderAddress, slippage, solanaAddress);
     if (!result.ok) return NextResponse.json({ type: "error", text: result.text });
     const { ok: _ok, ...rest } = result;
     return NextResponse.json({ type: "quote", mode: "preview", quotedAt: Date.now(), ...rest });

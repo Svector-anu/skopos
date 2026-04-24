@@ -247,7 +247,9 @@ export default function AppPage() {
   const { login, logout, authenticated, ready }= usePrivy();
   const { fundWallet }                         = useFundWallet();
   const { wallets }                            = useWallets();
-  const connectedAddress                       = address ?? (wallets.length > 0 ? wallets[0].address : null) ?? null;  
+  const connectedAddress                       = address ?? (wallets.length > 0 ? wallets[0].address : null) ?? null;
+  const { publicKey: solanaPublicKey }         = useSolanaWallet();
+  const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
   // Clear stale quotes when wallet changes
   useEffect(() => {
@@ -400,7 +402,7 @@ export default function AppPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, senderAddress: connectedAddress, history, slippage }),
+        body: JSON.stringify({ message: text, senderAddress: connectedAddress, solanaAddress, history, slippage }),
         signal: abort.signal,
       });
 
@@ -808,7 +810,7 @@ export default function AppPage() {
                                 const res = await fetch("/api/chat", {
                                   method: "POST",
                                   headers: { "Content-Type": "application/json" },
-                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, history: [], slippage }),                                });
+                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage }),                                });
                                 const data: AssistantResult = await res.json();
                                 if (data.type === "quote") data.originMessage = origin;
                                 setMessages(prev => prev.map((m, j) =>
