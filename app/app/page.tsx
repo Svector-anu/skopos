@@ -376,12 +376,12 @@ export default function AppPage() {
       if (m.result.type === "quote") {
         const { intent, route } = m.result;
         const fees = route.feesUSD ? `, fees ~$${Number(route.feesUSD).toFixed(4)}` : "";
-        return [{ role: "assistant", content: `[Real Delora quote] ${intent.from.amount} ${intent.from.token} from ${intent.from.chain} → ${intent.to.chain} via ${route.tool}. Output: ~${route.outputAmount} ${intent.to.token}${fees}. This is live data from the Delora API — the amounts are real.` }];
+        return [{ role: "assistant", content: `Quote: ${intent.from.amount} ${intent.from.token} from ${intent.from.chain} → ${intent.to.chain} via ${route.tool}. Output: ~${route.outputAmount} ${intent.to.token}${fees}.` }];
       }
       if (m.result.type === "rebalance") {
         const legs = m.result.legs.filter(l => l.type === "quote") as QuoteResult[];
         const summary = legs.map(l => `${l.intent.from.amount} ${l.intent.from.token} from ${l.intent.from.chain} → ~${l.route.outputAmount} ${l.intent.to.token} via ${l.route.tool}`).join("; ");
-        return [{ role: "assistant", content: `[Real Delora rebalance] ${summary}` }];
+        return [{ role: "assistant", content: `Rebalance: ${summary}` }];
       }
       if (m.result.type === "address") {
         const native = m.result.data.balances.map(b => `${b.native} ${b.nativeSymbol} on ${b.chainName}`).join(", ");
