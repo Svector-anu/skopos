@@ -233,6 +233,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ type: "address", data, summary, ensName });
   }
 
+  // ── explorer: explicit address embedded in sentence ("analyze wallet 0x…") ──
+  const embeddedAddrMatch = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/);
+  if (embeddedAddrMatch && !/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+    const data = await lookupAddress(embeddedAddrMatch[1]);
+    const summary = await generateAddressSummary(data);
+    return NextResponse.json({ type: "address", data, summary });
+  }
+
   // ── portfolio: connected wallet ──────────────────────────────────────────
   if (/\b(my\s+)?(portfolio|wallet|balances?|holdings?)\b/i.test(trimmed)) {
     if (!senderAddress) {
