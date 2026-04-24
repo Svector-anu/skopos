@@ -51,6 +51,7 @@ type TokenRiskResult = {
     marketCap: number | null; fdv: number | null;
     priceChange24h: number | null; pairCount: number; dexCount: number;
     flags: string[]; topPair: { url: string; dexId: string; chainId: string } | null;
+    sparkline?: number[];
   };
 };
 
@@ -1771,12 +1772,15 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
             ...nativeRows.map(b => ({
               key: `n-${b.chainId}`, sym: b.nativeSymbol, name: b.chainName,
               amount: `${b.native} ${b.nativeSymbol}`, usdValue: b.usdValue,
-              chain: b.chainName, isNative: true, onSwapStr: null as string | null,
+              chain: b.chainName, isNative: true,
+              priceChange24h: null as number | null,
+              onSwapStr: null as string | null,
             })),
             ...tokenRows.map(t => ({
               key: `t-${t.chainId}-${t.contractAddress}`, sym: t.symbol, name: t.name,
               amount: `${t.balance} ${t.symbol}`, usdValue: t.usdValue,
               chain: t.chainName, isNative: false,
+              priceChange24h: t.priceChange24h ?? null as number | null,
               onSwapStr: onSwap ? `swap ${t.balance} ${t.symbol} to USDC on ${t.chainName.toLowerCase()}` : null,
             })),
           ].map(row => {
@@ -1788,14 +1792,27 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
                   <span style={{ ...MONO, fontSize: "0.6rem", color, fontWeight: 700 }}>{row.sym.slice(0, 2)}</span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
                       <span style={{ ...MONO, fontSize: "0.76rem", color: "var(--card-text-muted, rgba(255,255,255,0.78))", fontWeight: 600 }}>{row.sym}</span>
                       {!row.isNative && <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.25))" }}>· {row.chain}</span>}
                     </div>
-                    <span style={{ ...MONO, fontSize: "0.78rem", color: "var(--card-text-muted, rgba(255,255,255,0.82))", fontWeight: 600 }}>
-                      {row.usdValue != null ? fmtUsd(row.usdValue) : row.amount}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {row.priceChange24h != null && (
+                        <span style={{
+                          ...MONO, fontSize: "0.62rem", fontWeight: 600,
+                          color: row.priceChange24h >= 0 ? "#22c55e" : "#ef4444",
+                          background: row.priceChange24h >= 0 ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+                          border: `1px solid ${row.priceChange24h >= 0 ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"}`,
+                          borderRadius: 4, padding: "1px 5px",
+                        }}>
+                          {row.priceChange24h >= 0 ? "+" : ""}{row.priceChange24h.toFixed(1)}%
+                        </span>
+                      )}
+                      <span style={{ ...MONO, fontSize: "0.78rem", color: "var(--card-text-muted, rgba(255,255,255,0.82))", fontWeight: 600 }}>
+                        {row.usdValue != null ? fmtUsd(row.usdValue) : row.amount}
+                      </span>
+                    </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ flex: 1, height: 3, borderRadius: 999, background: "var(--card-header-bg, rgba(255,255,255,0.06))", overflow: "hidden" }}>
@@ -1864,6 +1881,30 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
   );
 }
 
+// ─── Sparkline ────────────────────────────────────────────────────────────────
+
+function Sparkline({ prices, positive, width = 280, height = 64 }: { prices: number[]; positive: boolean; width?: number; height?: number }) {
+  if (prices.length < 2) return null;
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+  const pts = prices.map((p, i) => {
+    const x = (i / (prices.length - 1)) * width;
+    const y = height - ((p - min) / range) * (height - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const color = positive ? "#22c55e" : "#ef4444";
+  const fillColor = positive ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)";
+  const pathD = `M ${pts.join(" L ")}`;
+  const fillD = `M 0,${height} L ${pts.join(" L ")} L ${width},${height} Z`;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
+      <path d={fillD} fill={fillColor} />
+      <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // ─── TokenRiskDisplay ─────────────────────────────────────────────────────────
 
 function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
@@ -1871,57 +1912,96 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
   const { risk } = result;
 
   const SCORE_COLOR = { 1: "#22c55e", 2: "#f59e0b", 3: "#f97316", 4: "#ef4444" } as const;
-  const color = SCORE_COLOR[risk.score];
+  const riskColor = SCORE_COLOR[risk.score];
+  const changePositive = (risk.priceChange24h ?? 0) >= 0;
+  const changeColor = changePositive ? "#22c55e" : "#ef4444";
 
   const fmt = (n: number) =>
-    n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M`
-    : n >= 1_000   ? `$${(n / 1_000).toFixed(1)}K`
+    n >= 1_000_000_000 ? `$${(n / 1_000_000_000).toFixed(2)}B`
+    : n >= 1_000_000   ? `$${(n / 1_000_000).toFixed(2)}M`
+    : n >= 1_000       ? `$${(n / 1_000).toFixed(1)}K`
     : `$${n.toFixed(2)}`;
 
+  const fmtPrice = (p: string) => {
+    const n = Number(p);
+    if (n >= 1000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+    if (n >= 1)    return `$${n.toFixed(4)}`;
+    return `$${n.toPrecision(4)}`;
+  };
+
   const FLAG_LABELS: Record<string, string> = {
-    NO_LIQUIDITY:   "No meaningful liquidity",
-    VOLUME_SPIKE:   "Abnormal volume spike",
-    SINGLE_POOL:    "Only 1 liquidity pool",
-    NEW_TOKEN:      "Token < 7 days old",
-    HIGH_VOLATILITY:"Price moved >50% in 24h",
-    HEAVY_SELLING:  "Heavy sell pressure",
+    NO_LIQUIDITY:    "No meaningful liquidity",
+    VOLUME_SPIKE:    "Abnormal volume spike",
+    SINGLE_POOL:     "Only 1 liquidity pool",
+    NEW_TOKEN:       "Token < 7 days old",
+    HIGH_VOLATILITY: "Price moved >50% in 24h",
+    HEAVY_SELLING:   "Heavy sell pressure",
   };
 
   return (
-    <div style={{ border: `1px solid ${color}30`, borderRadius: 14, overflow: "hidden", maxWidth: 420 }}>
-      <div style={{ padding: "14px 18px 12px", borderBottom: `1px solid ${color}20`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
+
+      {/* Header: name + risk badge */}
+      <div style={{ padding: "14px 18px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <span style={{ ...MONO, fontSize: "1rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>{risk.symbol}</span>
-          <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", marginLeft: 8 }}>{risk.name}</span>
+          <span style={{ ...MONO, fontSize: "1.05rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>{risk.symbol}</span>
+          <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))", marginLeft: 8 }}>{risk.name}</span>
         </div>
-        <span style={{ ...MONO, fontSize: "0.72rem", fontWeight: 700, color, background: `${color}18`, border: `1px solid ${color}40`, borderRadius: 6, padding: "3px 10px" }}>
+        <span style={{ ...MONO, fontSize: "0.65rem", fontWeight: 700, color: riskColor, background: `${riskColor}18`, border: `1px solid ${riskColor}35`, borderRadius: 6, padding: "3px 10px" }}>
           {risk.label} RISK
         </span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, background: "var(--card-border-faint, rgba(255,255,255,0.05))" }}>
+      {/* Price + 24h change hero */}
+      <div style={{ padding: "4px 18px 16px", display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+        <div>
+          <p style={{ ...MONO, fontSize: "1.6rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: 0, lineHeight: 1.1 }}>
+            {risk.priceUsd ? fmtPrice(risk.priceUsd) : "—"}
+          </p>
+          {risk.priceChange24h != null && (
+            <span style={{
+              ...MONO, fontSize: "0.75rem", fontWeight: 600,
+              color: changeColor,
+              background: changePositive ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
+              border: `1px solid ${changeColor}30`,
+              borderRadius: 6, padding: "2px 8px", display: "inline-block", marginTop: 6,
+            }}>
+              {changePositive ? "+" : ""}{risk.priceChange24h.toFixed(2)}% (1d)
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Sparkline chart */}
+      {risk.sparkline && risk.sparkline.length > 2 && (
+        <div style={{ padding: "0 0 0 0", borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          <Sparkline prices={risk.sparkline} positive={changePositive} width={400} height={72} />
+        </div>
+      )}
+
+      {/* Stats grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: "rgba(255,255,255,0.05)", margin: "0" }}>
         {[
-          ["Price",       risk.priceUsd ? `$${Number(risk.priceUsd).toPrecision(4)}` : "—"],
-          ["24h Change",  risk.priceChange24h != null ? `${risk.priceChange24h > 0 ? "+" : ""}${risk.priceChange24h.toFixed(2)}%` : "—"],
-          ["Liquidity",   fmt(risk.totalLiquidityUsd)],
-          ["Vol 24h",     fmt(risk.volume24h)],
           ["Market Cap",  risk.marketCap ? fmt(risk.marketCap) : "—"],
-          ["Pools",       `${risk.pairCount} on ${risk.dexCount} DEX${risk.dexCount > 1 ? "es" : ""}`],
+          ["Vol (24h)",   fmt(risk.volume24h)],
+          ["Liquidity",   fmt(risk.totalLiquidityUsd)],
+          ["Pools",       `${risk.pairCount} / ${risk.dexCount} DEX`],
         ].map(([label, val]) => (
-          <div key={label} style={{ padding: "10px 16px", background: "var(--card-container-bg, #0D0D0D)" }}>
-            <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 3px", letterSpacing: "0.06em" }}>{label!.toUpperCase()}</p>
-            <p style={{ ...MONO, fontSize: "0.8rem", color: "var(--card-text, #ffffff)", margin: 0 }}>{val}</p>
+          <div key={label} style={{ padding: "11px 16px", background: "var(--card-container-bg, #0D0D0D)" }}>
+            <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: "0 0 3px", letterSpacing: "0.07em" }}>{label!.toUpperCase()}</p>
+            <p style={{ ...MONO, fontSize: "0.82rem", color: "var(--card-text, #ffffff)", margin: 0 }}>{val}</p>
           </div>
         ))}
       </div>
 
+      {/* Risk flags */}
       {risk.flags.length > 0 && (
-        <div style={{ padding: "12px 18px", borderTop: `1px solid ${color}20` }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 8, letterSpacing: "0.06em" }}>RISK FLAGS</p>
+        <div style={{ padding: "12px 18px", borderTop: `1px solid ${riskColor}20` }}>
+          <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginBottom: 8, letterSpacing: "0.07em" }}>RISK FLAGS</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {risk.flags.map(f => (
               <div key={f} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <span style={{ color, fontSize: "0.6rem" }}>▲</span>
+                <span style={{ color: riskColor, fontSize: "0.58rem" }}>▲</span>
                 <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))" }}>{FLAG_LABELS[f] ?? f}</span>
               </div>
             ))}
@@ -1929,12 +2009,13 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
         </div>
       )}
 
+      {/* Footer link */}
       {risk.topPair?.url && (
-        <div style={{ padding: "10px 18px 14px", borderTop: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
+        <div style={{ padding: "10px 18px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
           <a href={risk.topPair.url} target="_blank" rel="noopener noreferrer"
-            style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", textDecoration: "none" }}
-            onMouseEnter={e => (e.currentTarget.style.color = "var(--card-text-muted, rgba(255,255,255,0.7))")}
-            onMouseLeave={e => (e.currentTarget.style.color = "var(--card-text-dim, rgba(255,255,255,0.45))")}
+            style={{ ...MONO, fontSize: "0.64rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))", textDecoration: "none" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
+            onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.4)")}
           >
             view on dexscreener · {risk.topPair.dexId} · {risk.topPair.chainId} ↗
           </a>

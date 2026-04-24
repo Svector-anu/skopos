@@ -43,6 +43,32 @@ export interface TokenRisk {
   pairCount: number;
   dexCount: number;
   flags: string[];
+  sparkline?: number[];
+}
+
+const COINGECKO_IDS: Record<string, string> = {
+  ETH: "ethereum", WETH: "weth", BTC: "bitcoin", WBTC: "wrapped-bitcoin",
+  BNB: "binancecoin", MATIC: "matic-network", POL: "matic-network",
+  AVAX: "avalanche-2", SOL: "solana", ARB: "arbitrum", OP: "optimism",
+  LINK: "chainlink", UNI: "uniswap", AAVE: "aave", MKR: "maker",
+  CRV: "curve-dao-token", LDO: "lido-dao", SNX: "havven", COMP: "compound-governance-token",
+  PEPE: "pepe", SHIB: "shiba-inu", DOGE: "dogecoin", BCH: "bitcoin-cash",
+  USDC: "usd-coin", USDT: "tether", DAI: "dai", FRAX: "frax",
+};
+
+async function fetchSparkline(symbol: string): Promise<number[] | undefined> {
+  const id = COINGECKO_IDS[symbol.toUpperCase()];
+  if (!id) return undefined;
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${id}&sparkline=true`
+    );
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    return data?.[0]?.sparkline_in_7d?.price as number[] | undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function scoreRisk(liquidityUsd: number, flags: string[]): 1 | 2 | 3 | 4 {
@@ -87,6 +113,8 @@ export async function scanToken(query: string): Promise<TokenRisk | null> {
   const score = scoreRisk(totalLiquidity, flags);
   const LABELS = { 1: "LOW", 2: "MEDIUM", 3: "HIGH", 4: "CRITICAL" } as const;
 
+  const sparkline = await fetchSparkline(top.baseToken.symbol);
+
   return {
     symbol:           top.baseToken.symbol,
     name:             top.baseToken.name,
@@ -102,5 +130,6 @@ export async function scanToken(query: string): Promise<TokenRisk | null> {
     pairCount:        pairs.length,
     dexCount:         dexes.size,
     flags,
+    sparkline,
   };
 }

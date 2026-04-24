@@ -258,9 +258,10 @@ export async function lookupAddress(address: string): Promise<AddressData> {
   });
 
   const enrichedTokenBalances = tokenBalances.map(t => {
-    const price = tokenPriceMap.get(t.contractAddress.toLowerCase());
+    const data = tokenPriceMap.get(t.contractAddress.toLowerCase());
+    const price = data?.price;
     const usdValue = price != null ? parseFloat(t.balance) * price : undefined;
-    return { ...t, usdPrice: price, usdValue };
+    return { ...t, usdPrice: price, usdValue, priceChange24h: data?.change24h ?? undefined };
   });
 
   const totalUsdValue =
@@ -305,8 +306,10 @@ async function fetchNativePrices(symbols: string[]): Promise<Record<string, numb
   }
 }
 
-async function fetchTokenPricesByAddress(addresses: string[]): Promise<Map<string, number>> {
-  const priceMap = new Map<string, number>();
+interface TokenPriceData { price: number; change24h: number | null }
+
+async function fetchTokenPricesByAddress(addresses: string[]): Promise<Map<string, TokenPriceData>> {
+  const priceMap = new Map<string, TokenPriceData>();
   const unique = [...new Set(addresses.map(a => a.toLowerCase()))].filter(Boolean).slice(0, 30);
   if (unique.length === 0) return priceMap;
   try {
@@ -317,20 +320,18 @@ async function fetchTokenPricesByAddress(addresses: string[]): Promise<Map<strin
     const data = await res.json();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pairs: any[] = data.pairs ?? [];
-    // Use highest-liquidity pair per token for price
+    const liqTrack = new Map<string, number>();
     for (const pair of pairs) {
       const addr = (pair.baseToken?.address ?? "").toLowerCase();
       if (!addr || !pair.priceUsd) continue;
-      const existing = priceMap.get(addr);
       const liq = pair.liquidity?.usd ?? 0;
-      if (!existing || liq > (priceMap.get(`${addr}_liq`) ?? 0)) {
-        priceMap.set(addr, parseFloat(pair.priceUsd));
-        priceMap.set(`${addr}_liq`, liq);
+      if (liq > (liqTrack.get(addr) ?? 0)) {
+        liqTrack.set(addr, liq);
+        priceMap.set(addr, {
+          price: parseFloat(pair.priceUsd),
+          change24h: pair.priceChange?.h24 ?? null,
+        });
       }
-    }
-    // Remove liquidity tracking keys
-    for (const key of [...priceMap.keys()]) {
-      if (key.endsWith("_liq")) priceMap.delete(key);
     }
   } catch {
     // price enrichment is non-critical

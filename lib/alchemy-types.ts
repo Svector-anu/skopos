@@ -44,6 +44,7 @@ export interface TokenBalance {
   chainName: string;
   usdPrice?: number;
   usdValue?: number;
+  priceChange24h?: number;
 }
 
 export interface AddressData {
