@@ -192,7 +192,6 @@ const FEATURE_SLIDES: FeatureCard[][] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function shortAddr(addr: string) { return `${addr.slice(0, 6)}…${addr.slice(-4)}`; }
-function addrColor(addr: string) { return `hsl(${parseInt(addr.slice(2, 8), 16) % 360}, 70%, 55%)`; }
 function loadJson<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; } catch { return fallback; }
 }
@@ -800,7 +799,7 @@ export default function AppPage() {
                         </p>
                         <ErrorBoundary label="Quote failed to render.">
                           <QuoteDisplay
-                            result={msg.result} connectedAddress={connectedAddress}  onTxSubmitted={saveTx}
+                            result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} slippage={slippage}
                             onRefresh={async () => {
                               const origin = (msg.result as QuoteResult).originMessage;
                               if (!origin) return;
@@ -833,7 +832,7 @@ export default function AppPage() {
                             </button>
                           </div>
                         )}
-                  <RebalanceDisplay result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} />                      </ErrorBoundary>
+                  <RebalanceDisplay result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} slippage={slippage} />                      </ErrorBoundary>
                     )}
                     {msg.result.type === "tx" && (
                       <ErrorBoundary label="Transaction details failed to render.">
@@ -1197,26 +1196,58 @@ function DrawerAction({ label, onClick }: { label: string; onClick: () => void }
   );
 }
 
+// ─── ChainLogo ────────────────────────────────────────────────────────────────
+
+const SOLANA_CHAIN_ID = 1000000001;
+
+function ChainLogo({ chainId, size = 48 }: { chainId: number; size?: number }) {
+  const [err, setErr] = useState(false);
+  const src = chainId === SOLANA_CHAIN_ID
+    ? "https://icons.llamao.fi/icons/chains/rsz_solana?w=64&h=64"
+    : `https://assets.relay.link/icons/${chainId}/light.png`;
+
+  if (err) {
+    const hue = (chainId * 137) % 360;
+    return (
+      <div style={{ width: size, height: size, borderRadius: 999, background: `hsl(${hue}, 55%, 38%)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <span style={{ fontFamily: "var(--font-jetbrains-mono)", fontSize: size * 0.32, color: "#fff", fontWeight: 700 }}>
+          {String(chainId).slice(-2)}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt="" width={size} height={size}
+      style={{ borderRadius: 999, display: "block", flexShrink: 0 }}
+      onError={() => setErr(true)}
+    />
+  );
+}
+
 // ─── QuoteDisplay ─────────────────────────────────────────────────────────────
 
 const QUOTE_TTL = 30;
 
-function QuoteDisplay({ result,connectedAddress, onTxSubmitted, onRefresh }: {
+function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slippage = 0.005 }: {
   result: QuoteResult;
-  connectedAddress: string| null;
+  connectedAddress: string | null;
   onTxSubmitted?: (r: TxRecord) => void;
   onRefresh?: () => Promise<void>;
+  slippage?: number;
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-  const { address }              = useAccount();
-  const chainId                  = useChainId();
+  const { address }                  = useAccount();
+  const chainId                      = useChainId();
   const { mutateAsync: switchChain } = useSwitchChain();
-  const { login, authenticated } = usePrivy();
+  const { login, authenticated }     = usePrivy();
   const { intent, route, calldata, approval } = result;
-  const originChainId            = intent.from.chainId;
-  const destChainId              = intent.to.chainId;
-  const isSolanaRoute            = originChainId === 1000000001 || destChainId === 1000000001;
-  const onCorrectChain           = chainId === originChainId;
+  const originChainId = intent.from.chainId;
+  const destChainId   = intent.to.chainId;
+  const isSolanaRoute = originChainId === SOLANA_CHAIN_ID || destChainId === SOLANA_CHAIN_ID;
+  const onCorrectChain = chainId === originChainId;
+  const isSwap         = originChainId === destChainId;
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: approval?.tokenAddress as `0x${string}` | undefined,
@@ -1233,21 +1264,19 @@ function QuoteDisplay({ result,connectedAddress, onTxSubmitted, onRefresh }: {
   useEffect(() => { if (approvalConfirmed) refetchAllowance(); }, [approvalConfirmed, refetchAllowance]);
 
   const { mutateAsync: sendTransaction, isPending: isSending } = useSendTransaction();
-  const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
+  const [txHash, setTxHash]   = useState<`0x${string}` | undefined>();
   const { isLoading: isConfirming, isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
-  const [switchErr, setSwitchErr]     = useState<string | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState(QUOTE_TTL);
+  const [switchErr, setSwitchErr]       = useState<string | null>(null);
+  const [secondsLeft, setSecondsLeft]   = useState(QUOTE_TTL);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Reset countdown whenever a fresh quote arrives, accounting for server-to-client latency
   useEffect(() => {
     const elapsed = result.quotedAt ? Math.floor((Date.now() - result.quotedAt) / 1000) : 0;
     setSecondsLeft(Math.max(0, QUOTE_TTL - elapsed));
     setIsRefreshing(false);
   }, [result]);
 
-  // Tick down — pauses once a tx is in flight (no point expiring mid-execution)
   useEffect(() => {
     if (txHash || secondsLeft <= 0) return;
     const id = setTimeout(() => setSecondsLeft(s => s - 1), 1000);
@@ -1298,99 +1327,144 @@ function QuoteDisplay({ result,connectedAddress, onTxSubmitted, onRefresh }: {
     }
   }
 
-  const explorerUrl = txHash ? `${EXPLORER_URLS[intent.from.chain] ?? "https://etherscan.io/tx/"}${txHash}` : null;
-
-  type Row = { label: string; value: React.ReactNode; highlight?: boolean };
-  const rows: Row[] = [
-    { label: "From", value: address ? <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: addrColor(address), flexShrink: 0 }} />{shortAddr(address)}</span> : "—" },
-    { label: "To", value: connectedAddress ? <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: addrColor(connectedAddress), flexShrink: 0 }} />{shortAddr(connectedAddress)}</span> : "—" },    
-    { label: "Send",    value: `${intent.from.amount} ${intent.from.token}` },
-    { label: "Receive", value: `~${route.outputAmount} ${intent.to.token}`, highlight: true },
-    { label: "Network", value: `${intent.from.chain} → ${intent.to.chain}` },
-    ...(route.feesUSD ? [{ label: "Fees", value: `~$${Number(route.feesUSD).toFixed(4)}` }] : []),
-  ];
-
+  const explorerUrl   = txHash ? `${EXPLORER_URLS[intent.from.chain] ?? "https://etherscan.io/tx/"}${txHash}` : null;
   const executionMode = !!txHash;
 
+  const minReceived = (() => {
+    const out = parseFloat(route.outputAmount);
+    return isFinite(out) ? (out * (1 - slippage)).toFixed(6) : route.outputAmount;
+  })();
+
+  const summaryRows: { label: string; value: string }[] = [
+    { label: "Via",           value: route.tool },
+    { label: "Slippage",      value: `${(slippage * 100).toFixed(1)}%` },
+    { label: "Min. received", value: `~${minReceived} ${intent.to.token}` },
+    ...(route.feesUSD ? [{ label: "Network fee", value: `~$${Number(route.feesUSD).toFixed(2)}` }] : []),
+    ...(connectedAddress ? [{ label: "Recipient",   value: shortAddr(connectedAddress) }] : []),
+  ];
+
   return (
-    <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: `1px solid ${executionMode ? "rgba(245,184,0,0.18)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 16, overflow: "hidden", width: "100%" }}>
+    <div style={{
+      background: "var(--card-container-bg, #0D0D0D)",
+      border: `1px solid ${executionMode ? "rgba(245,184,0,0.2)" : "var(--card-border, rgba(255,255,255,0.09))"}`,
+      borderRadius: 16, overflow: "hidden", maxWidth: 400,
+    }}>
+
       {/* Header */}
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
-          {executionMode ? "Transaction" : "Quote Preview"}
-        </p>
+      <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          {executionMode ? "TRANSACTION" : isSwap ? "SWAP PREVIEW" : "BRIDGE PREVIEW"}
+        </span>
         {!executionMode && (
           <span style={{
-            ...MONO, fontSize: "0.6rem", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 4,
+            ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4,
             background: "var(--card-border-faint, rgba(255,255,255,0.05))",
-            color: isExpired ? "#F5B800"
-              : secondsLeft <= 10 ? "rgba(245,184,0,0.65)"
-              : "var(--card-text-faint, rgba(255,255,255,0.3))",
+            color: isExpired ? "#F5B800" : secondsLeft <= 10 ? "rgba(245,184,0,0.65)" : "var(--card-text-faint, rgba(255,255,255,0.3))",
           }}>
-            {isExpired ? "expired" : secondsLeft <= 15 ? `${secondsLeft}s` : "preview"}
+            {isExpired ? "EXPIRED" : secondsLeft <= 15 ? `${secondsLeft}s` : "LIVE"}
           </span>
         )}
       </div>
 
-      {/* Rows */}
-      <div style={{ padding: "4px 16px" }}>
-        {rows.map(({ label, value, highlight }) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))", gap: 8 }}>
-            <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
-            <span style={{ ...MONO, fontSize: highlight ? "0.92rem" : "0.73rem", color: highlight ? "var(--card-text, #ffffff)" : "var(--card-text-muted, rgba(255,255,255,0.7))", fontWeight: highlight ? 500 : 400, display: "flex", alignItems: "center", gap: 4, textAlign: "right", wordBreak: "break-all" }}>
-              {value}
+      {/* Token pair hero */}
+      {!executionMode && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", padding: "24px 20px 18px", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flex: 1 }}>
+            <ChainLogo chainId={originChainId} size={50} />
+            <span style={{ ...MONO, fontSize: "1.05rem", fontWeight: 700, color: "var(--card-text, rgba(255,255,255,0.9))", textAlign: "center", lineHeight: 1.2 }}>
+              {intent.from.amount} {intent.from.token}
             </span>
+            <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.32))", letterSpacing: "0.04em" }}>
+              {intent.from.chain}
+            </span>
+          </div>
+
+          <div style={{ flexShrink: 0, color: "var(--card-text-faint, rgba(255,255,255,0.22))" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 6l6 6-6 6"/>
+            </svg>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flex: 1 }}>
+            <ChainLogo chainId={destChainId} size={50} />
+            <span style={{ ...MONO, fontSize: "1.05rem", fontWeight: 700, color: "#F5B800", textAlign: "center", lineHeight: 1.2 }}>
+              ~{route.outputAmount} {intent.to.token}
+            </span>
+            <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.32))", letterSpacing: "0.04em" }}>
+              {intent.to.chain}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Summary card */}
+      <div style={{ margin: "0 14px 14px", padding: "12px 14px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12 }}>
+        <p style={{ ...MONO, fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.25))", margin: "0 0 9px" }}>SUMMARY</p>
+        {summaryRows.map(({ label, value }, i) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined }}>
+            <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{label}</span>
+            <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{value}</span>
           </div>
         ))}
       </div>
 
-      {/* Action */}
-      <div style={{ padding: "14px 16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Action area */}
+      <div style={{ padding: "0 14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
         {switchErr && (
-          <p style={{ ...MONO, fontSize: "0.68rem", color: "#ff6b6b", margin: 0, textAlign: "center" }}>
-            {switchErr}
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "#ff6b6b", margin: 0, textAlign: "center" }}>{switchErr}</p>
+        )}
+        {approvalConfirmed && !txHash && (
+          <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0 }}>
+            approval confirmed ✓ — execute below
           </p>
         )}
+
         {txHash ? (
           txConfirmed ? (
             <a href={explorerUrl ?? "#"} target="_blank" rel="noopener noreferrer"
-              style={{ ...MONO, display: "block", width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80", textDecoration: "none" }}>
-              confirmed ✓ · view →
+              style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80", textDecoration: "none" }}>
+              confirmed ✓ · view on explorer →
             </a>
           ) : (
-            <div style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", textAlign: "center", background: "rgba(245,184,0,0.04)", border: "1px solid rgba(245,184,0,0.15)", borderRadius: 10, color: "rgba(245,184,0,0.5)" }}
+            <div style={{ ...MONO, width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(245,184,0,0.04)", border: "1px solid rgba(245,184,0,0.15)", borderRadius: 10, color: "rgba(245,184,0,0.5)" }}
               className={isConfirming ? "animate-pulse" : ""}>
               {isConfirming ? "confirming on-chain…" : "submitted · waiting…"}
             </div>
           )
-        ) : isExpired ? (
-          <button onClick={handleRefresh} disabled={isRefreshing || !onRefresh}
-            style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.05)", border: "1px solid rgba(245,184,0,0.22)", borderRadius: 10, color: isRefreshing ? "rgba(245,184,0,0.35)" : "rgba(245,184,0,0.75)", cursor: isRefreshing ? "wait" : "pointer" }}
-            className={isRefreshing ? "animate-pulse" : ""}>
-            {isRefreshing ? "refreshing…" : "quote expired · refresh →"}
-          </button>
         ) : isSolanaRoute ? (
           <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} />
-        ) : !authenticated ? (
-          <button onClick={login} style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.08)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: "pointer" }}>
-            connect to execute →
-          </button>
-        ) : needsApproval ? (
-          <button onClick={approve} disabled={isApproving || (!!approvalHash && !approvalConfirmed)}
-            style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.08)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: isApproving ? "wait" : "pointer" }}>
-            {isApproving ? "approving…" : approvalHash && !approvalConfirmed ? "confirming approval…" : `approve ${intent.from.token} →`}
-          </button>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {approvalConfirmed && (
-              <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0, letterSpacing: "0.06em" }}>
-                approval confirmed ✓ — now execute the bridge
-              </p>
-            )}
-            <button onClick={execute} disabled={!calldata || isSending}
-              style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${calldata ? "rgba(245,184,0,0.3)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 10, color: calldata ? "#F5B800" : "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: calldata && !isSending ? "pointer" : "not-allowed" }}>
-              {isSending ? "confirm in wallet…" : "execute transaction →"}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleRefresh} disabled={isRefreshing || !onRefresh}
+              style={{
+                ...MONO, padding: "11px 14px", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.03em",
+                background: "none",
+                border: `1px solid ${isExpired ? "rgba(245,184,0,0.35)" : "rgba(255,255,255,0.09)"}`,
+                borderRadius: 10,
+                color: isExpired ? "rgba(245,184,0,0.85)" : "rgba(255,255,255,0.35)",
+                cursor: isRefreshing || !onRefresh ? "not-allowed" : "pointer", flexShrink: 0,
+              }}
+              className={isRefreshing ? "animate-pulse" : ""}
+            >
+              {isRefreshing ? "…" : isExpired ? "Refresh →" : "Refresh"}
             </button>
+
+            {!authenticated ? (
+              <button onClick={login}
+                style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: "pointer" }}>
+                Connect Wallet
+              </button>
+            ) : needsApproval ? (
+              <button onClick={approve} disabled={isApproving || (!!approvalHash && !approvalConfirmed)}
+                style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isApproving ? "wait" : "pointer", opacity: (isApproving || (!!approvalHash && !approvalConfirmed)) ? 0.65 : 1 }}>
+                {isApproving ? "Approving…" : approvalHash && !approvalConfirmed ? "Confirming…" : `Approve ${intent.from.token}`}
+              </button>
+            ) : (
+              <button onClick={execute} disabled={!calldata || isSending || isExpired}
+                style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: calldata && !isExpired ? "#F5B800" : "rgba(255,255,255,0.05)", border: calldata && !isExpired ? "none" : "1px solid rgba(255,255,255,0.09)", borderRadius: 10, color: calldata && !isExpired ? "#000" : "rgba(255,255,255,0.22)", cursor: calldata && !isSending && !isExpired ? "pointer" : "not-allowed" }}>
+                {isSending ? "Confirm in wallet…" : "Execute →"}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1497,7 +1571,7 @@ function SolanaExecuteButton({ result, onTxSubmitted }: {
 
 // ─── RebalanceDisplay ─────────────────────────────────────────────────────────
 
-function RebalanceDisplay({ result, connectedAddress, onTxSubmitted }: { result: RebalanceResult; connectedAddress: string | null; onTxSubmitted?: (r: TxRecord) => void }) {
+function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage }: { result: RebalanceResult; connectedAddress: string | null; onTxSubmitted?: (r: TxRecord) => void; slippage?: number }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const total     = result.legs.length;
   const okLegs    = result.legs.filter(l => l.type === "quote").length;
@@ -1535,7 +1609,7 @@ function RebalanceDisplay({ result, connectedAddress, onTxSubmitted }: { result:
                   </span>
                 )}
               </p>
-              <QuoteDisplay result={leg} connectedAddress={connectedAddress} onTxSubmitted={onTxSubmitted} />
+              <QuoteDisplay result={leg} connectedAddress={connectedAddress} onTxSubmitted={onTxSubmitted} slippage={slippage} />
             </div>
           ) : (
             <div style={{ ...MONO, fontSize: "0.78rem", color: "#ff6b6b", padding: "12px 16px", background: "rgba(255,107,107,0.05)", border: "1px solid rgba(255,107,107,0.12)", borderRadius: 12 }}>

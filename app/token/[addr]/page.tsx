@@ -8,3 +8,4 @@ export default async function TokenPage({
   const { addr } = await params;
   redirect(`/app?q=${encodeURIComponent(`analyze token ${addr}`)}`);
 }
+
