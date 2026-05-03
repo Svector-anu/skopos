@@ -18,45 +18,29 @@ import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken } from "@/lib/dexscreener";
 import { getTopYields } from "@/lib/defillama";
 import { getTopMarkets } from "@/lib/polymarket";
+import { getPrice } from "@/lib/priceCache";
 
-// ── live price lookup (CoinGecko free tier, no API key) ──────────────────────
+// ── price query token recognition ────────────────────────────────────────────
 
-const PRICE_COINGECKO_IDS: Record<string, string> = {
-  ETH:  "ethereum",   WETH: "weth",          BTC:  "bitcoin",       WBTC: "wrapped-bitcoin",
-  SOL:  "solana",     BNB:  "binancecoin",    MATIC:"matic-network", POL:  "matic-network",
-  AVAX: "avalanche-2",ARB:  "arbitrum",       OP:   "optimism",      LINK: "chainlink",
-  UNI:  "uniswap",    AAVE: "aave",           MKR:  "maker",         CRV:  "curve-dao-token",
-  LDO:  "lido-dao",   SNX:  "havven",         PEPE: "pepe",          SHIB: "shiba-inu",
-  DOGE: "dogecoin",   XRP:  "ripple",         ADA:  "cardano",       DOT:  "polkadot",
-  USDC: "usd-coin",   USDT: "tether",         DAI:  "dai",           FRAX: "frax",
-};
+const PRICE_TOKENS = [
+  "ETH","WETH","BTC","WBTC","SOL","BNB","MATIC","POL","AVAX","ARB","OP",
+  "LINK","UNI","AAVE","MKR","CRV","LDO","SNX","COMP","PEPE","SHIB","DOGE",
+  "XRP","ADA","DOT","USDC","USDT","DAI","FRAX",
+];
 
 const PRICE_TOKEN_RE = new RegExp(
-  `\\b(${Object.keys(PRICE_COINGECKO_IDS).join("|")}|bitcoin|ethereum|solana)\\b`,
+  `\\b(${PRICE_TOKENS.join("|")}|bitcoin|ethereum|solana|dogecoin|cardano|chainlink|avalanche|polygon|optimism|arbitrum|uniswap|polkadot|maker|curve|lido|synthetix)\\b`,
   "i"
 );
 
 const TOKEN_NAME_TO_SYMBOL: Record<string, string> = {
-  bitcoin: "BTC", ethereum: "ETH", solana: "SOL",
+  bitcoin: "BTC",   ethereum: "ETH",   solana: "SOL",
+  dogecoin: "DOGE", cardano: "ADA",    chainlink: "LINK",
+  avalanche: "AVAX", polygon: "MATIC", optimism: "OP",
+  arbitrum: "ARB",  uniswap: "UNI",    polkadot: "DOT",
+  maker: "MKR",     curve: "CRV",      lido: "LDO",
+  synthetix: "SNX",
 };
-
-async function fetchLivePrice(symbol: string): Promise<{ price: number; change24h: number | null } | null> {
-  const id = PRICE_COINGECKO_IDS[symbol.toUpperCase()];
-  if (!id) return null;
-  try {
-    const res = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`,
-      { next: { revalidate: 0 } }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const entry = data[id];
-    if (!entry?.usd) return null;
-    return { price: entry.usd, change24h: entry.usd_24h_change ?? null };
-  } catch {
-    return null;
-  }
-}
 
 // ── in-memory rate limiter (sliding window, per IP) ──────────────────────────
 const RATE_WINDOW_MS = 60_000; // 1 minute
@@ -70,6 +54,17 @@ function checkRateLimit(ip: string): boolean {
   hits.push(now);
   rateMap.set(ip, hits);
   return hits.length <= RATE_LIMIT;
+}
+
+// ── retry helper ──────────────────────────────────────────────────────────────
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 300): Promise<T> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try { return await fn(); } catch (err) {
+      if (attempt === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error("unreachable");
 }
 
 // ── shared leg resolver ───────────────────────────────────────────────────────
@@ -191,16 +186,18 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   const isSolanaOrigin = originChainId === SOLANA_CHAIN_ID;
   const isSolanaDest   = destChainId   === SOLANA_CHAIN_ID;
 
-  // EVM → Solana: receiverAddress must be a Solana pubkey (base58), not an EVM 0x address
-  if (isSolanaDest && !solanaAddress) {
+  const SOLANA_PUBKEY_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+  // EVM → Solana: receiverAddress must be a valid base58 Solana pubkey
+  if (isSolanaDest && (!solanaAddress || !SOLANA_PUBKEY_RE.test(solanaAddress))) {
     return {
       ok: false,
       text: "To bridge to Solana you need a Phantom wallet connected. Connect Phantom first, then try again.",
     };
   }
 
-  // Solana → EVM: senderAddress must be the Solana pubkey
-  if (isSolanaOrigin && !solanaAddress) {
+  // Solana → EVM: senderAddress must be a valid base58 Solana pubkey
+  if (isSolanaOrigin && (!solanaAddress || !SOLANA_PUBKEY_RE.test(solanaAddress))) {
     return {
       ok: false,
       text: "Connect your Phantom wallet to bridge from Solana.",
@@ -212,7 +209,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
 
   let quote;
   try {
-    quote = await getQuote({
+    quote = await withRetry(() => getQuote({
       originChainId,
       destinationChainId: destChainId,
       amount: amountWei,
@@ -221,8 +218,9 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
       senderAddress: effectiveSender,
       receiverAddress: effectiveReceiver,
       slippage,
-    });
+    }));
   } catch (err) {
+    console.error(`[resolveLeg] getQuote failed: ${err instanceof Error ? err.message : err}`);
     const msg        = err instanceof Error ? err.message : "Unknown error";
     const noAdapters = msg.includes("No adapters available");
     const isSolana   = originChain?.chainType === "SVM" || destChain?.chainType === "SVM";
@@ -265,38 +263,54 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
 
 // ── POST handler ──────────────────────────────────────────────────────────────
 
+const NO_CACHE = { "Cache-Control": "no-store, no-cache, must-revalidate" };
+
+function json(data: unknown, init?: ResponseInit): NextResponse {
+  return NextResponse.json(data, { ...init, headers: { ...NO_CACHE, ...(init?.headers ?? {}) } });
+}
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   if (!checkRateLimit(ip)) {
-    return NextResponse.json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429 });
+    return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429 });
   }
 
   const { message, senderAddress, solanaAddress, history, slippage } = await req.json();
 
   if (!message?.trim()) {
-    return NextResponse.json({ error: "No message provided" }, { status: 400 });
+    return json({ error: "No message provided" }, { status: 400 });
   }
 
-  const trimmed   = message.trim();
-  const queryType = classifyIntent(trimmed);
+  const trimmed = message.trim();
 
-  // ── price query (live fetch, no LLM) ─────────────────────────────────────
+  if (trimmed.length > 2000) {
+    return json({ type: "error", text: "Message too long." }, { status: 400 });
+  }
+
+  const rawSlip = typeof slippage === "number" ? slippage : parseFloat(String(slippage ?? ""));
+  const safeSlippage = Number.isFinite(rawSlip) && rawSlip >= 0 && rawSlip <= 0.1 ? rawSlip : 0.005;
+
+  const queryType = classifyIntent(trimmed);
+  console.log(`[chat] ip=${ip} type=${queryType} len=${trimmed.length}`);
+
+  // ── price query (live fetch via unified getPrice, no LLM) ───────────────
   if (queryType === "price") {
     const tokenMatch = trimmed.match(PRICE_TOKEN_RE);
     const rawSymbol  = tokenMatch?.[1] ?? "";
     const symbol     = (TOKEN_NAME_TO_SYMBOL[rawSymbol.toLowerCase()] ?? rawSymbol).toUpperCase();
-    const result     = await fetchLivePrice(symbol);
-    if (!result) {
-      return NextResponse.json({ type: "error", text: "Unable to fetch reliable data right now." });
+    const result     = await getPrice(symbol);
+    if (!result || result.price <= 0) {
+      return json({ type: "error", text: "Unable to fetch reliable data right now." });
     }
-    const { price, change24h } = result;
+    const { price, change24h, source } = result;
+    console.log(`[price] query symbol=${symbol} price=${price} source=${source}`);
     const fmtPrice  = price >= 1000
       ? `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       : price >= 1 ? `$${price.toFixed(4)}` : `$${price.toPrecision(4)}`;
     const fmtChange = change24h != null
       ? ` (${change24h >= 0 ? "+" : ""}${change24h.toFixed(2)}% 24h)`
       : "";
-    return NextResponse.json({ type: "text", text: `${symbol} is ${fmtPrice}${fmtChange}.` });
+    return json({ type: "text", text: `${symbol} is ${fmtPrice}${fmtChange}.` });
   }
 
   // ── explorer: ENS name (*.eth) — matches bare "vitalik.eth" or in a sentence ──
@@ -307,11 +321,11 @@ export async function POST(req: NextRequest) {
     const ensName = (ensMatch[1] + ".eth").toLowerCase();
     const resolved = await resolveENS(ensName);
     if (!resolved) {
-      return NextResponse.json({ type: "error", text: `Could not resolve ${ensName}. Make sure the ENS name is registered.` });
+      return json({ type: "error", text: `Could not resolve ${ensName}. Make sure the ENS name is registered.` });
     }
     const data = await lookupAddress(resolved);
     const summary = await generateAddressSummary(data);
-    return NextResponse.json({ type: "address", data, summary, ensName });
+    return json({ type: "address", data, summary, ensName });
   }
 
   // ── explorer: explicit address embedded in sentence ("analyze wallet 0x…") ──
@@ -319,13 +333,13 @@ export async function POST(req: NextRequest) {
   if (embeddedAddrMatch && !/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
     const data = await lookupAddress(embeddedAddrMatch[1]);
     const summary = await generateAddressSummary(data);
-    return NextResponse.json({ type: "address", data, summary });
+    return json({ type: "address", data, summary });
   }
 
   // ── portfolio: connected wallet ──────────────────────────────────────────
   if (/\b(my\s+)?(portfolio|wallet|balances?|holdings?)\b/i.test(trimmed)) {
     if (!senderAddress) {
-      return NextResponse.json({ type: "text", text: "Connect your wallet first — I'll fetch your live balances across all supported chains." });
+      return json({ type: "text", text: "Connect your wallet first — I'll fetch your live balances across all supported chains." });
     }
     const data = await lookupAddress(senderAddress);
 
@@ -349,7 +363,7 @@ export async function POST(req: NextRequest) {
           ...data.tokenBalances.map(t => t.chainName),
         ];
         const elsewhere = [...new Set(activeChains)].join(", ") || "no balances detected";
-        return NextResponse.json({
+        return json({
           type: "text",
           text: `No assets found on ${label} for this wallet. Active balances are on: ${elsewhere}.`,
         });
@@ -357,11 +371,11 @@ export async function POST(req: NextRequest) {
 
       const filteredData = { ...data, balances: filteredBalances, tokenBalances: filteredTokens };
       const summary = await generateAddressSummary(filteredData);
-      return NextResponse.json({ type: "address", data: filteredData, summary });
+      return json({ type: "address", data: filteredData, summary });
     }
 
     const summary = await generateAddressSummary(data);
-    return NextResponse.json({ type: "address", data, summary });
+    return json({ type: "address", data, summary });
   }
 
   // ── explorer: tx hash (0x + 64 hex chars) ───────────────────────────────
@@ -369,16 +383,16 @@ export async function POST(req: NextRequest) {
     const tx = await lookupTx(trimmed);
     if (tx) {
       const summary = await generateTxSummary(tx);
-      return NextResponse.json({ type: "tx", tx, summary });
+      return json({ type: "tx", tx, summary });
     }
-    return NextResponse.json({ type: "error", text: "Transaction not found on any supported chain." });
+    return json({ type: "error", text: "Transaction not found on any supported chain." });
   }
 
   // ── explorer: address (0x + 40 hex chars) ───────────────────────────────
   if (/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
     const data = await lookupAddress(trimmed);
     const summary = await generateAddressSummary(data);
-    return NextResponse.json({ type: "address", data, summary });
+    return json({ type: "address", data, summary });
   }
 
   // ── multi-leg rebalance (checked before single-leg so "split X across Y and Z" isn't captured as a single bridge) ──
@@ -388,24 +402,24 @@ export async function POST(req: NextRequest) {
       // Validate that legs are actually cross-chain — same-chain legs indicate the LLM couldn't infer origin
       const samechainLegs = legs.filter(l => resolveChainId(l.originChain) === resolveChainId(l.destinationChain));
       if (samechainLegs.length > 0) {
-        return NextResponse.json({ type: "error", text: `Please specify the source chain. For example: "send 0.5 ETH from ethereum to base and 0.5 ETH from ethereum to arbitrum"` });
+        return json({ type: "error", text: `Please specify the source chain. For example: "send 0.5 ETH from ethereum to base and 0.5 ETH from ethereum to arbitrum"` });
       }
 
-      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, slippage, solanaAddress)));
+      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, safeSlippage, solanaAddress)));
 
       const firstErr = results.find((r): r is LegErr => !r.ok);
       if (firstErr) {
-        return NextResponse.json({ type: "error", text: `Rebalance aborted: ${firstErr.text}` });
+        return json({ type: "error", text: `Rebalance aborted: ${firstErr.text}` });
       }
 
       const quotedAt = Date.now();
-      return NextResponse.json({
+      return json({
         type: "rebalance",
         mode: "preview",
         quotedAt,
         legs: results.map(r => {
-          const { ok: _ok, ...rest } = r as LegOk;
-          return { type: "quote", mode: "preview", quotedAt, ...rest };
+          const { intent, route, approval, calldata, raw } = r as LegOk;
+          return { type: "quote", mode: "preview", quotedAt, intent, route, approval, calldata, raw };
         }),
       });
     }
@@ -431,21 +445,33 @@ export async function POST(req: NextRequest) {
     if (!TOKEN_IMPLIES_SOURCE[token]) {
       // Take only the first word of the dest to avoid "base eth" appearing as a chain name
       const dest = missingSource[2].trim().split(/\s+/)[0];
-      return NextResponse.json({
+      return json({
         type: "error",
         text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 ${token} from base to ${dest}" or "bridge 100 ${token} from arbitrum to ${dest}".`,
       });
     }
   }
 
+  // ── meta-question guard — block identity/training questions before any LLM call ──
+  const META_RE = /\b(system\s*prompt|your\s*instructions?|what\s*(?:model|llm|ai)\s*(?:are\s*you|is\s*this)|which\s*(?:model|api|llm)\s*(?:do\s*you|are\s*you)|openai|anthropic|are\s*you\s*(?:gpt|claude|chatgpt|llama)|gpt[-\s]?\d|how\s+old\s+are\s+you|when\s+(?:were|was)\s+you\s+(?:created|born|built|made|trained|launched)|(?:your|you\s+have\s+a?)\s*(?:age|birthday|birth\s*date)|knowledge\s+cutoff|training\s+(?:data|cutoff)|(?:do\s+you|you)\s+know\s+(?:about\s+)?\d{4}|what\s+year\s+(?:is\s+it|are\s+you|do\s+you\s+think)|who\s+(?:made|built|created|trained)\s+you)\b/i;
+  if (META_RE.test(trimmed)) {
+    return json({ type: "text", text: "I'm here to help with DeFi and on-chain tasks." });
+  }
+
+  // ── informational — handled before parseIntent to avoid a wasted Groq call ──
+  if (queryType === "informational") {
+    const text = await getGroqInformationalReply(message, history);
+    return json({ type: "text", text });
+  }
+
   // ── single-leg intent (runs before scanners so "bridge X for yield" parses as bridge) ──
   const intent = await parseIntent(message);
 
   if (intent) {
-    const result = await resolveLeg(intent, senderAddress, slippage, solanaAddress);
-    if (!result.ok) return NextResponse.json({ type: "error", text: result.text });
-    const { ok: _ok, ...rest } = result;
-    return NextResponse.json({ type: "quote", mode: "preview", quotedAt: Date.now(), ...rest });
+    const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress);
+    if (!result.ok) return json({ type: "error", text: result.text });
+    const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;
+    return json({ type: "quote", mode: "preview", quotedAt: Date.now(), intent: legIntent, route, approval, calldata, raw });
   }
 
   // ── token risk scanner ────────────────────────────────────────────────────
@@ -460,8 +486,8 @@ export async function POST(req: NextRequest) {
   if (riskMatch && /\b(scan|risk|safe|rug|analyze|legit)\b/i.test(trimmed)) {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
-    if (risk) return NextResponse.json({ type: "token_risk", risk });
-    return NextResponse.json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
+    if (risk) return json({ type: "token_risk", risk });
+    return json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
   }
 
   // ── DeFi yield scanner ────────────────────────────────────────────────────
@@ -475,9 +501,9 @@ export async function POST(req: NextRequest) {
     const symbol = (tokenInQuery ?? yieldSymbolMatch![1]).toUpperCase();
     const pools = await getTopYields(symbol);
     if (pools.length === 0) {
-      return NextResponse.json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
+      return json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
     }
-    return NextResponse.json({ type: "yield_pools", symbol, pools });
+    return json({ type: "yield_pools", symbol, pools });
   }
 
   // ── Polymarket prediction markets ────────────────────────────────────────
@@ -495,15 +521,9 @@ export async function POST(req: NextRequest) {
     const topic = topicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
     const markets = await getTopMarkets(topic);
     if (markets.length === 0) {
-      return NextResponse.json({ type: "error", text: `No active Polymarket markets found${topic ? ` for "${topic}"` : ""}. Try a broader topic like "odds on Bitcoin" or "show polymarket markets".` });
+      return json({ type: "error", text: `No active Polymarket markets found${topic ? ` for "${topic}"` : ""}. Try a broader topic like "odds on Bitcoin" or "show polymarket markets".` });
     }
-    return NextResponse.json({ type: "polymarket", topic: topic ?? null, markets });
-  }
-
-  // ── informational — strict LLM, no suggestions, no hallucinated data ────
-  if (queryType === "informational") {
-    const text = await getGroqInformationalReply(message, history);
-    return NextResponse.json({ type: "text", text });
+    return json({ type: "polymarket", topic: topic ?? null, markets });
   }
 
   // ── keyword-aware suggestions — only for execution/unknown intents ────────
@@ -511,7 +531,7 @@ export async function POST(req: NextRequest) {
     const suggestions = buildSuggestions(trimmed);
     if (suggestions && suggestions.length > 0) {
       const text = await getGroqReply(message, history, senderAddress);
-      return NextResponse.json({ type: "text", text, suggestions });
+      return json({ type: "text", text, suggestions });
     }
   }
 

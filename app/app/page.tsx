@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
-import { usePrivy, useFundWallet, useWallets } from "@privy-io/react-auth";
+import { usePrivy, useFundWallet, useWallets, useConnectOrCreateWallet, getEmbeddedConnectedWallet } from "@privy-io/react-auth";
 import {
 useAccount, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
@@ -244,12 +244,19 @@ export default function AppPage() {
   });
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isOnline, setIsOnline]               = useState(true);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const messagesLenRef = useRef(0);
   const { address }                            = useAccount();
   const currentChainId                         = useChainId();
   const { login, logout, authenticated, ready }= usePrivy();
+  const { connectOrCreateWallet }              = useConnectOrCreateWallet();
   const { fundWallet }                         = useFundWallet();
-  const { wallets }                            = useWallets();
-  const connectedAddress                       = address ?? (wallets.length > 0 ? wallets[0].address : null) ?? null;
+  const { wallets, ready: walletsReady }       = useWallets();
+  const embeddedWallet                         = getEmbeddedConnectedWallet(wallets);
+  const connectedAddress                       = address ?? embeddedWallet?.address ?? null;
+  const walletLoading                          = authenticated && !walletsReady && !connectedAddress;
+  const handleWalletAction                     = authenticated ? connectOrCreateWallet : login;
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
   const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
@@ -306,6 +313,35 @@ export default function AppPage() {
     localStorage.setItem("skopos-theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+    const up   = () => setIsOnline(true);
+    const down = () => setIsOnline(false);
+    window.addEventListener("online",  up);
+    window.addEventListener("offline", down);
+    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+  }, []);
+
+  useEffect(() => {
+    let buildId: string | null = null;
+    async function check() {
+      try {
+        const res = await fetch("/api/version", { cache: "no-store" });
+        if (!res.ok) return;
+        const { buildId: id } = await res.json() as { buildId: string };
+        if (id === "dev") return;
+        if (buildId === null) { buildId = id; return; }
+        if (id !== buildId) {
+          if (messagesLenRef.current === 0) { window.location.reload(); return; }
+          setUpdateAvailable(true);
+        }
+      } catch { /* network error — ignore */ }
+    }
+    check();
+    const t = setInterval(check, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   function handleDisconnectClick() {
     if (confirmDisconnect) {
       if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
@@ -331,6 +367,7 @@ export default function AppPage() {
   }, [messages]);
 
   useEffect(() => {
+    messagesLenRef.current = messages.length;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, streamingText]);
 
@@ -388,9 +425,7 @@ export default function AppPage() {
         return [{ role: "assistant", content: `Rebalance: ${summary}` }];
       }
       if (m.result.type === "address") {
-        const native = m.result.data.balances.map(b => `${b.native} ${b.nativeSymbol} on ${b.chainName}`).join(", ");
-        const tokens = m.result.data.tokenBalances.slice(0, 5).map(t => `${t.balance} ${t.symbol} on ${t.chainName}`).join(", ");
-        return [{ role: "assistant", content: `[Live wallet data] Native: ${native || "none"}. Tokens: ${tokens || "none"}.` }];
+        return [{ role: "assistant", content: "[Wallet portfolio was shown]" }];
       }
       return [];
     });
@@ -516,6 +551,49 @@ export default function AppPage() {
       <AutoSubmit onSubmit={submit} />
     </Suspense>
     <main style={{ position: "relative", height: "100vh", width: "100vw", background: T.bg, display: "flex", overflow: "hidden" }}>
+
+      {/* ── Offline banner ─────────────────────────────────────────────────── */}
+      {!isOnline && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+          background: "#ef4444", color: "#fff", textAlign: "center",
+          padding: "8px 16px", fontSize: "0.8rem", fontFamily: "var(--font-jetbrains-mono), monospace",
+          letterSpacing: "0.04em",
+        }}>
+          ● no internet connection — reconnect to continue
+        </div>
+      )}
+
+      {/* ── Update available banner ─────────────────────────────────────────── */}
+      {updateAvailable && (
+        <div style={{
+          position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+          zIndex: 9999, background: "rgba(245,184,0,0.12)", backdropFilter: "blur(12px)",
+          border: "1px solid rgba(245,184,0,0.35)", borderRadius: 10,
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "10px 16px", fontSize: "0.78rem",
+          fontFamily: "var(--font-jetbrains-mono), monospace",
+          color: "rgba(245,184,0,0.9)", whiteSpace: "nowrap",
+        }}>
+          <span>new version available</span>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: "#F5B800", color: "#000", border: "none", borderRadius: 6,
+              padding: "4px 12px", fontSize: "0.75rem", cursor: "pointer",
+              fontFamily: "var(--font-jetbrains-mono), monospace", fontWeight: 600,
+            }}
+          >
+            refresh
+          </button>
+          <button
+            onClick={() => setUpdateAvailable(false)}
+            style={{ background: "none", border: "none", color: "rgba(245,184,0,0.5)", cursor: "pointer", fontSize: "1rem", lineHeight: 1, padding: 0 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Mobile sidebar overlay backdrop */}
       {isMobile && sidebarExpanded && (
@@ -677,11 +755,11 @@ export default function AppPage() {
           {/* Collapsed wallet dot */}
           {ready && !sidebarExpanded && (
             <button
-              onClick={authenticated ? handleDisconnectClick : login}
-              style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer" }}
-              title={authenticated && address ? (confirmDisconnect ? "click again to disconnect" : `${shortAddr(address)} — disconnect`) : "Connect wallet"}
+              onClick={walletLoading ? undefined : (authenticated && connectedAddress ? handleDisconnectClick : handleWalletAction)}
+              style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: walletLoading ? "wait" : "pointer" }}
+              title={authenticated && connectedAddress ? (confirmDisconnect ? "click again to disconnect" : `${shortAddr(connectedAddress)} — disconnect`) : walletLoading ? "Connecting wallet…" : "Connect wallet"}
             >
-              <div style={{ width: 8, height: 8, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : authenticated ? "#F5B800" : T.textFaint }} />
+              <div style={{ width: 8, height: 8, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : (authenticated && connectedAddress) ? "#F5B800" : walletLoading ? "rgba(245,184,0,0.4)" : T.textFaint }} className={walletLoading ? "animate-pulse" : undefined} />
             </button>
           )}
 
@@ -759,16 +837,18 @@ export default function AppPage() {
             {/* Circular wallet / connect button */}
             {ready && (
               <button
-                onClick={authenticated ? handleDisconnectClick : login}
+                onClick={walletLoading ? undefined : (authenticated && connectedAddress ? handleDisconnectClick : handleWalletAction)}
                 style={{
                   width: 40, height: 40, borderRadius: 999, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  background: confirmDisconnect ? "rgba(255,107,107,0.08)" : authenticated ? "rgba(245,184,0,0.08)" : "none",
-                  border: confirmDisconnect ? "1.5px solid rgba(255,107,107,0.35)" : authenticated ? "1.5px solid rgba(245,184,0,0.35)" : `1.5px solid ${T.borderStrong}`,
-                  cursor: "pointer", transition: "background 0.2s, border-color 0.2s",
+                  background: confirmDisconnect ? "rgba(255,107,107,0.08)" : (authenticated && connectedAddress) ? "rgba(245,184,0,0.08)" : "none",
+                  border: confirmDisconnect ? "1.5px solid rgba(255,107,107,0.35)" : (authenticated && connectedAddress) ? "1.5px solid rgba(245,184,0,0.35)" : `1.5px solid ${T.borderStrong}`,
+                  cursor: walletLoading ? "wait" : "pointer", transition: "background 0.2s, border-color 0.2s",
                 }}
               >
-                {authenticated && address ? (
+                {walletLoading ? (
+                  <div style={{ width: 9, height: 9, borderRadius: 999, background: "rgba(245,184,0,0.4)" }} className="animate-pulse" />
+                ) : authenticated && connectedAddress ? (
                   <div style={{ width: 9, height: 9, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : "#F5B800" }} />
                 ) : (
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.textMuted} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -904,10 +984,10 @@ export default function AppPage() {
                             </div>
                           </div>
                           <button
-                            onClick={login}
+                            onClick={handleWalletAction}
                             style={{ ...MONO, width: "100%", padding: "9px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.04em", color: "#000", background: "#F5B800", border: "none", borderRadius: 9, cursor: "pointer" }}
                           >
-                            Connect Wallet
+                            {walletLoading ? "Connecting wallet…" : "Connect Wallet"}
                           </button>
                         </div>
                       ) : (
@@ -1026,9 +1106,10 @@ export default function AppPage() {
                   onChange={e => setValue(e.target.value)}
                   onFocus={() => setInputFocused(true)}
                   onBlur={() => setInputFocused(false)}
-                  placeholder="ask skopos…"
+                  placeholder={isOnline ? "ask skopos…" : "no connection…"}
+                  disabled={!isOnline}
                   className={isDark ? "placeholder:text-white/15" : "placeholder:text-black/20"}
-                  style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: T.textPrimary, caretColor: T.textPrimary, fontSize: "0.95rem" }}
+                  style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: T.textPrimary, caretColor: T.textPrimary, fontSize: "0.95rem", opacity: isOnline ? 1 : 0.4 }}
                 />
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
                   {/* Horizon pills — coming soon features */}
@@ -1088,7 +1169,7 @@ export default function AppPage() {
                   ))}
                   <button
                     type="submit"
-                    disabled={!value.trim() || loading}
+                    disabled={!value.trim() || loading || !isOnline}
                     style={{
                       width: 34, height: 34, borderRadius: 999, border: "none",
                       background: loading ? "rgba(245,184,0,0.12)" : value.trim() ? "#F5B800" : T.surface,
