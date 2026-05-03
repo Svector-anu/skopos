@@ -2,5 +2,21 @@
   "framework": "nextjs",
   "buildCommand": "pnpm build",
   "installCommand": "pnpm install",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, proxy-revalidate" },
+        { "key": "Pragma",        "value": "no-cache" },
+        { "key": "Expires",       "value": "0" }
+      ]
+    },
+    {
+      "source": "/((?!_next/static)(?!_next/image)(?!favicon).*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+      ]
+    }
+  ]
 }

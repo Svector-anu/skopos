@@ -1,6 +1,7 @@
 import { createPublicClient, http } from "viem";
 import { mainnet } from "viem/chains";
 import type { TxData, Transfer, ChainBalance, TokenBalance, AddressData } from "./alchemy-types";
+import { getPrices } from "./priceCache";
 export type { TxData, Transfer, ChainBalance, TokenBalance, AddressData };
 
 const KEY = process.env.ALCHEMY_API_KEY ?? "";
@@ -279,26 +280,14 @@ export async function lookupAddress(address: string): Promise<AddressData> {
 
 // ── Price helpers ─────────────────────────────────────────────────────────────
 
-const NATIVE_COINGECKO_IDS: Record<string, string> = {
-  ETH:  "ethereum",
-  POL:  "matic-network",
-  BNB:  "binancecoin",
-  AVAX: "avalanche-2",
-  XDAI: "xdai",
-};
-
 async function fetchNativePrices(symbols: string[]): Promise<Record<string, number>> {
-  const ids = [...new Set(symbols.map(s => NATIVE_COINGECKO_IDS[s]).filter(Boolean))];
-  if (ids.length === 0) return {};
+  const unique = [...new Set(symbols)].filter(Boolean);
+  if (unique.length === 0) return {};
   try {
-    const res = await fetchWithTimeout(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd`
-    );
-    if (!res.ok) return {};
-    const data = await res.json();
+    const priceData = await getPrices(unique);
     const out: Record<string, number> = {};
-    for (const [sym, id] of Object.entries(NATIVE_COINGECKO_IDS)) {
-      if (data[id]?.usd) out[sym] = data[id].usd;
+    for (const sym of unique) {
+      if (priceData[sym]?.price) out[sym] = priceData[sym].price;
     }
     return out;
   } catch {
