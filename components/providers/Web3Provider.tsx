@@ -26,7 +26,7 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
           config={{
             loginMethods: ["google", "twitter", "discord", "email", "wallet"],
             appearance: {
-              theme: "dark",
+              theme: "#000000",
               accentColor: "#F5B800",
               landingHeader: "Sign in to Skopos",
             },
