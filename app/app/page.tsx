@@ -508,7 +508,7 @@ export default function AppPage() {
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      setMessages(prev => [...prev, { role: "assistant", result: { type: "error", text: "Network error. Is the server running?" } }]);
+      setMessages(prev => [...prev, { role: "assistant", result: { type: "error", text: "Network error — check your internet connection." } }]);
       setLoading(false);
     }
   }
