@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
-import { usePrivy, useFundWallet, useWallets, useConnectOrCreateWallet } from "@privy-io/react-auth";
+import { usePrivy, useFundWallet, useWallets, useConnectWallet } from "@privy-io/react-auth";
 import {
 useAccount, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
@@ -250,13 +250,13 @@ export default function AppPage() {
   const { address }                            = useAccount();
   const currentChainId                         = useChainId();
   const { login, logout, authenticated, ready }= usePrivy();
-  const { connectOrCreateWallet }              = useConnectOrCreateWallet();
+  const { connectWallet }                      = useConnectWallet();
   const { fundWallet }                         = useFundWallet();
   const { wallets, ready: walletsReady }       = useWallets();
   const privyEvmWallet                         = wallets.find(w => w.address?.startsWith("0x"));
   const connectedAddress                       = address ?? privyEvmWallet?.address ?? null;
   const walletLoading                          = authenticated && !walletsReady && !connectedAddress;
-  const handleWalletAction                     = authenticated ? connectOrCreateWallet : login;
+  const handleWalletAction                     = authenticated ? connectWallet : login;
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
   const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
