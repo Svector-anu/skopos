@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
-import { usePrivy, useFundWallet, useWallets, useConnectOrCreateWallet, getEmbeddedConnectedWallet } from "@privy-io/react-auth";
+import { usePrivy, useFundWallet, useWallets, useConnectOrCreateWallet } from "@privy-io/react-auth";
 import {
 useAccount, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
@@ -253,8 +253,8 @@ export default function AppPage() {
   const { connectOrCreateWallet }              = useConnectOrCreateWallet();
   const { fundWallet }                         = useFundWallet();
   const { wallets, ready: walletsReady }       = useWallets();
-  const embeddedWallet                         = getEmbeddedConnectedWallet(wallets);
-  const connectedAddress                       = address ?? embeddedWallet?.address ?? null;
+  const privyEvmWallet                         = wallets.find(w => w.address?.startsWith("0x"));
+  const connectedAddress                       = address ?? privyEvmWallet?.address ?? null;
   const walletLoading                          = authenticated && !walletsReady && !connectedAddress;
   const handleWalletAction                     = authenticated ? connectOrCreateWallet : login;
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
@@ -738,17 +738,18 @@ export default function AppPage() {
             </div>
           )}
 
-          {/* ── Connect Wallet CTA (when disconnected) ─────────────────────── */}
-          {ready && !authenticated && sidebarExpanded && (
+          {/* ── Connect Wallet CTA (no address: unauthenticated OR authenticated but wallet not ready) ── */}
+          {ready && !connectedAddress && sidebarExpanded && (
             <button
-              onClick={login}
+              onClick={walletLoading ? undefined : handleWalletAction}
               style={{
                 ...MONO, width: "100%", marginBottom: 8, padding: "10px 0",
                 fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.05em",
-                color: "#000", background: "#F5B800", border: "none", borderRadius: 10, cursor: "pointer",
+                color: "#000", background: walletLoading ? "rgba(245,184,0,0.55)" : "#F5B800",
+                border: "none", borderRadius: 10, cursor: walletLoading ? "wait" : "pointer",
               }}
             >
-              Connect Wallet
+              {walletLoading ? "Connecting wallet…" : "Connect Wallet"}
             </button>
           )}
 
@@ -764,15 +765,15 @@ export default function AppPage() {
           )}
 
           {/* Expanded address chip */}
-          {ready && authenticated && address && sidebarExpanded && (
+          {ready && connectedAddress && sidebarExpanded && (
             <button
               onClick={handleDisconnectClick}
               style={{ width: "100%", height: 32, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 8, background: confirmDisconnect ? "rgba(255,107,107,0.06)" : "none", border: confirmDisconnect ? "1px solid rgba(255,107,107,0.2)" : "none", cursor: "pointer", transition: "background 0.2s" }}
-              title={confirmDisconnect ? "click again to confirm disconnect" : `${shortAddr(address)} — click to disconnect`}
+              title={confirmDisconnect ? "click again to confirm disconnect" : `${shortAddr(connectedAddress)} — click to disconnect`}
             >
               <div style={{ width: 7, height: 7, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : "#F5B800", flexShrink: 0, transition: "background 0.2s" }} />
               <span style={{ ...MONO, fontSize: "0.68rem", color: confirmDisconnect ? "#ff6b6b" : T.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "color 0.2s" }}>
-                {confirmDisconnect ? "disconnect?" : shortAddr(address)}
+                {confirmDisconnect ? "disconnect?" : shortAddr(connectedAddress)}
               </span>
             </button>
           )}
