@@ -1567,7 +1567,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
             ) : (
               <button onClick={execute} disabled={!calldata || isSending || isExpired}
                 style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: calldata && !isExpired ? "#F5B800" : "rgba(255,255,255,0.05)", border: calldata && !isExpired ? "none" : "1px solid rgba(255,255,255,0.09)", borderRadius: 10, color: calldata && !isExpired ? "#000" : "rgba(255,255,255,0.22)", cursor: calldata && !isSending && !isExpired ? "pointer" : "not-allowed" }}>
-                {isSending ? "Confirm in wallet…" : "Execute →"}
+                {isSending ? "Confirm in wallet…" : isExpired ? "Quote expired — refresh" : "Execute →"}
               </button>
             )}
           </div>

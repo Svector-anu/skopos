@@ -497,10 +497,21 @@ export function streamSuggestion(
             { role: "user", content: input },
           ],
         });
+        let tail = "";
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta?.content ?? "";
-          if (delta) controller.enqueue(encoder.encode(delta));
+          if (!delta) continue;
+          tail += delta;
+          const boundary = tail.lastIndexOf(" ");
+          if (boundary > 0) {
+            controller.enqueue(encoder.encode(redactLiveNumbers(tail.slice(0, boundary + 1))));
+            tail = tail.slice(boundary + 1);
+          } else if (tail.length > 60) {
+            controller.enqueue(encoder.encode(redactLiveNumbers(tail)));
+            tail = "";
+          }
         }
+        if (tail) controller.enqueue(encoder.encode(redactLiveNumbers(tail)));
       } catch {
         controller.enqueue(encoder.encode(FALLBACK));
       }

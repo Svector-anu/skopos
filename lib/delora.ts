@@ -35,16 +35,19 @@ export interface DeloraChain {
   blockExplorerUrls?: string;
 }
 
-// Module-level caches — populated once per process lifetime
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 let chainsCache: DeloraChain[] | null = null;
+let chainsCacheTime = 0;
 let tokensCache: Record<string, DeloraToken[]> | null = null;
+let tokensCacheTime = 0;
 
 export async function getChains(): Promise<DeloraChain[]> {
-  if (chainsCache) return chainsCache;
+  if (chainsCache && Date.now() - chainsCacheTime < CACHE_TTL_MS) return chainsCache;
   const res = await fetchWithTimeout(`${BASE}/v1/chains`);
-  if (!res.ok) return [];
+  if (!res.ok) return chainsCache ?? [];
   const data = await res.json();
   chainsCache = (data.chains ?? data) as DeloraChain[];
+  chainsCacheTime = Date.now();
   return chainsCache;
 }
 
@@ -99,10 +102,14 @@ export async function getToken(
   chainId: number,
   symbol: string
 ): Promise<DeloraToken | null> {
-  if (!tokensCache) {
+  if (!tokensCache || Date.now() - tokensCacheTime >= CACHE_TTL_MS) {
     const res = await fetchWithTimeout(`${BASE}/v1/tokens`);
-    if (!res.ok) return null;
-    tokensCache = await res.json() as Record<string, DeloraToken[]>;
+    if (res.ok) {
+      tokensCache = await res.json() as Record<string, DeloraToken[]>;
+      tokensCacheTime = Date.now();
+    } else if (!tokensCache) {
+      return null;
+    }
   }
   const chainTokens = tokensCache[String(chainId)];
   if (!Array.isArray(chainTokens)) return null;

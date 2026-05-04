@@ -24,6 +24,7 @@ import {
   blast,
   scroll,
   hyperEvm,
+  megaeth,
 } from "wagmi/chains";
 import { http } from "viem";
 
@@ -52,6 +53,7 @@ export const SUPPORTED_CHAINS = [
   blast,
   scroll,
   hyperEvm,
+  megaeth,
 ] as const;
 
 // Explicit CORS-friendly public RPC URLs — the wagmi default fallbacks (e.g. eth.merkle.io)
@@ -83,5 +85,6 @@ export const wagmiConfig = createConfig({
     [blast.id]:      http("https://rpc.blast.io"),
     [scroll.id]:     http("https://rpc.scroll.io"),
     [hyperEvm.id]:   http("https://rpc.hyperliquid.xyz/evm"),
+    [megaeth.id]:    http("https://mainnet.megaeth.com/rpc"),
   },
 });
