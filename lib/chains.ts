@@ -49,6 +49,8 @@ export const CHAIN_IDS: Record<string, number> = {
   blast: 81457,
   // Scroll
   scroll: 534352,
+  // MegaETH
+  megaeth: 4326, mega: 4326,
   // Solana (Delora ID)
   solana: 1000000001, sol: 1000000001,
 };

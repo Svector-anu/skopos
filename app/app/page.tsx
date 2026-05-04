@@ -120,6 +120,7 @@ const EXPLORER_URLS: Record<string, string> = {
   Avalanche: "https://snowtrace.io/tx/", Ink: "https://explorer.inkonchain.com/tx/",
   Linea: "https://lineascan.build/tx/", Berachain: "https://berascan.com/tx/",
   Blast: "https://blastscan.io/tx/", Scroll: "https://scrollscan.com/tx/",
+  MegaETH: "https://mega.etherscan.io/tx/",
 };
 
 const BRIDGE_ACTIONS = [
