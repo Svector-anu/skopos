@@ -256,7 +256,8 @@ export default function AppPage() {
   const privyEvmWallet                         = wallets.find(w => w.address?.startsWith("0x"));
   const connectedAddress                       = address ?? privyEvmWallet?.address ?? null;
   const walletLoading                          = authenticated && !walletsReady && !connectedAddress;
-  const handleWalletAction                     = authenticated ? connectWallet : login;
+  // Ghost session: authenticated but no wallet → clear stale session, re-open full login modal
+  const handleWalletAction                     = authenticated ? () => logout().then(() => login()) : login;
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
   const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
