@@ -5,8 +5,6 @@ import {
   parseIntent,
   parseRebalanceIntent,
   looksLikeRebalance,
-  streamSuggestion,
-  getGroqReply,
   getGroqInformationalReply,
   generateTxSummary,
   generateAddressSummary,
@@ -165,14 +163,22 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   }
 
   if (!isOriginNative) {
-    const tokenData = await getToken(originChainId, intent.token);
+    let tokenData = await getToken(originChainId, intent.token);
+    // ETH on non-ETH chains (Polygon, BSC, etc.) is listed as WETH — fall back transparently
+    if (!tokenData && intent.token.toUpperCase() === "ETH" && originNativeSymbol?.toUpperCase() !== "ETH") {
+      tokenData = await getToken(originChainId, "WETH");
+    }
     if (!tokenData) return { ok: false, text: `Could not find ${intent.token} on ${originChain?.name ?? originChainId}.` };
     originCurrency = tokenData.address;
     originDecimals = tokenData.decimals;
   }
 
   if (!isDestNative) {
-    const tokenData = await getToken(destChainId, destToken);
+    let tokenData = await getToken(destChainId, destToken);
+    // ETH on non-ETH chains — same fallback as origin
+    if (!tokenData && destToken.toUpperCase() === "ETH" && destNativeSymbol?.toUpperCase() !== "ETH") {
+      tokenData = await getToken(destChainId, "WETH");
+    }
     if (!tokenData) return { ok: false, text: `Could not find ${destToken} on ${destChain?.name ?? destChainId}.` };
     destCurrency = tokenData.address;
     destDecimals = tokenData.decimals;
@@ -294,7 +300,12 @@ export async function POST(req: NextRequest) {
   const queryType = classifyIntent(trimmed);
   console.log(`[chat] ip=${ip} type=${queryType} len=${trimmed.length}`);
 
-  // ── price query (live fetch via unified getPrice, no LLM) ───────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PRICE FAST-PATH
+  // Runs before structural checks — a classified "price" query must never fall
+  // through to address/ENS lookups. Structural layer assumes input is unclassified.
+  // ═══════════════════════════════════════════════════════════════════════════
+
   if (queryType === "price") {
     const tokenMatch = trimmed.match(PRICE_TOKEN_RE);
     const rawSymbol  = tokenMatch?.[1] ?? "";
@@ -314,9 +325,13 @@ export async function POST(req: NextRequest) {
     return json({ type: "text", text: `${symbol} is ${fmtPrice}${fmtChange}.` });
   }
 
-  // ── explorer: ENS name (*.eth) — matches bare "vitalik.eth" or in a sentence ──
-  // Character class must NOT include "." — otherwise the greedy * consumes ".eth"
-  // before the literal \.eth suffix can match.
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 1 — STRUCTURAL
+  // Format-based detection: ENS names, addresses, tx hashes.
+  // No intent classification. No wallet required.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ENS name (*.eth) — character class must NOT include "." or the greedy * eats ".eth"
   const ensMatch = trimmed.match(/\b([a-z0-9][a-z0-9-]*)\.eth\b/i);
   if (ensMatch) {
     const ensName = (ensMatch[1] + ".eth").toLowerCase();
@@ -329,7 +344,7 @@ export async function POST(req: NextRequest) {
     return json({ type: "address", data, summary, ensName });
   }
 
-  // ── explorer: explicit address embedded in sentence ("analyze wallet 0x…") ──
+  // Address embedded in a sentence ("analyze wallet 0x…", "check 0x…")
   const embeddedAddrMatch = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/);
   if (embeddedAddrMatch && !/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
     const data = await lookupAddress(embeddedAddrMatch[1]);
@@ -337,7 +352,32 @@ export async function POST(req: NextRequest) {
     return json({ type: "address", data, summary });
   }
 
-  // ── portfolio: connected wallet ──────────────────────────────────────────
+  // TX hash — exactly 0x + 64 hex chars
+  if (/^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
+    const tx = await lookupTx(trimmed);
+    if (tx) {
+      const summary = await generateTxSummary(tx);
+      return json({ type: "tx", tx, summary });
+    }
+    return json({ type: "error", text: "Transaction not found on any supported chain." });
+  }
+
+  // Bare address — exactly 0x + 40 hex chars
+  if (/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+    const data = await lookupAddress(trimmed);
+    const summary = await generateAddressSummary(data);
+    return json({ type: "address", data, summary });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 2 — ACCOUNT
+  // Wallet-state queries. Runs before intent classification so that account
+  // queries (balance, deposit status) are never misrouted to prediction/yield.
+  // Account-priority rule: when a wallet is connected and the query mentions
+  // deposit / funds / balance / money / ready / bet, this layer fires first.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Portfolio (connected wallet)
   if (/\b(my\s+)?(portfolio|wallet|balances?|holdings?)\b/i.test(trimmed)) {
     if (!senderAddress) {
       return json({ type: "text", text: "Connect your wallet first — I'll fetch your live balances across all supported chains." });
@@ -379,24 +419,62 @@ export async function POST(req: NextRequest) {
     return json({ type: "address", data, summary });
   }
 
-  // ── explorer: tx hash (0x + 64 hex chars) ───────────────────────────────
-  if (/^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
-    const tx = await lookupTx(trimmed);
-    if (tx) {
-      const summary = await generateTxSummary(tx);
-      return json({ type: "tx", tx, summary });
+  // Polymarket balance — account-priority: fires before prediction intent so
+  // "did my deposit land?" / "is my money ready?" never reaches classifyIntent.
+  const POLY_BALANCE_RE = /\b(did\s+my\s+(?:deposit|funds?)\s+(?:land|arrive|go\s+through|show\s+up)|my\s+polymarket\s+(?:balance|funds?|account|money)|polymarket\s+balance|check\s+polymarket|is\s+my\s+(?:deposit|money)\s+(?:ready|there|on\s+polymarket)|how\s+much\s+(?:is\s+)?on\s+polymarket|polymarket\s+funds?)\b/i;
+  if (POLY_BALANCE_RE.test(trimmed)) {
+    if (!senderAddress) {
+      return json({ type: "error", text: "Connect your wallet — I'll check your Polymarket balance automatically." });
     }
-    return json({ type: "error", text: "Transaction not found on any supported chain." });
+    const balance = await getPolymarketBalance(senderAddress);
+    if (balance === null) {
+      return json({ type: "error", text: "Unable to check your Polymarket balance right now." });
+    }
+    if (balance === 0) {
+      return json({ type: "text", text: "No pUSD balance found on Polymarket yet. If you just sent funds, it can take 1–3 minutes to arrive." });
+    }
+    const fmt = balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return json({ type: "text", text: `$${fmt} ready on Polymarket.` });
   }
 
-  // ── explorer: address (0x + 40 hex chars) ───────────────────────────────
-  if (/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
-    const data = await lookupAddress(trimmed);
-    const summary = await generateAddressSummary(data);
-    return json({ type: "address", data, summary });
+  // Polymarket deposit status — keyed on a deposit address in the message
+  const depositAddrInMsg = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1];
+  if (
+    depositAddrInMsg &&
+    /\b(deposit|arrived?|confirmed?|status|funds?|balance)\b/i.test(trimmed)
+  ) {
+    try {
+      const result = await getDepositStatus(depositAddrInMsg);
+      if (!result) return json({ type: "error", text: "Unable to fetch deposit status right now." });
+      const STATUS_LABEL: Record<string, string> = {
+        pending:    "Pending — waiting for your transfer to be detected.",
+        processing: "Processing — bridging to Polygon. Usually takes 1–3 minutes.",
+        complete:   "Complete — your pUSD is on Polymarket and ready to use.",
+        failed:     "Failed — the deposit did not go through. Contact Polymarket support.",
+        refunded:   "Refunded — funds were returned to your wallet.",
+        expired:    "Expired — the deposit address is no longer valid.",
+      };
+      const msg = STATUS_LABEL[result.status] ?? result.status;
+      const amtStr = result.amount ? ` Amount: $${parseFloat(result.amount).toFixed(2)}.` : "";
+      return json({ type: "text", text: `Deposit ${depositAddrInMsg.slice(0, 10)}… — ${msg}${amtStr}` });
+    } catch {
+      return json({ type: "error", text: "Unable to fetch deposit status right now." });
+    }
   }
 
-  // ── multi-leg rebalance (checked before single-leg so "split X across Y and Z" isn't captured as a single bridge) ──
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 3 — INTENT
+  // All paths go through classifyIntent(). Tool always wins over LLM.
+  // LLM is only used for explanation — never for live data.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Security boundary: block identity/model questions before any LLM path
+  const META_RE = /\b(system\s*prompt|your\s*instructions?|what\s*(?:model|llm|ai)\s*(?:are\s*you|is\s*this)|which\s*(?:model|api|llm)\s*(?:do\s*you|are\s*you)|openai|anthropic|are\s*you\s*(?:gpt|claude|chatgpt|llama)|gpt[-\s]?\d|how\s+old\s+are\s+you|when\s+(?:were|was)\s+you\s+(?:created|born|built|made|trained|launched)|(?:your|you\s+have\s+a?)\s*(?:age|birthday|birth\s*date)|knowledge\s+cutoff|training\s+(?:data|cutoff)|(?:do\s+you|you)\s+know\s+(?:about\s+)?\d{4}|what\s+year\s+(?:is\s+it|are\s+you|do\s+you\s+think)|who\s+(?:made|built|created|trained)\s+you)\b/i;
+  if (META_RE.test(trimmed)) {
+    return json({ type: "text", text: "I'm here to help with DeFi and on-chain tasks." });
+  }
+
+  // Multi-leg rebalance — must run before single-leg so "split X across Y and Z" isn't parsed as one bridge
   if (looksLikeRebalance(message)) {
     const legs = await parseRebalanceIntent(message);
     if (legs && legs.length >= 2) {
@@ -426,10 +504,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── missing-source guard: "bridge X TOKEN to CHAIN" with no "from" ─────────
-  // Catch this before parseIntent so Groq never gets a chance to hallucinate a source.
-  // Skip the guard when the token itself implies a source chain (e.g. SOL → Solana,
-  // BNB → BSC) — the LLM can infer the origin without the user spelling it out.
+  // Missing-source guard — catches "bridge X TOKEN to CHAIN" with no "from" before Groq
+  // can hallucinate a source chain. Skipped when the token implies its own source.
   const TOKEN_IMPLIES_SOURCE: Record<string, string> = {
     SOL:  "solana",
     MATIC: "polygon",
@@ -437,6 +513,7 @@ export async function POST(req: NextRequest) {
     AVAX: "avalanche",
     FTM:  "fantom",
     CELO: "celo",
+    BASE: "base",
   };
   const missingSource = trimmed.match(
     /^(?:bridge|move|send|transfer|swap)\s+[\d.]+\s+([a-z]+)\s+to\s+([a-z][a-z\s]*?)(?:\s*[?.]?\s*)$/i
@@ -444,7 +521,6 @@ export async function POST(req: NextRequest) {
   if (missingSource && !/\bfrom\b/i.test(trimmed) && !/\bon\b/i.test(trimmed)) {
     const token = missingSource[1].toUpperCase();
     if (!TOKEN_IMPLIES_SOURCE[token]) {
-      // Take only the first word of the dest to avoid "base eth" appearing as a chain name
       const dest = missingSource[2].trim().split(/\s+/)[0];
       return json({
         type: "error",
@@ -453,96 +529,46 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── meta-question guard — block identity/training questions before any LLM call ──
-  const META_RE = /\b(system\s*prompt|your\s*instructions?|what\s*(?:model|llm|ai)\s*(?:are\s*you|is\s*this)|which\s*(?:model|api|llm)\s*(?:do\s*you|are\s*you)|openai|anthropic|are\s*you\s*(?:gpt|claude|chatgpt|llama)|gpt[-\s]?\d|how\s+old\s+are\s+you|when\s+(?:were|was)\s+you\s+(?:created|born|built|made|trained|launched)|(?:your|you\s+have\s+a?)\s*(?:age|birthday|birth\s*date)|knowledge\s+cutoff|training\s+(?:data|cutoff)|(?:do\s+you|you)\s+know\s+(?:about\s+)?\d{4}|what\s+year\s+(?:is\s+it|are\s+you|do\s+you\s+think)|who\s+(?:made|built|created|trained)\s+you)\b/i;
-  if (META_RE.test(trimmed)) {
-    return json({ type: "text", text: "I'm here to help with DeFi and on-chain tasks." });
-  }
+  // Prediction → Polymarket (single entry point via classifyIntent)
+  if (queryType === "prediction") {
+    const isBetIntent = /\b(bet|wager|buy\s+(?:yes|no)|place\s+(?:a\s+)?bet|take\s+(?:a\s+)?position\s+on)\b/i.test(trimmed);
+    if (isBetIntent) {
+      const betTopicMatch = trimmed.match(
+        /(?:bet\s+(?:\$?\d[\d.,]*\s+)?on|buy\s+(?:yes|no)\s+on|wager\s+(?:\$?\d[\d.,]*\s+)?on|position\s+on)\s+([a-z0-9$][a-z0-9$\s]{1,50}?)(?:\s+(?:to\s+hit|hitting|winning|passing|losing|going)|\s*[?.]?\s*$)/i
+      );
+      const cryptoMatch = trimmed.match(
+        /\b(bitcoin|btc|ethereum|eth|solana|sol|bnb|xrp|avax|matic|dogecoin|doge|cardano|ada|chainlink|link)\b/i
+      );
+      const betAmountMatch = trimmed.match(/\$(\d[\d.,]*)/);
+      const topic = betTopicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
+      const amount = betAmountMatch?.[1]?.replace(/,/g, "") ?? undefined;
 
-  // ── Polymarket: balance check by connected wallet (no address paste needed) ──
-  const POLY_BALANCE_RE = /\b(did\s+my\s+(?:deposit|funds?)\s+(?:land|arrive|go\s+through|show\s+up)|my\s+polymarket\s+(?:balance|funds?|account|money)|polymarket\s+balance|check\s+polymarket|is\s+my\s+(?:deposit|money)\s+(?:ready|there|on\s+polymarket)|how\s+much\s+(?:is\s+)?on\s+polymarket|polymarket\s+funds?)\b/i;
-  if (POLY_BALANCE_RE.test(trimmed)) {
-    if (!senderAddress) {
-      return json({ type: "error", text: "Connect your wallet — I'll check your Polymarket balance automatically." });
-    }
-    const balance = await getPolymarketBalance(senderAddress);
-    if (balance === null) {
-      return json({ type: "error", text: "Unable to check your Polymarket balance right now." });
-    }
-    if (balance === 0) {
-      return json({ type: "text", text: "No pUSD balance found on Polymarket yet. If you just sent funds, it can take 1–3 minutes to arrive." });
-    }
-    const fmt = balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return json({ type: "text", text: `$${fmt} ready on Polymarket.` });
-  }
+      if (!senderAddress) {
+        return json({ type: "error", text: "Connect your wallet — I need your address to generate a Polymarket deposit address." });
+      }
 
-  // ── Polymarket: deposit status check ─────────────────────────────────────
-  // Matches "check deposit 0xABC…" or "did my funds arrive 0xABC…"
-  const depositAddrInMsg = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1];
-  if (
-    depositAddrInMsg &&
-    /\b(deposit|arrived?|confirmed?|status|funds?|balance)\b/i.test(trimmed)
-  ) {
-    try {
-      const result = await getDepositStatus(depositAddrInMsg);
-      if (!result) return json({ type: "error", text: "Unable to fetch deposit status right now." });
-      const STATUS_LABEL: Record<string, string> = {
-        pending:    "Pending — waiting for your transfer to be detected.",
-        processing: "Processing — bridging to Polygon. Usually takes 1–3 minutes.",
-        complete:   "Complete — your pUSD is on Polymarket and ready to use.",
-        failed:     "Failed — the deposit did not go through. Contact Polymarket support.",
-        refunded:   "Refunded — funds were returned to your wallet.",
-        expired:    "Expired — the deposit address is no longer valid.",
-      };
-      const msg = STATUS_LABEL[result.status] ?? result.status;
-      const amtStr = result.amount ? ` Amount: $${parseFloat(result.amount).toFixed(2)}.` : "";
-      return json({ type: "text", text: `Deposit ${depositAddrInMsg.slice(0, 10)}… — ${msg}${amtStr}` });
-    } catch {
-      return json({ type: "error", text: "Unable to fetch deposit status right now." });
-    }
-  }
-
-  // ── Polymarket: bet intent → market + deposit address ────────────────────
-  const BET_RE = /\b(bet|wager|buy\s+(?:yes|no)|place\s+(?:a\s+)?bet|take\s+(?:a\s+)?position\s+on)\b/i;
-  if (BET_RE.test(trimmed)) {
-    const betTopicMatch = trimmed.match(
-      /(?:bet\s+(?:\$?\d[\d.,]*\s+)?on|buy\s+(?:yes|no)\s+on|wager\s+(?:\$?\d[\d.,]*\s+)?on|position\s+on)\s+([a-z0-9$][a-z0-9$\s]{1,50}?)(?:\s+(?:to\s+hit|hitting|winning|passing|losing|going)|\s*[?.]?\s*$)/i
-    );
-    const cryptoMatch = trimmed.match(
-      /\b(bitcoin|btc|ethereum|eth|solana|sol|bnb|xrp|avax|matic|dogecoin|doge|cardano|ada|chainlink|link)\b/i
-    );
-    const betAmountMatch = trimmed.match(/\$(\d[\d.,]*)/);
-    const topic = betTopicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
-    const amount = betAmountMatch?.[1]?.replace(/,/g, "") ?? undefined;
-
-    if (!senderAddress) {
-      return json({ type: "error", text: "Connect your wallet — I need your address to generate a Polymarket deposit address." });
-    }
-
-    try {
-      const [markets, depositAddresses] = await Promise.all([
-        getTopMarkets(topic, 3),
-        generateDepositAddress(senderAddress),
-      ]);
-      if (markets.length === 0) {
+      try {
+        const [markets, depositAddresses] = await Promise.all([
+          getTopMarkets(topic, 3),
+          generateDepositAddress(senderAddress),
+        ]);
+        if (markets.length === 0) {
+          return json({ type: "error", text: "Unable to fetch prediction market data right now." });
+        }
+        return json({
+          type: "polymarket",
+          topic: topic ?? null,
+          markets,
+          deposit: depositAddresses
+            ? { evm: depositAddresses.evm, svm: depositAddresses.svm, btc: depositAddresses.btc, amount }
+            : null,
+        });
+      } catch {
         return json({ type: "error", text: "Unable to fetch prediction market data right now." });
       }
-      return json({
-        type: "polymarket",
-        topic: topic ?? null,
-        markets,
-        deposit: depositAddresses
-          ? { evm: depositAddresses.evm, svm: depositAddresses.svm, btc: depositAddresses.btc, amount }
-          : null,
-      });
-    } catch {
-      return json({ type: "error", text: "Unable to fetch prediction market data right now." });
     }
-  }
 
-  // ── Polymarket: view markets / odds (read-only) ───────────────────────────
-  const polyKeyword = /\b(polymarket|prediction\s+markets?|odds|betting\s+odds|market\s+odds|chances?|what\s+(?:are\s+)?people\s+betting|polymarket\s+trends?|top\s+(?:prediction\s+)?markets?|market\s+predictions?|what\s+(?:can\s+i|do\s+i)\s+bet\s+on)\b/i.test(trimmed);
-  if (polyKeyword) {
+    // View-only: show markets / odds
     const topicMatch = trimmed.match(
       /\b(?:odds\s+(?:on|for|of)|chances?\s+(?:of|for|that)|polymarket\s+(?:on|for)|market\s+(?:for|on))\s+([a-z0-9][a-z0-9 ]{2,39}?)(?:\s+(?:win|winning|happen|pass|lose|hit))?$/i
     );
@@ -609,17 +635,20 @@ export async function POST(req: NextRequest) {
     return json({ type: "yield_pools", symbol, pools });
   }
 
+  // Yield query with no recognized token — prompt for specifics
+  if (queryType === "yield") {
+    return json({ type: "text", text: "Which token do you want yield for? Try: 'find highest yield for USDC' or 'best ETH APY'." });
+  }
+
   // ── keyword-aware suggestions — only for execution/unknown intents ────────
   if (queryType === "execution" || queryType === "unknown") {
     const suggestions = buildSuggestions(trimmed);
     if (suggestions && suggestions.length > 0) {
-      const text = await getGroqReply(message, history, senderAddress);
-      return json({ type: "text", text, suggestions });
+      return json({ type: "text", text: "To bridge or swap, include an amount, source chain, and destination — or pick one of these:", suggestions });
     }
   }
 
-  // ── general chat — stream tokens back as plain text ─────────────────────
-  return new Response(streamSuggestion(message, history, senderAddress), {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
+  // ── constrained informational fallback — no live data, no transaction suggestions ──
+  const text = await getGroqInformationalReply(message, history);
+  return json({ type: "text", text });
 }
