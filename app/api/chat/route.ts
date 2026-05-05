@@ -18,7 +18,7 @@ import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken } from "@/lib/dexscreener";
 import { getTopYields } from "@/lib/defillama";
 import { getTopMarkets } from "@/lib/polymarket";
-import { generateDepositAddress, getDepositStatus } from "@/lib/polymarket-bridge";
+import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "@/lib/polymarket-bridge";
 import { getPrice } from "@/lib/priceCache";
 
 // ── price query token recognition ────────────────────────────────────────────
@@ -457,6 +457,23 @@ export async function POST(req: NextRequest) {
   const META_RE = /\b(system\s*prompt|your\s*instructions?|what\s*(?:model|llm|ai)\s*(?:are\s*you|is\s*this)|which\s*(?:model|api|llm)\s*(?:do\s*you|are\s*you)|openai|anthropic|are\s*you\s*(?:gpt|claude|chatgpt|llama)|gpt[-\s]?\d|how\s+old\s+are\s+you|when\s+(?:were|was)\s+you\s+(?:created|born|built|made|trained|launched)|(?:your|you\s+have\s+a?)\s*(?:age|birthday|birth\s*date)|knowledge\s+cutoff|training\s+(?:data|cutoff)|(?:do\s+you|you)\s+know\s+(?:about\s+)?\d{4}|what\s+year\s+(?:is\s+it|are\s+you|do\s+you\s+think)|who\s+(?:made|built|created|trained)\s+you)\b/i;
   if (META_RE.test(trimmed)) {
     return json({ type: "text", text: "I'm here to help with DeFi and on-chain tasks." });
+  }
+
+  // ── Polymarket: balance check by connected wallet (no address paste needed) ──
+  const POLY_BALANCE_RE = /\b(did\s+my\s+(?:deposit|funds?)\s+(?:land|arrive|go\s+through|show\s+up)|my\s+polymarket\s+(?:balance|funds?|account|money)|polymarket\s+balance|check\s+polymarket|is\s+my\s+(?:deposit|money)\s+(?:ready|there|on\s+polymarket)|how\s+much\s+(?:is\s+)?on\s+polymarket|polymarket\s+funds?)\b/i;
+  if (POLY_BALANCE_RE.test(trimmed)) {
+    if (!senderAddress) {
+      return json({ type: "error", text: "Connect your wallet — I'll check your Polymarket balance automatically." });
+    }
+    const balance = await getPolymarketBalance(senderAddress);
+    if (balance === null) {
+      return json({ type: "error", text: "Unable to check your Polymarket balance right now." });
+    }
+    if (balance === 0) {
+      return json({ type: "text", text: "No pUSD balance found on Polymarket yet. If you just sent funds, it can take 1–3 minutes to arrive." });
+    }
+    const fmt = balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return json({ type: "text", text: `$${fmt} ready on Polymarket.` });
   }
 
   // ── Polymarket: deposit status check ─────────────────────────────────────

@@ -2269,7 +2269,7 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
             )}
           </div>
           <p style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "8px 0 0", lineHeight: 1.5 }}>
-            Check status: paste the EVM address above and ask &ldquo;check deposit status 0x…&rdquo;
+            After sending, ask &ldquo;did my deposit land?&rdquo; to check your balance.
           </p>
         </div>
       )}
