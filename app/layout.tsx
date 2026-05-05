@@ -42,8 +42,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: "/api/header",
-        width: 1500,
-        height: 500,
+        width: 1200,
+        height: 630,
       },
     ],
     type: "website",
