@@ -458,6 +458,27 @@ export async function POST(req: NextRequest) {
     return json({ type: "text", text: "I'm here to help with DeFi and on-chain tasks." });
   }
 
+  // ── Polymarket prediction markets — runs before informational to prevent Groq fallback ──
+  const polyKeyword = /\b(polymarket|prediction\s+markets?|odds|betting\s+odds|market\s+odds|chances?|what\s+(?:are\s+)?people\s+betting|polymarket\s+trends?|top\s+(?:prediction\s+)?markets?|market\s+predictions?|what\s+(?:can\s+i|do\s+i)\s+bet\s+on)\b/i.test(trimmed);
+  if (polyKeyword) {
+    const topicMatch = trimmed.match(
+      /\b(?:odds\s+(?:on|for|of)|chances?\s+(?:of|for|that)|polymarket\s+(?:on|for)|market\s+(?:for|on))\s+([a-z0-9][a-z0-9 ]{2,39}?)(?:\s+(?:win|winning|happen|pass|lose|hit))?$/i
+    );
+    const cryptoMatch = trimmed.match(
+      /\b(bitcoin|btc|ethereum|eth|solana|sol|bnb|xrp|avax|matic|dogecoin|doge|cardano|ada|chainlink|link)\b/i
+    );
+    const topic = topicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
+    try {
+      const markets = await getTopMarkets(topic);
+      if (markets.length === 0) {
+        return json({ type: "error", text: "Unable to fetch prediction market data right now." });
+      }
+      return json({ type: "polymarket", topic: topic ?? null, markets });
+    } catch {
+      return json({ type: "error", text: "Unable to fetch prediction market data right now." });
+    }
+  }
+
   // ── informational — handled before parseIntent to avoid a wasted Groq call ──
   if (queryType === "informational") {
     const text = await getGroqInformationalReply(message, history);
@@ -504,26 +525,6 @@ export async function POST(req: NextRequest) {
       return json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
     }
     return json({ type: "yield_pools", symbol, pools });
-  }
-
-  // ── Polymarket prediction markets ────────────────────────────────────────
-  const polyKeyword = /\b(polymarket|prediction\s+market|odds|betting\s+odds|market\s+odds|chances?)\b/i.test(trimmed);
-  if (polyKeyword) {
-    // Only extract a topic when there's a clear subject.
-    // Generic queries ("show polymarket markets", "top prediction markets") get no filter → top by volume24hr.
-    const topicMatch = trimmed.match(
-      /\b(?:odds\s+(?:on|for|of)|chances?\s+(?:of|for|that)|polymarket\s+(?:on|for)|market\s+(?:for|on))\s+([a-z0-9][a-z0-9 ]{2,39}?)(?:\s+(?:win|winning|happen|pass|lose|hit))?$/i
-    );
-    // Fallback: extract known crypto tickers for price-prediction queries ("odds ETH hits $5k")
-    const cryptoMatch = trimmed.match(
-      /\b(bitcoin|btc|ethereum|eth|solana|sol|bnb|xrp|avax|matic|dogecoin|doge|cardano|ada|chainlink|link)\b/i
-    );
-    const topic = topicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
-    const markets = await getTopMarkets(topic);
-    if (markets.length === 0) {
-      return json({ type: "error", text: `No active Polymarket markets found${topic ? ` for "${topic}"` : ""}. Try a broader topic like "odds on Bitcoin" or "show polymarket markets".` });
-    }
-    return json({ type: "polymarket", topic: topic ?? null, markets });
   }
 
   // ── keyword-aware suggestions — only for execution/unknown intents ────────
