@@ -25,11 +25,11 @@ import { getPrice } from "@/lib/priceCache";
 const PRICE_TOKENS = [
   "ETH","WETH","BTC","WBTC","SOL","BNB","MATIC","POL","AVAX","ARB","OP",
   "LINK","UNI","AAVE","MKR","CRV","LDO","SNX","COMP","PEPE","SHIB","DOGE",
-  "XRP","ADA","DOT","USDC","USDT","DAI","FRAX",
+  "XRP","ADA","DOT","USDC","USDT","DAI","FRAX","MEGA",
 ];
 
 const PRICE_TOKEN_RE = new RegExp(
-  `\\b(${PRICE_TOKENS.join("|")}|bitcoin|ethereum|solana|dogecoin|cardano|chainlink|avalanche|polygon|optimism|arbitrum|uniswap|polkadot|maker|curve|lido|synthetix)\\b`,
+  `\\b(${PRICE_TOKENS.join("|")}|bitcoin|ethereum|solana|dogecoin|cardano|chainlink|avalanche|polygon|optimism|arbitrum|uniswap|polkadot|maker|curve|lido|synthetix|megeth|megaeth)\\b`,
   "i"
 );
 
@@ -39,7 +39,7 @@ const TOKEN_NAME_TO_SYMBOL: Record<string, string> = {
   avalanche: "AVAX", polygon: "MATIC", optimism: "OP",
   arbitrum: "ARB",  uniswap: "UNI",    polkadot: "DOT",
   maker: "MKR",     curve: "CRV",      lido: "LDO",
-  synthetix: "SNX",
+  synthetix: "SNX", megeth: "MEGA",    megaeth: "MEGA",
 };
 
 // ── in-memory rate limiter (sliding window, per IP) ──────────────────────────

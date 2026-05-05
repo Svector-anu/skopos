@@ -50,6 +50,7 @@ const CG_IDS: Record<string, string> = {
   DAI:  "dai",
   FRAX: "frax",
   XDAI: "xdai",
+  MEGA: "megaeth",
 };
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────

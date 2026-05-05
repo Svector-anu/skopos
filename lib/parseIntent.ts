@@ -10,7 +10,7 @@ export function classifyIntent(input: string): IntentType {
   const t = input.trim();
 
   const hasPriceKeyword = /\b(price|worth|how\s+much|trading\s+at|usd\s+value|cost)\b/i.test(t);
-  const hasKnownToken   = /\b(eth|weth|ethereum|bitcoin|btc|sol|solana|bnb|matic|pol|polygon|avax|avalanche|usdc|usdt|dai|doge|dogecoin|shib|pepe|link|chainlink|uni|uniswap|aave|wbtc|xrp|ada|cardano|dot|polkadot|op|optimism|arb|arbitrum|mkr|maker|crv|curve|snx|synthetix|ldo|lido|comp|frax)\b/i.test(t);
+  const hasKnownToken   = /\b(eth|weth|ethereum|bitcoin|btc|sol|solana|bnb|matic|pol|polygon|avax|avalanche|usdc|usdt|dai|doge|dogecoin|shib|pepe|link|chainlink|uni|uniswap|aave|wbtc|xrp|ada|cardano|dot|polkadot|op|optimism|arb|arbitrum|mkr|maker|crv|curve|snx|synthetix|ldo|lido|comp|frax|megeth|megaeth)\b/i.test(t);
   const hasExecVerb     = /\b(swap|bridge|send|transfer|move|convert)\b/i.test(t);
   const hasAmount       = /\b\d[\d.,]*\b/.test(t);
 
@@ -40,6 +40,17 @@ export interface ParsedIntent {
 // ---------------------------------------------------------------------------
 // Layer 1: Regex (instant, free, covers ~90% of inputs)
 // ---------------------------------------------------------------------------
+
+// Maps chain names that users say in place of a token (e.g. "convert 100 megaeth to base")
+// to the chain's native token and canonical chain key.
+const CHAIN_AS_TOKEN: Record<string, { token: string; chain: string }> = {
+  megaeth:    { token: "ETH", chain: "megaeth" },
+  mega:       { token: "ETH", chain: "megaeth" },
+  "mega eth": { token: "ETH", chain: "megaeth" },
+  solana:     { token: "SOL", chain: "solana" },
+  avax:       { token: "AVAX", chain: "avalanche" },
+  bnb:        { token: "BNB", chain: "bsc" },
+};
 
 function normalizeToken(t: string): string {
   const aliases: Record<string, string> = {
@@ -88,6 +99,18 @@ function regexParse(input: string): ParsedIntent | null {
     return { amount, token: tok, originChain: origin.trim().toLowerCase(), destinationChain: dest.trim().toLowerCase(), destinationToken: tok };
   }
 
+  // "VERB AMOUNT CHAINNAME to DEST" — chain name doubles as native-token reference
+  // e.g. "convert 100 megaeth to base" → 100 ETH from MegaETH to Base
+  const p5 = /(?:move|bridge|send|transfer|swap|convert)\s+(\d+(?:\.\d+)?)\s+([a-z][a-z]*(?:\s+[a-z][a-z]*)?)\s+to\s+([a-z][a-z\s]*?)(?:\s*$|\s+(?:using|via|with))/i;
+  const m5 = p5.exec(s);
+  if (m5) {
+    const [, amount, maybeChain, dest] = m5;
+    const mapping = CHAIN_AS_TOKEN[maybeChain.toLowerCase()];
+    if (mapping) {
+      return { amount, token: mapping.token, originChain: mapping.chain, destinationChain: dest.trim().toLowerCase(), destinationToken: mapping.token };
+    }
+  }
+
   return null;
 }
 
@@ -114,7 +137,7 @@ Return ONLY a JSON object matching this schema (no markdown, no explanation):
   "destinationToken": "string (symbol uppercased; same as token if not specified)"
 }
 
-Aliases: ether/ETH → ETH, bitcoin/btc → WBTC, mainnet → ethereum, arb → arbitrum, poly/matic → polygon, avax → avalanche, sol/solana → solana (chain), SOL → SOL (token), op → optimism.
+Aliases: ether/ETH → ETH, bitcoin/btc → WBTC, mainnet → ethereum, arb → arbitrum, poly/matic → polygon, avax → avalanche, sol/solana → solana (chain), SOL → SOL (token), op → optimism, megaeth/mega → chain is "megaeth" with native token ETH.
 
 IMPORTANT: Only return the JSON object if ALL of the following are clearly present in the message:
 - A source chain (originChain)

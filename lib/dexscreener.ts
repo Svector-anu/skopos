@@ -48,12 +48,13 @@ export interface TokenRisk {
 
 const COINGECKO_IDS: Record<string, string> = {
   ETH: "ethereum", WETH: "weth", BTC: "bitcoin", WBTC: "wrapped-bitcoin",
-  BNB: "binancecoin", MATIC: "matic-network", POL: "matic-network",
+  BNB: "binancecoin", MATIC: "polygon-ecosystem-token", POL: "polygon-ecosystem-token",
   AVAX: "avalanche-2", SOL: "solana", ARB: "arbitrum", OP: "optimism",
   LINK: "chainlink", UNI: "uniswap", AAVE: "aave", MKR: "maker",
   CRV: "curve-dao-token", LDO: "lido-dao", SNX: "havven", COMP: "compound-governance-token",
   PEPE: "pepe", SHIB: "shiba-inu", DOGE: "dogecoin", BCH: "bitcoin-cash",
   USDC: "usd-coin", USDT: "tether", DAI: "dai", FRAX: "frax",
+  MEGA: "megaeth",
 };
 
 async function fetchSparkline(symbol: string): Promise<number[] | undefined> {
