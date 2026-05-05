@@ -18,6 +18,7 @@ import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken } from "@/lib/dexscreener";
 import { getTopYields } from "@/lib/defillama";
 import { getTopMarkets } from "@/lib/polymarket";
+import { generateDepositAddress, getDepositStatus } from "@/lib/polymarket-bridge";
 import { getPrice } from "@/lib/priceCache";
 
 // ── price query token recognition ────────────────────────────────────────────
@@ -458,7 +459,71 @@ export async function POST(req: NextRequest) {
     return json({ type: "text", text: "I'm here to help with DeFi and on-chain tasks." });
   }
 
-  // ── Polymarket prediction markets — runs before informational to prevent Groq fallback ──
+  // ── Polymarket: deposit status check ─────────────────────────────────────
+  // Matches "check deposit 0xABC…" or "did my funds arrive 0xABC…"
+  const depositAddrInMsg = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1];
+  if (
+    depositAddrInMsg &&
+    /\b(deposit|arrived?|confirmed?|status|funds?|balance)\b/i.test(trimmed)
+  ) {
+    try {
+      const result = await getDepositStatus(depositAddrInMsg);
+      if (!result) return json({ type: "error", text: "Unable to fetch deposit status right now." });
+      const STATUS_LABEL: Record<string, string> = {
+        pending:    "Pending — waiting for your transfer to be detected.",
+        processing: "Processing — bridging to Polygon. Usually takes 1–3 minutes.",
+        complete:   "Complete — your pUSD is on Polymarket and ready to use.",
+        failed:     "Failed — the deposit did not go through. Contact Polymarket support.",
+        refunded:   "Refunded — funds were returned to your wallet.",
+        expired:    "Expired — the deposit address is no longer valid.",
+      };
+      const msg = STATUS_LABEL[result.status] ?? result.status;
+      const amtStr = result.amount ? ` Amount: $${parseFloat(result.amount).toFixed(2)}.` : "";
+      return json({ type: "text", text: `Deposit ${depositAddrInMsg.slice(0, 10)}… — ${msg}${amtStr}` });
+    } catch {
+      return json({ type: "error", text: "Unable to fetch deposit status right now." });
+    }
+  }
+
+  // ── Polymarket: bet intent → market + deposit address ────────────────────
+  const BET_RE = /\b(bet|wager|buy\s+(?:yes|no)|place\s+(?:a\s+)?bet|take\s+(?:a\s+)?position\s+on)\b/i;
+  if (BET_RE.test(trimmed)) {
+    const betTopicMatch = trimmed.match(
+      /(?:bet\s+(?:\$?\d[\d.,]*\s+)?on|buy\s+(?:yes|no)\s+on|wager\s+(?:\$?\d[\d.,]*\s+)?on|position\s+on)\s+([a-z0-9$][a-z0-9$\s]{1,50}?)(?:\s+(?:to\s+hit|hitting|winning|passing|losing|going)|\s*[?.]?\s*$)/i
+    );
+    const cryptoMatch = trimmed.match(
+      /\b(bitcoin|btc|ethereum|eth|solana|sol|bnb|xrp|avax|matic|dogecoin|doge|cardano|ada|chainlink|link)\b/i
+    );
+    const betAmountMatch = trimmed.match(/\$(\d[\d.,]*)/);
+    const topic = betTopicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
+    const amount = betAmountMatch?.[1]?.replace(/,/g, "") ?? undefined;
+
+    if (!senderAddress) {
+      return json({ type: "error", text: "Connect your wallet — I need your address to generate a Polymarket deposit address." });
+    }
+
+    try {
+      const [markets, depositAddresses] = await Promise.all([
+        getTopMarkets(topic, 3),
+        generateDepositAddress(senderAddress),
+      ]);
+      if (markets.length === 0) {
+        return json({ type: "error", text: "Unable to fetch prediction market data right now." });
+      }
+      return json({
+        type: "polymarket",
+        topic: topic ?? null,
+        markets,
+        deposit: depositAddresses
+          ? { evm: depositAddresses.evm, svm: depositAddresses.svm, btc: depositAddresses.btc, amount }
+          : null,
+      });
+    } catch {
+      return json({ type: "error", text: "Unable to fetch prediction market data right now." });
+    }
+  }
+
+  // ── Polymarket: view markets / odds (read-only) ───────────────────────────
   const polyKeyword = /\b(polymarket|prediction\s+markets?|odds|betting\s+odds|market\s+odds|chances?|what\s+(?:are\s+)?people\s+betting|polymarket\s+trends?|top\s+(?:prediction\s+)?markets?|market\s+predictions?|what\s+(?:can\s+i|do\s+i)\s+bet\s+on)\b/i.test(trimmed);
   if (polyKeyword) {
     const topicMatch = trimmed.match(
@@ -473,7 +538,7 @@ export async function POST(req: NextRequest) {
       if (markets.length === 0) {
         return json({ type: "error", text: "Unable to fetch prediction market data right now." });
       }
-      return json({ type: "polymarket", topic: topic ?? null, markets });
+      return json({ type: "polymarket", topic: topic ?? null, markets, deposit: null });
     } catch {
       return json({ type: "error", text: "Unable to fetch prediction market data right now." });
     }

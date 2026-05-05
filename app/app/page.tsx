@@ -69,7 +69,8 @@ type PolymarketEventItem = {
   title: string; slug: string; volume: number; image: string | null; url: string;
   markets: PolymarketMarket[];
 };
-type PolymarketResult = { type: "polymarket"; topic: string | null; markets: PolymarketEventItem[] };
+type PolymarketDeposit = { evm: string | null; svm: string | null; btc: string | null; amount?: string } | null;
+type PolymarketResult = { type: "polymarket"; topic: string | null; markets: PolymarketEventItem[]; deposit?: PolymarketDeposit };
 
 type SuggestionsResult = { type: "suggestions"; prompts: { label: string; command: string }[] };
 
@@ -2214,7 +2215,7 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
 // ─── PolymarketDisplay ────────────────────────────────────────────────────────
 
 function PolymarketDisplay({ result }: { result: PolymarketResult }) {
-  const { topic, markets } = result;
+  const { topic, markets, deposit } = result;
 
   function fmtVolume(v: number): string {
     if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M vol`;
@@ -2235,6 +2236,44 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
           PREDICTION MARKETS {topic ? `· ${topic.toUpperCase()}` : "· TRENDING"} · via Polymarket
         </span>
       </div>
+      {deposit && (deposit.evm || deposit.svm || deposit.btc) && (
+        <div style={{
+          marginBottom: 12, padding: "12px 14px", borderRadius: 10,
+          border: "1px solid rgba(245,184,0,0.2)",
+          background: "rgba(245,184,0,0.04)",
+        }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 8px" }}>
+            DEPOSIT TO POLYMARKET{deposit.amount ? ` · $${deposit.amount} USDC` : ""}
+          </p>
+          <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: "0 0 8px", lineHeight: 1.5 }}>
+            Send USDC to the address for your chain. Polymarket bridges it to pUSD automatically.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {deposit.evm && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ ...MONO, fontSize: "0.55rem", color: "rgba(245,184,0,0.6)", width: 32, flexShrink: 0 }}>EVM</span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text, #fff)", wordBreak: "break-all" }}>{deposit.evm}</span>
+              </div>
+            )}
+            {deposit.svm && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ ...MONO, fontSize: "0.55rem", color: "rgba(245,184,0,0.6)", width: 32, flexShrink: 0 }}>SOL</span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text, #fff)", wordBreak: "break-all" }}>{deposit.svm}</span>
+              </div>
+            )}
+            {deposit.btc && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ ...MONO, fontSize: "0.55rem", color: "rgba(245,184,0,0.6)", width: 32, flexShrink: 0 }}>BTC</span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text, #fff)", wordBreak: "break-all" }}>{deposit.btc}</span>
+              </div>
+            )}
+          </div>
+          <p style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "8px 0 0", lineHeight: 1.5 }}>
+            Check status: paste the EVM address above and ask &ldquo;check deposit status 0x…&rdquo;
+          </p>
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {markets.map((event, i) => {
           const topMarket = event.markets[0];
