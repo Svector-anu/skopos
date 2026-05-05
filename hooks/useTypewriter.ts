@@ -3,134 +3,99 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { COMMANDS } from "@/lib/commands";
 
-type Phase =
-  | "typing"
-  | "typed-pause"
-  | "preview-mount"
-  | "preview-visible"
-  | "preview-hold"
-  | "preview-fade"
-  | "deleting"
-  | "delete-pause";
+export type ChatPhase =
+  | "start-pause"
+  | "show-user"
+  | "user-pause"
+  | "ai-thinking"
+  | "ai-typing"
+  | "hold"
+  | "clearing";
 
-export interface TypewriterState {
-  displayText: string;
-  showPreview: boolean;
-  previewText: string;
-  previewVisible: boolean;
+export interface ChatState {
+  userText: string;
+  aiText: string;
+  phase: ChatPhase;
 }
 
-const TYPING_SPEED_MS = 40;
-const DELETING_SPEED_MS = 18;
-const TYPED_PAUSE_MS = 1200;
-const PREVIEW_HOLD_MS = 1800;
-const DELETE_PAUSE_MS = 400;
-const FADE_MS = 300;
-const PAINT_TICK_MS = 32;
+const AI_TYPE_MS      = 40;
+const START_PAUSE_MS  = 600;
+const USER_PAUSE_MS   = 900;
+const THINKING_MS     = 1100;
+const HOLD_MS         = 2200;
+const CLEAR_MS        = 350;
 
-export function useTypewriter(): TypewriterState {
-  const [displayText, setDisplayText] = useState("");
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewVisible, setPreviewVisible] = useState(false);
-  const [commandIndex, setCommandIndex] = useState(0);
-  const [phase, setPhase] = useState<Phase>("typing");
-  const [charIndex, setCharIndex] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+export function useTypewriter(): ChatState {
+  const [phase, setPhase]         = useState<ChatPhase>("start-pause");
+  const [cmdIdx, setCmdIdx]       = useState(0);
+  const [aiCharIdx, setAiCharIdx]     = useState(0);
+  const [userText, setUserText]   = useState("");
+  const [aiText, setAiText]       = useState("");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentCommand = COMMANDS[commandIndex];
+  const cmd = COMMANDS[cmdIdx];
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+  const clear = useCallback(() => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
   }, []);
 
   useEffect(() => {
-    clearTimer();
+    clear();
 
     switch (phase) {
-      case "typing": {
-        const full = currentCommand.cmd;
-        if (charIndex < full.length) {
-          timerRef.current = setTimeout(() => {
-            setDisplayText(full.slice(0, charIndex + 1));
-            setCharIndex((i) => i + 1);
-          }, TYPING_SPEED_MS);
+      case "start-pause":
+        timer.current = setTimeout(() => {
+          setUserText(cmd.cmd);
+          setPhase("show-user");
+        }, START_PAUSE_MS);
+        break;
+
+      case "show-user":
+        timer.current = setTimeout(() => setPhase("user-pause"), 0);
+        break;
+
+      case "user-pause":
+        timer.current = setTimeout(() => setPhase("ai-thinking"), USER_PAUSE_MS);
+        break;
+
+      case "ai-thinking":
+        timer.current = setTimeout(() => {
+          setAiText("");
+          setAiCharIdx(0);
+          setPhase("ai-typing");
+        }, THINKING_MS);
+        break;
+
+      case "ai-typing": {
+        const full = cmd.response;
+        if (aiCharIdx < full.length) {
+          timer.current = setTimeout(() => {
+            setAiText(full.slice(0, aiCharIdx + 1));
+            setAiCharIdx(i => i + 1);
+          }, AI_TYPE_MS);
         } else {
-          timerRef.current = setTimeout(() => setPhase("typed-pause"), TYPED_PAUSE_MS);
+          timer.current = setTimeout(() => setPhase("hold"), 0);
         }
         break;
       }
 
-      case "typed-pause": {
-        timerRef.current = setTimeout(() => {
-          setShowPreview(true);
-          setPhase("preview-mount");
-        }, 0);
+      case "hold":
+        timer.current = setTimeout(() => setPhase("clearing"), HOLD_MS);
         break;
-      }
 
-      case "preview-mount": {
-        timerRef.current = setTimeout(() => {
-          setPreviewVisible(true);
-          setPhase("preview-visible");
-        }, PAINT_TICK_MS);
+      case "clearing":
+        timer.current = setTimeout(() => {
+          setUserText("");
+          setAiText("");
+          setAiCharIdx(0);
+          setCmdIdx(i => (i + 1) % COMMANDS.length);
+          setPhase("start-pause");
+        }, CLEAR_MS);
         break;
-      }
-
-      case "preview-visible": {
-        timerRef.current = setTimeout(() => {
-          setPhase("preview-hold");
-        }, FADE_MS);
-        break;
-      }
-
-      case "preview-hold": {
-        timerRef.current = setTimeout(() => {
-          setPreviewVisible(false);
-          setPhase("preview-fade");
-        }, PREVIEW_HOLD_MS);
-        break;
-      }
-
-      case "preview-fade": {
-        timerRef.current = setTimeout(() => {
-          setShowPreview(false);
-          setPhase("deleting");
-        }, FADE_MS);
-        break;
-      }
-
-      case "deleting": {
-        if (charIndex > 0) {
-          timerRef.current = setTimeout(() => {
-            setDisplayText((t) => t.slice(0, -1));
-            setCharIndex((i) => i - 1);
-          }, DELETING_SPEED_MS);
-        } else {
-          timerRef.current = setTimeout(() => setPhase("delete-pause"), 0);
-        }
-        break;
-      }
-
-      case "delete-pause": {
-        timerRef.current = setTimeout(() => {
-          setCommandIndex((i) => (i + 1) % COMMANDS.length);
-          setCharIndex(0);
-          setPhase("typing");
-        }, DELETE_PAUSE_MS);
-        break;
-      }
     }
 
-    return clearTimer;
-  }, [phase, charIndex, commandIndex, currentCommand.cmd, clearTimer]);
+    return clear;
+  }, [phase, cmdIdx, aiCharIdx, cmd, clear]);
 
-  return {
-    displayText,
-    showPreview,
-    previewText: currentCommand.preview,
-    previewVisible,
-  };
+  return { userText, aiText, phase };
 }
