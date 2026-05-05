@@ -37,7 +37,11 @@ export function TerminalCard() {
       {/* Chat body */}
       <div
         className="flex flex-col gap-3 px-4 py-4"
-        style={{ minHeight: 148 }}
+        style={{
+          minHeight: 148,
+          opacity: phase === "clearing" ? 0 : 1,
+          transition: phase === "clearing" ? "opacity 320ms ease" : "none",
+        }}
       >
         {/* User bubble */}
         {showUser && (
