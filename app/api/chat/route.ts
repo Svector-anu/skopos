@@ -195,19 +195,20 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
 
   const SOLANA_PUBKEY_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
-  // EVM → Solana: receiverAddress must be a valid base58 Solana pubkey
+  // EVM → Solana: a Solana receive address is needed — Phantom provides it,
+  // or the user can paste their address inline (handled by the POST handler).
   if (isSolanaDest && (!solanaAddress || !SOLANA_PUBKEY_RE.test(solanaAddress))) {
     return {
       ok: false,
-      text: "To bridge to Solana you need a Phantom wallet connected. Connect Phantom first, then try again.",
+      text: "I need a Solana address to send the funds to. Connect your Phantom wallet, or include your Solana address in the message — e.g. \"bridge 2 ETH from base to solana YOUR_SOLANA_ADDRESS\".",
     };
   }
 
-  // Solana → EVM: senderAddress must be a valid base58 Solana pubkey
+  // Solana → EVM: Phantom must be connected to sign the Solana transaction.
   if (isSolanaOrigin && (!solanaAddress || !SOLANA_PUBKEY_RE.test(solanaAddress))) {
     return {
       ok: false,
-      text: "Connect your Phantom wallet to bridge from Solana.",
+      text: "Connect your Phantom wallet to sign the transaction from Solana.",
     };
   }
 
@@ -282,13 +283,19 @@ export async function POST(req: NextRequest) {
     return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429 });
   }
 
-  const { message, senderAddress, solanaAddress, history, slippage } = await req.json();
+  const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage } = await req.json();
 
   if (!message?.trim()) {
     return json({ error: "No message provided" }, { status: 400 });
   }
 
   const trimmed = message.trim();
+
+  // If Phantom isn't connected, the user can paste their Solana address inline.
+  // Extract it so EVM→Solana bridges can proceed without Phantom.
+  const SOLANA_INLINE_RE = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/;
+  const inlineSolanaAddr  = !rawSolanaAddress ? trimmed.match(SOLANA_INLINE_RE)?.[1] : undefined;
+  const solanaAddress     = rawSolanaAddress ?? inlineSolanaAddr;
 
   if (trimmed.length > 2000) {
     return json({ type: "error", text: "Message too long." }, { status: 400 });
