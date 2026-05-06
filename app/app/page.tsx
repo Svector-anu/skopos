@@ -1382,15 +1382,27 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { address }                  = useAccount();
-  const chainId                      = useChainId();
   const { mutateAsync: switchChain } = useSwitchChain();
   const { login, authenticated }     = usePrivy();
   const { intent, route, calldata, approval } = result;
   const originChainId = intent.from.chainId;
   const destChainId   = intent.to.chainId;
   const isSolanaRoute = originChainId === SOLANA_CHAIN_ID || destChainId === SOLANA_CHAIN_ID;
-  const onCorrectChain = chainId === originChainId;
-  const isSwap         = originChainId === destChainId;
+  const isSwap        = originChainId === destChainId;
+
+  // Track the real MetaMask chain via window.ethereum — wagmi's useChainId() reads
+  // Privy's embedded wallet (chain 1) which diverges from the external wallet's chain.
+  const [providerChainId, setProviderChainId] = useState<number | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const eth = (window as any).ethereum;
+    if (!eth) return;
+    const onChainChanged = (hex: string) => setProviderChainId(parseInt(hex, 16));
+    void (eth.request({ method: "eth_chainId" }) as Promise<string>).then(onChainChanged);
+    eth.on("chainChanged", onChainChanged);
+    return () => eth.removeListener("chainChanged", onChainChanged);
+  }, []);
+  const onCorrectChain = providerChainId === null ? true : providerChainId === originChainId;
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: approval?.tokenAddress as `0x${string}` | undefined,
@@ -1479,7 +1491,18 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
     setSwitchErr(null);
     setIsSwitching(true);
     try {
-      await switchChain({ chainId: originChainId });
+      // Use wallet_switchEthereumChain directly so we hit MetaMask, not Privy's
+      // embedded wallet connector which intercepts wagmi's useSwitchChain.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const eth = (window as any).ethereum;
+      if (eth) {
+        await (eth.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: `0x${originChainId.toString(16)}` }],
+        }) as Promise<void>);
+      } else {
+        await switchChain({ chainId: originChainId });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Rejected in wallet." : `Switch failed: ${msg.slice(0, 80)}`);
