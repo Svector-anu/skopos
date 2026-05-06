@@ -234,6 +234,8 @@ export default function AppPage() {
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [inputFocused, setInputFocused]= useState(false);
   const [messages, setMessages]        = useState<Message[]>([]);
+  const messagesRef                    = useRef<Message[]>([]);
+  messagesRef.current                  = messages;
   const [sessions, setSessions]        = useState<Session[]>([]);
   const [txHistory, setTxHistory]      = useState<TxRecord[]>([]);
   const [activeSessionId, setActiveId] = useState<string>("");
@@ -271,25 +273,23 @@ export default function AppPage() {
     setMessages(prev => prev.filter(m => m.role !== "assistant" || !m.result || m.result.type !== "quote"));
   }, [connectedAddress]);
 
-  // Auto-retry the last wallet-blocked command when the wallet connects
+  // Auto-retry the last wallet-blocked command when the wallet connects.
+  // Reads messages via ref (not state) to avoid side-effects inside updaters.
   useEffect(() => {
     const prev = prevConnectedAddressRef.current;
     prevConnectedAddressRef.current = connectedAddress;
     if (!prev && connectedAddress) {
-      setMessages(msgs => {
-        const last       = msgs.at(-1);
-        const secondLast = msgs.at(-2);
-        if (
-          last?.role === "assistant" &&
-          last.result?.type === "error" &&
-          /wallet|reconnect/i.test(last.result.text) &&
-          secondLast?.role === "user"
-        ) {
-          // Fire outside the updater so submit captures the fresh connectedAddress
-          setTimeout(() => submitRef.current?.(secondLast.text), 0);
-        }
-        return msgs;
-      });
+      const msgs       = messagesRef.current;
+      const last       = msgs.at(-1);
+      const secondLast = msgs.at(-2);
+      if (
+        last?.role === "assistant" &&
+        last.result?.type === "error" &&
+        /wallet|reconnect/i.test(last.result.text) &&
+        secondLast?.role === "user"
+      ) {
+        submitRef.current?.(secondLast.text);
+      }
     }
   }, [connectedAddress]);
     const usdcAddress                            = USDC_ADDRESSES[currentChainId];
