@@ -227,6 +227,7 @@ export default function AppPage() {
   const abortRef     = useRef<AbortController | null>(null);
   const dripRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string>("");
+  const submitRef    = useRef<((msg?: string) => Promise<void>) | null>(null);
 
   const [value, setValue]              = useState("");
   const [loading, setLoading]          = useState(false);
@@ -259,6 +260,7 @@ export default function AppPage() {
   const privyEvmWallet                         = wallets.find(w => w.address?.startsWith("0x"));
   const connectedAddress                       = address ?? privyEvmWallet?.address ?? null;
   const walletLoading                          = authenticated && !walletsReady && !connectedAddress;
+  const prevConnectedAddressRef                = useRef<string | null>(connectedAddress);
   // Ghost session: authenticated but no wallet → clear stale session, re-open full login modal
   const handleWalletAction                     = authenticated ? () => logout().then(() => login()) : login;
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
@@ -267,6 +269,28 @@ export default function AppPage() {
   // Clear stale quotes when wallet changes
   useEffect(() => {
     setMessages(prev => prev.filter(m => m.role !== "assistant" || !m.result || m.result.type !== "quote"));
+  }, [connectedAddress]);
+
+  // Auto-retry the last wallet-blocked command when the wallet connects
+  useEffect(() => {
+    const prev = prevConnectedAddressRef.current;
+    prevConnectedAddressRef.current = connectedAddress;
+    if (!prev && connectedAddress) {
+      setMessages(msgs => {
+        const last       = msgs.at(-1);
+        const secondLast = msgs.at(-2);
+        if (
+          last?.role === "assistant" &&
+          last.result?.type === "error" &&
+          /wallet|reconnect/i.test(last.result.text) &&
+          secondLast?.role === "user"
+        ) {
+          // Fire outside the updater so submit captures the fresh connectedAddress
+          setTimeout(() => submitRef.current?.(secondLast.text), 0);
+        }
+        return msgs;
+      });
+    }
   }, [connectedAddress]);
     const usdcAddress                            = USDC_ADDRESSES[currentChainId];
     const { data: usdcRaw, isLoading: usdcLoading } = useReadContract({
@@ -520,6 +544,8 @@ export default function AppPage() {
       setLoading(false);
     }
   }
+  // Keep submitRef current every render so the auto-retry effect always calls the latest closure
+  submitRef.current = submit;
 
   const isDark = theme === "dark";
   const T = isDark ? {
