@@ -205,3 +205,60 @@ export async function getPrice(symbol: string): Promise<PriceResult | null> {
   const results = await getPrices([symbol]);
   return results[symbol.toUpperCase()] ?? null;
 }
+
+// ── 7-day chart + token metadata ─────────────────────────────────────────────
+
+export interface PriceChartResult {
+  sparkline: number[];
+  name: string;
+  image: string;
+  circulatingSupply: number | null;
+  maxSupply: number | null;
+  marketCap: number | null;
+  volume24h: number | null;
+}
+
+const chartCache = new Map<string, { data: PriceChartResult; fetchedAt: number }>();
+const CHART_TTL_MS = 5 * 60 * 1000;
+
+export async function getPriceChart(symbol: string): Promise<PriceChartResult | null> {
+  const upper = symbol.toUpperCase();
+  const cached = chartCache.get(upper);
+  if (cached && Date.now() - cached.fetchedAt < CHART_TTL_MS) return cached.data;
+
+  const cgId = CG_IDS[upper];
+  if (!cgId) return null;
+
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${cgId}&sparkline=true`
+    );
+    if (!res.ok) return null;
+    const raw = await res.json() as Array<{
+      name?: string;
+      image?: string;
+      market_cap?: number;
+      total_volume?: number;
+      circulating_supply?: number;
+      max_supply?: number;
+      sparkline_in_7d?: { price?: number[] };
+    }>;
+    const coin = raw[0];
+    if (!coin) return null;
+    const sparkline = coin.sparkline_in_7d?.price ?? [];
+    if (sparkline.length === 0) return null;
+    const data: PriceChartResult = {
+      sparkline,
+      name: coin.name ?? upper,
+      image: coin.image ?? "",
+      circulatingSupply: coin.circulating_supply ?? null,
+      maxSupply: coin.max_supply ?? null,
+      marketCap: coin.market_cap ?? null,
+      volume24h: coin.total_volume ?? null,
+    };
+    chartCache.set(upper, { data, fetchedAt: Date.now() });
+    return data;
+  } catch {
+    return null;
+  }
+}

@@ -37,6 +37,7 @@ type QuoteResult = {
 
 type TextResult      = { type: "text";      text: string; suggestions?: { label: string; command: string }[] };
 type ErrorResult     = { type: "error";     text: string };
+type PriceResult     = { type: "price"; symbol: string; name: string | null; image: string | null; price: number; change24h: number | null; sparkline: number[]; marketCap: number | null; volume24h: number | null; circulatingSupply: number | null; maxSupply: number | null };
 type RebalanceResult = { type: "rebalance"; mode: "preview"; legs: Array<QuoteResult | ErrorResult> };
 type TxResult        = { type: "tx";        tx: TxData;      summary: string };
 type AddressResult   = { type: "address";   data: AddressData; summary: string; ensName?: string };
@@ -74,7 +75,7 @@ type PolymarketResult = { type: "polymarket"; topic: string | null; markets: Pol
 
 type SuggestionsResult = { type: "suggestions"; prompts: { label: string; command: string }[] };
 
-type AssistantResult = QuoteResult | TextResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult;
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -417,6 +418,10 @@ export default function AppPage() {
       if (m.role === "user") return [{ role: "user", content: m.text }];
       if (m.result.type === "text")  return [{ role: "assistant", content: m.result.text }];
       if (m.result.type === "error") return [{ role: "assistant", content: m.result.text }];
+      if (m.result.type === "price") {
+        const ch = m.result.change24h != null ? ` (${m.result.change24h >= 0 ? "+" : ""}${m.result.change24h.toFixed(2)}% 24h)` : "";
+        return [{ role: "assistant", content: `${m.result.symbol} is $${m.result.price}${ch}.` }];
+      }
       if (m.result.type === "quote") {
         const { intent, route } = m.result;
         const fees = route.feesUSD ? `, fees ~$${Number(route.feesUSD).toFixed(4)}` : "";
@@ -967,6 +972,11 @@ export default function AppPage() {
                     )}
                     {msg.result.type === "suggestions" && (
                       <SuggestionsDisplay result={msg.result} onSelect={(cmd: string) => submit(cmd)} />
+                    )}
+                    {msg.result.type === "price" && (
+                      <ErrorBoundary label="Price chart failed to render.">
+                        <PriceDisplay result={msg.result} onSubmit={(text) => submit(text)} />
+                      </ErrorBoundary>
                     )}
                     {msg.result.type === "text" && (
                       <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: T.textMuted, margin: 0 }}>
@@ -1983,6 +1993,202 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── PriceDisplay ─────────────────────────────────────────────────────────────
+
+// Computed once at module load — 7-day chart labels (DD/MM) evenly spaced across W=400
+const PRICE_CHART_DAY_LABELS: { label: string; x: number }[] = Array.from({ length: 7 }, (_, i) => {
+  const ts = Date.now() - (6 - i) * 24 * 3600 * 1000;
+  const d  = new Date(ts);
+  return {
+    label: `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}`,
+    x: Math.round((i / 6) * 400),
+  };
+});
+
+// chain ID → delora chain name (EVM only; Solana/MegaETH handled via SYMBOL_CHAIN)
+const EVM_CHAIN_NAMES: Record<number, string> = {
+  1:      "ethereum",
+  10:     "optimism",
+  56:     "bsc",
+  137:    "polygon",
+  42161:  "arbitrum",
+  8453:   "base",
+  43114:  "avalanche",
+  5000:   "mantle",
+  81457:  "blast",
+  534352: "scroll",
+  59144:  "linea",
+  34443:  "mode",
+  80094:  "berachain",
+};
+
+// tokens that have a known home chain (non-EVM or distinctive)
+const SYMBOL_CHAIN: Record<string, string> = {
+  MEGAETH: "megaeth", MEGA: "megaeth",
+  SOL: "solana",      MATIC: "polygon", POL: "polygon",
+  AVAX: "avalanche",  BNB: "bsc",       MNT: "mantle",
+  BERA: "berachain",  CRO: "cronos",    HYPE: "hyperevm",
+};
+
+function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (text: string) => void }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const chainId = useChainId();
+  const detectedChain = EVM_CHAIN_NAMES[chainId] ?? null;
+
+  const { symbol, name, image, price, change24h, sparkline, marketCap, volume24h, circulatingSupply, maxSupply } = result;
+  const positive  = (change24h ?? 0) >= 0;
+  const lineColor = positive ? "#22c55e" : "#ef4444";
+
+  const fmtPrice = (p: number): string =>
+    p >= 1000 ? `$${p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : p >= 1   ? `$${p.toFixed(4)}`
+    : `$${p.toPrecision(4)}`;
+
+  const fmtUsd = (n: number): string =>
+    n >= 1e12 ? `$${(n / 1e12).toFixed(2)}T`
+    : n >= 1e9  ? `$${(n / 1e9).toFixed(2)}B`
+    : n >= 1e6  ? `$${(n / 1e6).toFixed(2)}M`
+    : `$${n.toFixed(0)}`;
+
+  const fmtSupply = (n: number): string =>
+    n >= 1e9 ? `${(n / 1e9).toFixed(2)}B`
+    : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M`
+    : n >= 1e3 ? `${(n / 1e3).toFixed(2)}K`
+    : n.toFixed(0);
+
+  // SVG chart — 7-day no-fill line
+  const W = 400, H = 100, PAD_Y = 8;
+  const pts = sparkline.length >= 2 ? (() => {
+    const mn = Math.min(...sparkline), mx = Math.max(...sparkline);
+    const range = mx - mn || 1;
+    return sparkline.map((p, i) => ({
+      x: (i / (sparkline.length - 1)) * W,
+      y: H - PAD_Y - ((p - mn) / range) * (H - PAD_Y * 2),
+    }));
+  })() : [];
+
+  const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+
+  // Day labels are stable for the session lifetime — W=400 is a module constant
+  const dayLabels = PRICE_CHART_DAY_LABELS;
+
+  const hoverPt    = hoverIdx !== null ? pts[hoverIdx]      : null;
+  const hoverPrice = hoverIdx !== null ? sparkline[hoverIdx] : null;
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (pts.length === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct  = (e.clientX - rect.left) / rect.width;
+    const idx  = Math.round(Math.max(0, Math.min(1, pct)) * (sparkline.length - 1));
+    setHoverIdx(idx);
+  };
+
+  const stats: [string, string][] = [];
+  if (marketCap         && marketCap         > 0) stats.push(["Market Cap",    fmtUsd(marketCap)]);
+  if (volume24h         && volume24h         > 0) stats.push(["Volume (24h)",  fmtUsd(volume24h)]);
+  if (circulatingSupply && circulatingSupply > 0) stats.push(["Circulating",   fmtSupply(circulatingSupply)]);
+  if (maxSupply         && maxSupply         > 0) stats.push(["Max Supply",    fmtSupply(maxSupply)]);
+
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+
+  return (
+    <div style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 16, overflow: "hidden", maxWidth: 420, background: "var(--card-container-bg, #0D0D0D)" }}>
+
+      {/* Header — circular icon + name/ticker left · price + change right */}
+      <div style={{ padding: "16px 18px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          {image ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={image} alt={symbol} width={40} height={40} style={{ borderRadius: "50%", flexShrink: 0 }} />
+          ) : (
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,0.08)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.5)" }}>{symbol.slice(0, 3)}</span>
+            </div>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--card-text, #fff)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ?? symbol}</p>
+            <p style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.38)", margin: "2px 0 0" }}>{symbol}</p>
+          </div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <p style={{ ...MONO, fontSize: "1.35rem", fontWeight: 700, color: "var(--card-text, #fff)", margin: 0, lineHeight: 1.1 }}>
+            {fmtPrice(hoverPrice ?? price)}
+          </p>
+          {change24h != null && (
+            <span style={{
+              ...MONO, fontSize: "0.68rem", fontWeight: 600, color: lineColor,
+              background: positive ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
+              border: `1px solid ${lineColor}30`,
+              borderRadius: 6, padding: "2px 8px", display: "inline-block", marginTop: 4,
+            }}>
+              {positive ? "▲" : "▼"} {Math.abs(change24h).toFixed(2)}% (1d)
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 7-day no-fill line chart with hover crosshair */}
+      {pts.length >= 2 && (
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+          <svg
+            width="100%"
+            viewBox={`0 0 ${W} ${H + 22}`}
+            style={{ display: "block", cursor: "crosshair" }}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={() => setHoverIdx(null)}
+          >
+            <path d={line} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            {hoverPt && (
+              <>
+                <line x1={hoverPt.x} y1={PAD_Y} x2={hoverPt.x} y2={H - PAD_Y} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="3,3" />
+                <circle cx={hoverPt.x} cy={hoverPt.y} r={3.5} fill={lineColor} stroke="#0D0D0D" strokeWidth="2" />
+              </>
+            )}
+            {dayLabels.map(({ x, label }) => (
+              <text key={label} x={Math.min(Math.max(x, 16), W - 16)} y={H + 17} textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.22)" fontFamily="monospace">{label}</text>
+            ))}
+          </svg>
+        </div>
+      )}
+
+      {/* Stats grid — 2 columns */}
+      {stats.length > 0 && (
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: "rgba(255,255,255,0.04)" }}>
+          {stats.map(([label, val]) => (
+            <div key={label} style={{ padding: "10px 14px", background: "var(--card-container-bg, #0D0D0D)" }}>
+              <p style={{ ...MONO, fontSize: "0.57rem", color: "rgba(255,255,255,0.28)", margin: "0 0 3px", letterSpacing: "0.07em", textTransform: "uppercase" }}>{label}</p>
+              <p style={{ ...MONO, fontSize: "0.82rem", color: "var(--card-text, #fff)", margin: 0 }}>{val}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Buy / Sell buttons — submit to chat, backend responds with swap suggestions */}
+      <div style={{ padding: "12px 16px", display: "flex", gap: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <button
+          onClick={() => {
+            const chain = detectedChain ?? "ethereum";
+            onSubmit(`buy ${symbol} on ${chain}`);
+          }}
+          style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: "#F5B800", color: "#000", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
+        >
+          Buy {symbol}
+        </button>
+        <button
+          onClick={() => {
+            const impliedChain = SYMBOL_CHAIN[symbol] ?? detectedChain ?? null;
+            const msg = impliedChain ? `sell ${symbol} on ${impliedChain}` : `sell ${symbol}`;
+            onSubmit(msg);
+          }}
+          style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.14)", background: "transparent", color: "rgba(255,255,255,0.65)", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer" }}
+        >
+          Sell {symbol}
+        </button>
+      </div>
     </div>
   );
 }

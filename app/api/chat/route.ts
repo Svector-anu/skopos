@@ -17,7 +17,7 @@ import { scanToken } from "@/lib/dexscreener";
 import { getTopYields } from "@/lib/defillama";
 import { getTopMarkets } from "@/lib/polymarket";
 import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "@/lib/polymarket-bridge";
-import { getPrice } from "@/lib/priceCache";
+import { getPrice, getPriceChart } from "@/lib/priceCache";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -310,19 +310,25 @@ export async function POST(req: NextRequest) {
     const tokenMatch = trimmed.match(PRICE_TOKEN_RE);
     const rawSymbol  = tokenMatch?.[1] ?? "";
     const symbol     = (TOKEN_NAME_TO_SYMBOL[rawSymbol.toLowerCase()] ?? rawSymbol).toUpperCase();
-    const result     = await getPrice(symbol);
+    const [result, chart] = await Promise.all([getPrice(symbol), getPriceChart(symbol)]);
     if (!result || result.price <= 0) {
       return json({ type: "error", text: "Unable to fetch reliable data right now." });
     }
     const { price, change24h, source } = result;
     console.log(`[price] query symbol=${symbol} price=${price} source=${source}`);
-    const fmtPrice  = price >= 1000
-      ? `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      : price >= 1 ? `$${price.toFixed(4)}` : `$${price.toPrecision(4)}`;
-    const fmtChange = change24h != null
-      ? ` (${change24h >= 0 ? "+" : ""}${change24h.toFixed(2)}% 24h)`
-      : "";
-    return json({ type: "text", text: `${symbol} is ${fmtPrice}${fmtChange}.` });
+    return json({
+      type: "price",
+      symbol,
+      name:              chart?.name              ?? null,
+      image:             chart?.image             ?? null,
+      price,
+      change24h,
+      sparkline:         chart?.sparkline         ?? [],
+      marketCap:         chart?.marketCap         ?? null,
+      volume24h:         chart?.volume24h         ?? null,
+      circulatingSupply: chart?.circulatingSupply ?? null,
+      maxSupply:         chart?.maxSupply         ?? null,
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -507,13 +513,23 @@ export async function POST(req: NextRequest) {
   // Missing-source guard — catches "bridge X TOKEN to CHAIN" with no "from" before Groq
   // can hallucinate a source chain. Skipped when the token implies its own source.
   const TOKEN_IMPLIES_SOURCE: Record<string, string> = {
-    SOL:  "solana",
-    MATIC: "polygon",
-    BNB:  "bsc",
-    AVAX: "avalanche",
-    FTM:  "fantom",
-    CELO: "celo",
-    BASE: "base",
+    // ETH-native chains where chain name = token shorthand
+    BASE:    "base",
+    MEGAETH: "megaeth",
+    MEGA:    "megaeth",
+    // ETH-native L2s (arb, op, etc.) use "eth on CHAIN" format — not listed here
+    // Non-ETH native chains — chain name IS the native token
+    SOL:     "solana",
+    SOLANA:  "solana",
+    MATIC:   "polygon",
+    POL:     "polygon",
+    BNB:     "bsc",
+    AVAX:    "avalanche",
+    CELO:    "celo",
+    MNT:     "mantle",
+    BERA:    "berachain",
+    CRO:     "cronos",
+    HYPE:    "hyperevm",
   };
   const missingSource = trimmed.match(
     /^(?:bridge|move|send|transfer|swap)\s+[\d.]+\s+([a-z]+)\s+to\s+([a-z][a-z\s]*?)(?:\s*[?.]?\s*)$/i
@@ -525,6 +541,58 @@ export async function POST(req: NextRequest) {
       return json({
         type: "error",
         text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 ${token} from base to ${dest}" or "bridge 100 ${token} from arbitrum to ${dest}".`,
+      });
+    }
+  }
+
+  // ── Guided buy/sell — price card buttons emit "buy ETH on base" / "sell MEGAETH" ──
+  // Intercept before parseIntent/Groq so the response is a structured swap suggestion,
+  // not a generic informational reply. Pattern is intentionally narrow.
+  const guidedBuyMatch  = trimmed.match(/^buy\s+([a-z0-9]+)(?:\s+on\s+([a-z][a-z0-9\s]*))?$/i);
+  const guidedSellMatch = !guidedBuyMatch && trimmed.match(/^sell\s+([a-z0-9]+)(?:\s+on\s+([a-z][a-z0-9\s]*))?$/i);
+  if (guidedBuyMatch || guidedSellMatch) {
+    const isBuy = !!guidedBuyMatch;
+    const [, rawSymbol, rawChain] = (guidedBuyMatch ?? guidedSellMatch)!;
+    const symbol = rawSymbol.toUpperCase();
+    const chain  = rawChain?.trim().toLowerCase();
+
+    const CHAIN_NATIVE: Record<string, string> = {
+      ethereum: "ETH",  base: "ETH",   arbitrum: "ETH",   optimism: "ETH",
+      linea:    "ETH",  scroll: "ETH", blast: "ETH",      mode: "ETH",
+      megaeth:  "ETH",
+      polygon:  "POL",  bsc: "BNB",   avalanche: "AVAX", mantle: "MNT",
+      solana:   "SOL",  berachain: "BERA", cronos: "CRO", hyperevm: "HYPE",
+    };
+
+    const SYMBOL_CHAIN: Record<string, string> = {
+      MEGAETH: "megaeth", MEGA: "megaeth",
+      SOL: "solana",      MATIC: "polygon", POL: "polygon",
+      AVAX: "avalanche",  BNB: "bsc",       MNT: "mantle",
+      BERA: "berachain",  CRO: "cronos",    HYPE: "hyperevm",
+    };
+
+    if (isBuy) {
+      const sourceChain = chain ?? "ethereum";
+      const sourceToken = CHAIN_NATIVE[sourceChain] ?? "ETH";
+      return json({
+        type: "text",
+        text: `How much ${sourceToken} from ${sourceChain} would you like to spend on ${symbol}? Pick an amount or type your own:`,
+        suggestions: [
+          { label: `0.01 ${sourceToken} → ${symbol}`, command: `swap 0.01 ${sourceToken} from ${sourceChain} to ${symbol}` },
+          { label: `0.1 ${sourceToken} → ${symbol}`,  command: `swap 0.1 ${sourceToken} from ${sourceChain} to ${symbol}` },
+          { label: `1 ${sourceToken} → ${symbol}`,    command: `swap 1 ${sourceToken} from ${sourceChain} to ${symbol}` },
+        ],
+      });
+    } else {
+      const sourceChain = chain ?? SYMBOL_CHAIN[symbol] ?? "ethereum";
+      return json({
+        type: "text",
+        text: `How much ${symbol} from ${sourceChain} would you like to sell? Pick an option or type your own:`,
+        suggestions: [
+          { label: `0.1 ${symbol} → USDC`, command: `swap 0.1 ${symbol} from ${sourceChain} to USDC` },
+          { label: `0.5 ${symbol} → USDC`, command: `swap 0.5 ${symbol} from ${sourceChain} to USDC` },
+          { label: `0.1 ${symbol} → ETH`,  command: `swap 0.1 ${symbol} from ${sourceChain} to ETH` },
+        ],
       });
     }
   }
