@@ -1411,6 +1411,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
   const { isLoading: isConfirming, isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
   const [switchErr, setSwitchErr]       = useState<string | null>(null);
+  const [isSwitching, setIsSwitching]   = useState(false);
   const [secondsLeft, setSecondsLeft]   = useState(QUOTE_TTL);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -1467,6 +1468,19 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+    }
+  }
+
+  async function handleSwitchChain() {
+    setSwitchErr(null);
+    setIsSwitching(true);
+    try {
+      await switchChain({ chainId: originChainId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Rejected in wallet." : `Switch failed: ${msg.slice(0, 80)}`);
+    } finally {
+      setIsSwitching(false);
     }
   }
 
@@ -1596,6 +1610,11 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
               <button onClick={login}
                 style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: "pointer" }}>
                 Connect Wallet
+              </button>
+            ) : !onCorrectChain && !isSolanaRoute ? (
+              <button onClick={handleSwitchChain} disabled={isSwitching}
+                style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
+                {isSwitching ? "Switching…" : `Switch to ${intent.from.chain.charAt(0).toUpperCase() + intent.from.chain.slice(1)}`}
               </button>
             ) : needsApproval ? (
               <button onClick={approve} disabled={isApproving || (!!approvalHash && !approvalConfirmed)}
