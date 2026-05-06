@@ -26,7 +26,7 @@ import {
   hyperEvm,
   megaeth,
 } from "wagmi/chains";
-import { http } from "viem";
+import { http, fallback } from "viem";
 
 export const SUPPORTED_CHAINS = [
   mainnet,
@@ -61,7 +61,11 @@ export const SUPPORTED_CHAINS = [
 export const wagmiConfig = createConfig({
   chains: SUPPORTED_CHAINS,
   transports: {
-    [mainnet.id]:    http("https://eth.llamarpc.com"),
+    [mainnet.id]:    fallback([
+      http("https://rpc.ankr.com/eth"),
+      http("https://cloudflare-eth.com"),
+      http("https://ethereum-rpc.publicnode.com"),
+    ]),
     [optimism.id]:   http("https://mainnet.optimism.io"),
     [cronos.id]:     http("https://evm.cronos.org"),
     [bsc.id]:        http("https://bsc-dataseed.bnbchain.org"),
