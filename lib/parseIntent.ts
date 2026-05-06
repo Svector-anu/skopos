@@ -50,13 +50,31 @@ export interface ParsedIntent {
 // Maps chain names that users say in place of a token (e.g. "convert 100 megaeth to base")
 // to the chain's native token and canonical chain key.
 const CHAIN_AS_TOKEN: Record<string, { token: string; chain: string }> = {
+  // ETH-native chains where chain name doubles as token reference
+  // ("move 1 megaeth to base", "move 1 base to arbitrum")
   megaeth:    { token: "ETH", chain: "megaeth" },
   mega:       { token: "ETH", chain: "megaeth" },
   "mega eth": { token: "ETH", chain: "megaeth" },
   base:       { token: "ETH", chain: "base" },
+  // ETH-native L2s use "move 1 eth on arb to base" format — NOT "move 1 arb to base"
+  // Solana
   solana:     { token: "SOL", chain: "solana" },
+  sol:        { token: "SOL", chain: "solana" },
+  // Polygon (MATIC rebranded to POL)
+  polygon:    { token: "POL", chain: "polygon" },
+  matic:      { token: "POL", chain: "polygon" },
+  pol:        { token: "POL", chain: "polygon" },
+  // Other non-ETH native chains
   avax:       { token: "AVAX", chain: "avalanche" },
   bnb:        { token: "BNB", chain: "bsc" },
+  celo:       { token: "CELO", chain: "celo" },
+  mnt:        { token: "MNT", chain: "mantle" },
+  mantle:     { token: "MNT", chain: "mantle" },
+  bera:       { token: "BERA", chain: "berachain" },
+  berachain:  { token: "BERA", chain: "berachain" },
+  cro:        { token: "CRO", chain: "cronos" },
+  cronos:     { token: "CRO", chain: "cronos" },
+  hype:       { token: "HYPE", chain: "hyperevm" },
 };
 
 function normalizeToken(t: string): string {
@@ -95,6 +113,16 @@ function regexParse(input: string): ParsedIntent | null {
     const [, amount, token, destToken, chain] = m3;
     const c = chain.trim().toLowerCase();
     return { amount, token: normalizeToken(token), originChain: c, destinationChain: c, destinationToken: normalizeToken(destToken) };
+  }
+
+  // "VERB AMOUNT TOKEN on ORIGIN to DEST" — "on CHAIN" names the source
+  // e.g. "move 1 eth on arb to base" → 1 ETH from Arbitrum to Base
+  const p6 = /(?:move|bridge|send|transfer|swap|convert)\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+on\s+([a-z][a-z\s]*?)\s+to\s+([a-z][a-z\s]*?)(?:\s*$|\s+(?:using|via|with))/i;
+  const m6 = p6.exec(s);
+  if (m6) {
+    const [, amount, token, origin, dest] = m6;
+    const tok = normalizeToken(token);
+    return { amount, token: tok, originChain: origin.trim().toLowerCase(), destinationChain: dest.trim().toLowerCase(), destinationToken: tok };
   }
 
   // "X TOKEN from ORIGIN to DEST" (no verb)
