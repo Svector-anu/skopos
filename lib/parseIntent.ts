@@ -140,7 +140,15 @@ function regexParse(input: string): ParsedIntent | null {
   const m5 = p5.exec(s);
   if (m5) {
     const [, amount, maybeChain, dest] = m5;
-    const mapping = CHAIN_AS_TOKEN[maybeChain.toLowerCase()];
+    const parts = maybeChain.toLowerCase().split(/\s+/);
+    // Try full phrase first ("mega eth"), then first word ("base" from "base eth").
+    // Validate two-word case: second word must match the chain's native token
+    // so "base usdc" doesn't accidentally match the "base" ETH entry.
+    let mapping = CHAIN_AS_TOKEN[maybeChain.toLowerCase()];
+    if (!mapping && parts.length === 2) {
+      const chainMap = CHAIN_AS_TOKEN[parts[0]];
+      if (chainMap && normalizeToken(parts[1]) === chainMap.token) mapping = chainMap;
+    }
     if (mapping) {
       return { amount, token: mapping.token, originChain: mapping.chain, destinationChain: dest.trim().toLowerCase(), destinationToken: mapping.token };
     }
