@@ -1427,6 +1427,10 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
     return () => clearTimeout(id);
   }, [secondsLeft, txHash]);
 
+  useEffect(() => {
+    if (onCorrectChain) setSwitchErr(null);
+  }, [onCorrectChain]);
+
   const isExpired = secondsLeft <= 0 && !txHash;
 
   async function handleRefresh() {
