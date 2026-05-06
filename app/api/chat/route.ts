@@ -300,6 +300,45 @@ export async function POST(req: NextRequest) {
   const queryType = classifyIntent(trimmed);
   console.log(`[chat] ip=${ip} type=${queryType} len=${trimmed.length}`);
 
+  // ── Guided buy/sell — must run BEFORE the price fast-path ──────────────────
+  // Price card buttons emit "buy MEGA on base" / "sell MEGA on megaeth".
+  // classifyIntent sees the token name and returns "price", so without this
+  // early check the message would loop back into a price card.
+  const CHAIN_NATIVE: Record<string, string> = {
+    ethereum: "ETH",  base: "ETH",   arbitrum: "ETH",   optimism: "ETH",
+    linea:    "ETH",  scroll: "ETH", blast: "ETH",      mode: "ETH",  megaeth: "ETH",
+    polygon:  "POL",  bsc: "BNB",   avalanche: "AVAX",  mantle: "MNT",
+    solana:   "SOL",  berachain: "BERA", cronos: "CRO", hyperevm: "HYPE",
+  };
+  const TRADE_SYMBOL_CHAIN: Record<string, string> = {
+    MEGAETH: "megaeth", MEGA: "megaeth",
+    SOL: "solana",      MATIC: "polygon", POL: "polygon",
+    AVAX: "avalanche",  BNB: "bsc",       MNT: "mantle",
+    BERA: "berachain",  CRO: "cronos",    HYPE: "hyperevm",
+  };
+  const guidedBuyMatch  = trimmed.match(/^buy\s+([a-z0-9]+)(?:\s+on\s+([a-z][a-z0-9\s]*))?$/i);
+  const guidedSellMatch = !guidedBuyMatch && trimmed.match(/^sell\s+([a-z0-9]+)(?:\s+on\s+([a-z][a-z0-9\s]*))?$/i);
+  if (guidedBuyMatch || guidedSellMatch) {
+    const isBuy = !!guidedBuyMatch;
+    const [, rawSymbol, rawChain] = (guidedBuyMatch ?? guidedSellMatch)!;
+    const symbol = rawSymbol.toUpperCase();
+    const chain  = rawChain?.trim().toLowerCase();
+    if (isBuy) {
+      const sourceChain = chain ?? "ethereum";
+      const sourceToken = CHAIN_NATIVE[sourceChain] ?? "ETH";
+      return json({
+        type: "text",
+        text: `How much ${sourceToken} from ${sourceChain} would you like to spend on ${symbol}? Type an amount — e.g. "swap 0.5 ${sourceToken} from ${sourceChain} to ${symbol}"`,
+      });
+    } else {
+      const sourceChain = chain ?? TRADE_SYMBOL_CHAIN[symbol] ?? "ethereum";
+      return json({
+        type: "text",
+        text: `How much ${symbol} from ${sourceChain} would you like to sell, and for which token? Type it — e.g. "swap 0.5 ${symbol} from ${sourceChain} to USDC" or "swap 0.5 ${symbol} from ${sourceChain} to ETH"`,
+      });
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // PRICE FAST-PATH
   // Runs before structural checks — a classified "price" query must never fall
@@ -541,58 +580,6 @@ export async function POST(req: NextRequest) {
       return json({
         type: "error",
         text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 ${token} from base to ${dest}" or "bridge 100 ${token} from arbitrum to ${dest}".`,
-      });
-    }
-  }
-
-  // ── Guided buy/sell — price card buttons emit "buy ETH on base" / "sell MEGAETH" ──
-  // Intercept before parseIntent/Groq so the response is a structured swap suggestion,
-  // not a generic informational reply. Pattern is intentionally narrow.
-  const guidedBuyMatch  = trimmed.match(/^buy\s+([a-z0-9]+)(?:\s+on\s+([a-z][a-z0-9\s]*))?$/i);
-  const guidedSellMatch = !guidedBuyMatch && trimmed.match(/^sell\s+([a-z0-9]+)(?:\s+on\s+([a-z][a-z0-9\s]*))?$/i);
-  if (guidedBuyMatch || guidedSellMatch) {
-    const isBuy = !!guidedBuyMatch;
-    const [, rawSymbol, rawChain] = (guidedBuyMatch ?? guidedSellMatch)!;
-    const symbol = rawSymbol.toUpperCase();
-    const chain  = rawChain?.trim().toLowerCase();
-
-    const CHAIN_NATIVE: Record<string, string> = {
-      ethereum: "ETH",  base: "ETH",   arbitrum: "ETH",   optimism: "ETH",
-      linea:    "ETH",  scroll: "ETH", blast: "ETH",      mode: "ETH",
-      megaeth:  "ETH",
-      polygon:  "POL",  bsc: "BNB",   avalanche: "AVAX", mantle: "MNT",
-      solana:   "SOL",  berachain: "BERA", cronos: "CRO", hyperevm: "HYPE",
-    };
-
-    const SYMBOL_CHAIN: Record<string, string> = {
-      MEGAETH: "megaeth", MEGA: "megaeth",
-      SOL: "solana",      MATIC: "polygon", POL: "polygon",
-      AVAX: "avalanche",  BNB: "bsc",       MNT: "mantle",
-      BERA: "berachain",  CRO: "cronos",    HYPE: "hyperevm",
-    };
-
-    if (isBuy) {
-      const sourceChain = chain ?? "ethereum";
-      const sourceToken = CHAIN_NATIVE[sourceChain] ?? "ETH";
-      return json({
-        type: "text",
-        text: `How much ${sourceToken} from ${sourceChain} would you like to spend on ${symbol}? Pick an amount or type your own:`,
-        suggestions: [
-          { label: `0.01 ${sourceToken} → ${symbol}`, command: `swap 0.01 ${sourceToken} from ${sourceChain} to ${symbol}` },
-          { label: `0.1 ${sourceToken} → ${symbol}`,  command: `swap 0.1 ${sourceToken} from ${sourceChain} to ${symbol}` },
-          { label: `1 ${sourceToken} → ${symbol}`,    command: `swap 1 ${sourceToken} from ${sourceChain} to ${symbol}` },
-        ],
-      });
-    } else {
-      const sourceChain = chain ?? SYMBOL_CHAIN[symbol] ?? "ethereum";
-      return json({
-        type: "text",
-        text: `How much ${symbol} from ${sourceChain} would you like to sell? Pick an option or type your own:`,
-        suggestions: [
-          { label: `0.1 ${symbol} → USDC`, command: `swap 0.1 ${symbol} from ${sourceChain} to USDC` },
-          { label: `0.5 ${symbol} → USDC`, command: `swap 0.5 ${symbol} from ${sourceChain} to USDC` },
-          { label: `0.1 ${symbol} → ETH`,  command: `swap 0.1 ${symbol} from ${sourceChain} to ETH` },
-        ],
       });
     }
   }
