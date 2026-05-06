@@ -264,7 +264,7 @@ export default function AppPage() {
   const walletLoading                          = authenticated && !walletsReady && !connectedAddress;
   const prevConnectedAddressRef                = useRef<string | null>(connectedAddress);
   // Ghost session: authenticated but no wallet → clear stale session, re-open full login modal
-  const handleWalletAction                     = authenticated ? () => logout().then(() => login()) : login;
+  const handleWalletAction                     = authenticated ? () => logout().catch(() => {}).then(() => login()) : login;
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
   const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
@@ -370,11 +370,14 @@ export default function AppPage() {
     return () => clearInterval(t);
   }, []);
 
-  function handleDisconnectClick() {
+  async function handleDisconnectClick() {
     if (confirmDisconnect) {
       if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
       setConfirmDisconnect(false);
-      logout();
+      // Disconnect external wallets first so Privy doesn't need MetaMask to sign
+      // the SIWE session revocation — avoids the "User denied transaction signature" loop.
+      await Promise.allSettled(wallets.filter(w => w.walletClientType !== "privy").map(w => w.disconnect()));
+      logout().catch(() => {});
     } else {
       setConfirmDisconnect(true);
       disconnectTimerRef.current = setTimeout(() => setConfirmDisconnect(false), 3000);
