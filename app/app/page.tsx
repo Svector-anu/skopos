@@ -273,6 +273,15 @@ export default function AppPage() {
     setMessages(prev => prev.filter(m => m.role !== "assistant" || !m.result || m.result.type !== "quote"));
   }, [connectedAddress]);
 
+  // Keep disconnect confirm button in sync with auth state — if Privy logs the
+  // user out (e.g. failed SIWE), reset the confirm UI so it doesn't stay red.
+  useEffect(() => {
+    if (!authenticated) {
+      setConfirmDisconnect(false);
+      if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
+    }
+  }, [authenticated]);
+
   // Auto-retry the last wallet-blocked command when the wallet connects.
   // Reads messages via ref (not state) to avoid side-effects inside updaters.
   useEffect(() => {
