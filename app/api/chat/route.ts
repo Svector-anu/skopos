@@ -8,7 +8,6 @@ import {
   getGroqInformationalReply,
   generateTxSummary,
   generateAddressSummary,
-  buildSuggestions,
   classifyIntent,
   ParsedIntent,
 } from "@/lib/parseIntent";
@@ -700,14 +699,6 @@ export async function POST(req: NextRequest) {
   // Yield query with no recognized token — prompt for specifics
   if (queryType === "yield") {
     return json({ type: "text", text: "Which token do you want yield for? Try: 'find highest yield for USDC' or 'best ETH APY'." });
-  }
-
-  // ── keyword-aware suggestions — only for execution/unknown intents ────────
-  if (queryType === "execution" || queryType === "unknown") {
-    const suggestions = buildSuggestions(trimmed);
-    if (suggestions && suggestions.length > 0) {
-      return json({ type: "text", text: "To bridge or swap, include an amount, source chain, and destination — or pick one of these:", suggestions });
-    }
   }
 
   // ── constrained informational fallback — no live data, no transaction suggestions ──

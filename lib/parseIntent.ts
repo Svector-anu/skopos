@@ -56,6 +56,7 @@ const CHAIN_AS_TOKEN: Record<string, { token: string; chain: string }> = {
   mega:       { token: "ETH", chain: "megaeth" },
   "mega eth": { token: "ETH", chain: "megaeth" },
   base:       { token: "ETH", chain: "base" },
+  "base eth": { token: "ETH", chain: "base" },
   // ETH-native L2s use "move 1 eth on arb to base" format — NOT "move 1 arb to base"
   // Solana
   solana:     { token: "SOL", chain: "solana" },

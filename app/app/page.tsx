@@ -1048,9 +1048,6 @@ export default function AppPage() {
                         </p>
                       )
                     )}
-                    {msg.result.type === "text" && msg.result.suggestions && msg.result.suggestions.length > 0 && (
-                      <SuggestionsDisplay result={{ type: "suggestions", prompts: msg.result.suggestions }} onSelect={(cmd: string) => submit(cmd)} />
-                    )}
                     {/* Send feedback */}
                     <div style={{ marginTop: 8 }}>
                       <a
