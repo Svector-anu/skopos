@@ -53,6 +53,8 @@ export const CHAIN_IDS: Record<string, number> = {
   megaeth: 4326, mega: 4326,
   // Solana (Delora ID)
   solana: 1000000001, sol: 1000000001,
+  // Common compound aliases users type
+  "eth mainnet": 1, "ethereum mainnet": 1,
 };
 
 export const NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000";

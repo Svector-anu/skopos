@@ -1,4 +1,5 @@
 import Groq from "groq-sdk";
+import { resolveChainId } from "./chains";
 
 // ---------------------------------------------------------------------------
 // Intent classifier — runs before any LLM call
@@ -90,6 +91,22 @@ function normalizeToken(t: string): string {
 function regexParse(input: string): ParsedIntent | null {
   const s = input.trim();
 
+  // "VERB X TOKEN from ORIGIN to DESTTOKEN on DESTCHAIN"
+  // e.g. "swap 1 ETH from ethereum to USDC on base" — cross-chain with different output token.
+  // Must run before p1 so "to USDC on base" isn't captured wholesale as a chain name.
+  const pCross = /(?:move|bridge|send|transfer|swap|convert)\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+from\s+([a-z][a-z\s]*?)\s+to\s+([a-z]+)\s+on\s+([a-z][a-z\s]*?)(?:\s*$|\s+(?:using|via|with))/i;
+  const mCross = pCross.exec(s);
+  if (mCross) {
+    const [, amount, token, origin, destToken, dest] = mCross;
+    return {
+      amount,
+      token:             normalizeToken(token),
+      originChain:       origin.trim().toLowerCase(),
+      destinationChain:  dest.trim().toLowerCase(),
+      destinationToken:  normalizeToken(destToken),
+    };
+  }
+
   // "move/bridge/send/transfer/swap/convert X TOKEN from ORIGIN to DEST"
   const p1 = /(?:move|bridge|send|transfer|swap|convert)\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+from\s+([a-z][a-z\s]*?)\s+to\s+([a-z][a-z\s]*?)(?:\s*$|\s+(?:using|via|with))/i;
   const m1 = p1.exec(s);
@@ -107,8 +124,33 @@ function regexParse(input: string): ParsedIntent | null {
     return { amount, token: normalizeToken(token), originChain: origin.trim().toLowerCase(), destinationChain: dest.trim().toLowerCase(), destinationToken: normalizeToken(destToken) };
   }
 
-  // "swap X TOKEN to DESTTOKEN on CHAIN" (same-chain)
-  const p3 = /swap\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+(?:to|for)\s+([a-z]+)\s+on\s+([a-z][a-z\s]*?)(?:\s*$)/i;
+  // "VERB AMOUNT CHAINNAME to DESTTOKEN on DESTCHAIN"
+  // e.g. "bridge 1 sol to USDC on ethereum" — chain-as-token with explicit output token.
+  // Must run before p3 to prevent "sol" from being treated as a same-chain swap token.
+  const p5Cross = /(?:move|bridge|send|transfer|swap|convert)\s+(\d+(?:\.\d+)?)\s+([a-z][a-z]*(?:\s+[a-z][a-z]*)?)\s+to\s+([a-z]+)\s+on\s+([a-z][a-z\s]*?)(?:\s*$|\s+(?:using|via|with))/i;
+  const m5Cross = p5Cross.exec(s);
+  if (m5Cross) {
+    const [, amount, maybeChain, destToken, dest] = m5Cross;
+    const parts = maybeChain.toLowerCase().split(/\s+/);
+    let mapping = CHAIN_AS_TOKEN[maybeChain.toLowerCase()];
+    if (!mapping && parts.length === 2) {
+      const chainMap = CHAIN_AS_TOKEN[parts[0]];
+      if (chainMap && normalizeToken(parts[1]) === chainMap.token) mapping = chainMap;
+    }
+    if (mapping) {
+      return {
+        amount,
+        token:            mapping.token,
+        originChain:      mapping.chain,
+        destinationChain: dest.trim().toLowerCase(),
+        destinationToken: normalizeToken(destToken),
+      };
+    }
+  }
+
+  // "VERB X TOKEN to/for DESTTOKEN on CHAIN" (same-chain swap)
+  // All exec verbs, not just "swap", so "convert 1 USDC to ETH on base" also matches.
+  const p3 = /(?:move|bridge|send|transfer|swap|convert)\s+(\d+(?:\.\d+)?)\s+([a-z]+)\s+(?:to|for)\s+([a-z]+)\s+on\s+([a-z][a-z\s]*?)(?:\s*$)/i;
   const m3 = p3.exec(s);
   if (m3) {
     const [, amount, token, destToken, chain] = m3;
@@ -183,9 +225,26 @@ Return ONLY a JSON object matching this schema (no markdown, no explanation):
 
 Aliases: ether/ETH → ETH, bitcoin/btc → WBTC, mainnet → ethereum, arb → arbitrum, poly/matic → polygon, avax → avalanche, sol/solana → solana (chain), SOL → SOL (token), op → optimism, megaeth/mega → chain is "megaeth" with native token ETH.
 
-IMPORTANT: Only return the JSON object if ALL of the following are clearly present in the message:
-- A source chain (originChain)
-- A destination chain or "on CHAIN" for same-chain swaps (destinationChain)
+DESTINATION TOKEN — set destinationToken when the user specifies a different output token:
+  "swap 1 ETH from ethereum to USDC" → originChain:"ethereum", destinationChain:"ethereum", token:"ETH", destinationToken:"USDC"
+  "swap 1 ETH from ethereum to USDC on base" → originChain:"ethereum", destinationChain:"base", token:"ETH", destinationToken:"USDC"
+  "swap 1 USDC on base to ETH" → originChain:"base", destinationChain:"base", token:"USDC", destinationToken:"ETH"
+  "bridge 1 ETH from arbitrum to USDC on polygon" → originChain:"arbitrum", destinationChain:"polygon", token:"ETH", destinationToken:"USDC"
+
+Rules for identifying destinationToken vs destinationChain:
+- Token names: USDC, USDT, ETH, WETH, WBTC, DAI, SOL, BNB, AVAX, MATIC, POL, LINK, UNI, AAVE, PEPE, SHIB, DOGE, etc.
+- Chain names: ethereum, base, arbitrum, optimism, polygon, avalanche, bsc, solana, etc.
+- When "to WORD" ends the sentence and WORD is a chain name → WORD is destinationChain, destinationToken = token.
+- When "to WORD" is followed by "on CHAIN" → WORD is destinationToken, CHAIN is destinationChain.
+- When "to WORD" ends the sentence and WORD is a token symbol → WORD is destinationToken, destinationChain = originChain (same-chain swap).
+
+SAME-CHAIN INFERENCE — when a source chain is stated but no destination chain:
+  "swap 1 ETH from ethereum to USDC" → same-chain: originChain = destinationChain = "ethereum", destinationToken = "USDC"
+  "swap 100 DAI from base to WETH" → same-chain: originChain = destinationChain = "base", destinationToken = "WETH"
+
+IMPORTANT: Return the JSON object when ALL of the following are present:
+- A source chain (originChain) — either explicitly stated or clearly inferable (e.g. "from ethereum", "on base", SOL implies solana)
+- A destination chain (destinationChain) — either stated, inferred via "on CHAIN", or equal to originChain for same-chain swaps
 - A token symbol or name (token)
 - A numeric amount (amount)
 
@@ -387,7 +446,15 @@ export async function parseRebalanceIntent(input: string): Promise<ParsedIntent[
 // ---------------------------------------------------------------------------
 
 export async function parseIntent(input: string): Promise<ParsedIntent | null> {
-  return regexParse(input) ?? await groqParseIntent(input);
+  const regex = regexParse(input);
+  if (regex) {
+    const originOk = resolveChainId(regex.originChain) !== null;
+    const destOk   = resolveChainId(regex.destinationChain) !== null;
+    if (originOk && destOk) return regex;
+    // Chain validation failed (e.g. regex captured "usdc" as a chain name).
+    // Fall through to Groq which has language understanding.
+  }
+  return groqParseIntent(input);
 }
 
 export async function generateTxSummary(tx: import("./alchemy").TxData): Promise<string> {

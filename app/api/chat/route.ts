@@ -559,33 +559,63 @@ export async function POST(req: NextRequest) {
   // can hallucinate a source chain. Skipped when the token implies its own source.
   const TOKEN_IMPLIES_SOURCE: Record<string, string> = {
     // ETH-native chains where chain name = token shorthand
-    BASE:    "base",
-    MEGAETH: "megaeth",
-    MEGA:    "megaeth",
+    BASE:      "base",
+    MEGAETH:   "megaeth",
+    MEGA:      "megaeth",
     // ETH-native L2s (arb, op, etc.) use "eth on CHAIN" format — not listed here
     // Non-ETH native chains — chain name IS the native token
-    SOL:     "solana",
-    SOLANA:  "solana",
-    MATIC:   "polygon",
-    POL:     "polygon",
-    BNB:     "bsc",
-    AVAX:    "avalanche",
-    CELO:    "celo",
-    MNT:     "mantle",
-    BERA:    "berachain",
-    CRO:     "cronos",
-    HYPE:    "hyperevm",
+    SOL:       "solana",
+    SOLANA:    "solana",
+    MATIC:     "polygon",
+    POL:       "polygon",
+    POLYGON:   "polygon",
+    BNB:       "bsc",
+    AVAX:      "avalanche",
+    CELO:      "celo",
+    MNT:       "mantle",
+    MANTLE:    "mantle",
+    BERA:      "berachain",
+    BERACHAIN: "berachain",
+    CRO:       "cronos",
+    CRONOS:    "cronos",
+    HYPE:      "hyperevm",
   };
+
+  // Token symbols that are never chain names — used to detect "bridge 1 SOL to USDC"
+  // patterns where the user named a destination token but not a destination chain.
+  const NON_CHAIN_TOKEN_DEST_RE = /^(usdc|usdt|weth|wbtc|dai|link|uni|aave|crv|mkr|snx|comp|frax|gho|lusd|crvusd|cbbtc|pepe|shib|doge)$/i;
+
   const missingSource = trimmed.match(
     /^(?:bridge|move|send|transfer|swap)\s+[\d.]+\s+([a-z]+)\s+to\s+([a-z][a-z\s]*?)(?:\s*[?.]?\s*)$/i
   );
-  if (missingSource && !/\bfrom\b/i.test(trimmed) && !/\bon\b/i.test(trimmed)) {
-    const token = missingSource[1].toUpperCase();
-    if (!TOKEN_IMPLIES_SOURCE[token]) {
-      const dest = missingSource[2].trim().split(/\s+/)[0];
+  if (missingSource && !/\bfrom\b/i.test(trimmed)) {
+    const token    = missingSource[1].toUpperCase();
+    const destSlot = missingSource[2].trim();
+    const destFirst = destSlot.split(/\s+/)[0];
+    // If the destination slot starts with a pure token name (not a chain), the user
+    // is specifying what they want to receive but hasn't named the destination chain.
+    // "bridge 1 sol to usdc" and "bridge 1 ETH to USDC on base" both match here;
+    // the latter is only caught when the "on CHAIN" suffix is in the dest slot
+    // (meaning pCross / p5Cross didn't fire because it needs an explicit "from ORIGIN").
+    const destSlotHasChain = /\bon\s+[a-z]/i.test(destSlot);
+    if (NON_CHAIN_TOKEN_DEST_RE.test(destFirst) && !destSlotHasChain) {
+      const sourceChain = TOKEN_IMPLIES_SOURCE[token];
+      if (sourceChain) {
+        return json({
+          type: "error",
+          text: `Which chain do you want to receive ${destFirst.toUpperCase()} on? e.g. "bridge 1 ${token} from ${sourceChain} to base" or "bridge 1 ${token} from ${sourceChain} to ethereum"`,
+        });
+      }
       return json({
         type: "error",
-        text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 ${token} from base to ${dest}" or "bridge 100 ${token} from arbitrum to ${dest}".`,
+        text: `Specify the source chain and destination chain — e.g. "bridge 100 ${token} from ethereum to base" (receiving ${destFirst.toUpperCase()}).`,
+      });
+    }
+    // Original guard: no "from" AND no "on" AND token doesn't imply its source.
+    if (!/\bon\b/i.test(trimmed) && !TOKEN_IMPLIES_SOURCE[token]) {
+      return json({
+        type: "error",
+        text: `Where are you bridging from? Specify the source chain — e.g. "bridge 100 ${token} from base to ${destFirst}" or "bridge 100 ${token} from arbitrum to ${destFirst}".`,
       });
     }
   }
