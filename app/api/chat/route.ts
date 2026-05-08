@@ -14,7 +14,7 @@ import {
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken } from "@/lib/dexscreener";
 import { getTopYields } from "@/lib/defillama";
-import { getTopMarkets } from "@/lib/polymarket";
+import { getTopMarkets, PolymarketEvent } from "@/lib/polymarket";
 import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "@/lib/polymarket-bridge";
 import { getPrice, getPriceChart } from "@/lib/priceCache";
 
@@ -622,6 +622,8 @@ export async function POST(req: NextRequest) {
 
   // Prediction → Polymarket (single entry point via classifyIntent)
   if (queryType === "prediction") {
+    const STOP_WORDS_RE = /^(?:the|a|an)\s+/i;
+
     const isBetIntent = /\b(bet|wager|buy\s+(?:yes|no)|place\s+(?:a\s+)?bet|take\s+(?:a\s+)?position\s+on)\b/i.test(trimmed);
     if (isBetIntent) {
       const betTopicMatch = trimmed.match(
@@ -631,32 +633,39 @@ export async function POST(req: NextRequest) {
         /\b(bitcoin|btc|ethereum|eth|solana|sol|bnb|xrp|avax|matic|dogecoin|doge|cardano|ada|chainlink|link)\b/i
       );
       const betAmountMatch = trimmed.match(/\$(\d[\d.,]*)/);
-      const topic = betTopicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
-      const amount = betAmountMatch?.[1]?.replace(/,/g, "") ?? undefined;
+      const rawTopic = betTopicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
+      const topic    = rawTopic ? rawTopic.replace(STOP_WORDS_RE, "").trim() : undefined;
+      const amount   = betAmountMatch?.[1]?.replace(/,/g, "") ?? undefined;
 
       if (!senderAddress) {
         return json({ type: "error", text: "Connect your wallet — I need your address to generate a Polymarket deposit address." });
       }
 
+      let markets: PolymarketEvent[];
       try {
-        const [markets, depositAddresses] = await Promise.all([
-          getTopMarkets(topic, 3),
-          generateDepositAddress(senderAddress),
-        ]);
-        if (markets.length === 0) {
-          return json({ type: "error", text: "Unable to fetch prediction market data right now." });
-        }
-        return json({
-          type: "polymarket",
-          topic: topic ?? null,
-          markets,
-          deposit: depositAddresses
-            ? { evm: depositAddresses.evm, svm: depositAddresses.svm, btc: depositAddresses.btc, amount }
-            : null,
-        });
+        markets = await getTopMarkets(topic, 3);
       } catch {
-        return json({ type: "error", text: "Unable to fetch prediction market data right now." });
+        return json({ type: "error", text: "Prediction market data is unavailable right now. Try again in a moment." });
       }
+
+      // Topic search came up empty — fall back to top trending markets
+      if (markets.length === 0 && topic) {
+        try { markets = await getTopMarkets(undefined, 3); } catch { markets = []; }
+      }
+
+      if (markets.length === 0) {
+        return json({ type: "error", text: "No active prediction markets available right now." });
+      }
+
+      const depositAddresses = await generateDepositAddress(senderAddress);
+      return json({
+        type: "polymarket",
+        topic: topic ?? null,
+        markets,
+        deposit: depositAddresses
+          ? { evm: depositAddresses.evm, svm: depositAddresses.svm, btc: depositAddresses.btc, amount }
+          : null,
+      });
     }
 
     // View-only: show markets / odds
@@ -666,16 +675,26 @@ export async function POST(req: NextRequest) {
     const cryptoMatch = trimmed.match(
       /\b(bitcoin|btc|ethereum|eth|solana|sol|bnb|xrp|avax|matic|dogecoin|doge|cardano|ada|chainlink|link)\b/i
     );
-    const topic = topicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
+    const rawTopic = topicMatch?.[1]?.trim() || cryptoMatch?.[1]?.trim() || undefined;
+    const topic    = rawTopic ? rawTopic.replace(STOP_WORDS_RE, "").trim() : undefined;
+
+    let markets: PolymarketEvent[];
     try {
-      const markets = await getTopMarkets(topic);
-      if (markets.length === 0) {
-        return json({ type: "error", text: "Unable to fetch prediction market data right now." });
-      }
-      return json({ type: "polymarket", topic: topic ?? null, markets, deposit: null });
+      markets = await getTopMarkets(topic);
     } catch {
-      return json({ type: "error", text: "Unable to fetch prediction market data right now." });
+      return json({ type: "error", text: "Prediction market data is unavailable right now. Try again in a moment." });
     }
+
+    // Topic search came up empty — fall back to top trending markets
+    if (markets.length === 0 && topic) {
+      try { markets = await getTopMarkets(undefined); } catch { markets = []; }
+    }
+
+    if (markets.length === 0) {
+      return json({ type: "error", text: "No active prediction markets available right now." });
+    }
+
+    return json({ type: "polymarket", topic: topic ?? null, markets, deposit: null });
   }
 
   // ── informational — handled before parseIntent to avoid a wasted Groq call ──
