@@ -5,7 +5,7 @@ import { resolveChainId } from "./chains";
 // Intent classifier — runs before any LLM call
 // ---------------------------------------------------------------------------
 
-export type IntentType = "price" | "execution" | "analysis" | "informational" | "yield" | "prediction" | "unknown";
+export type IntentType = "price" | "execution" | "analysis" | "informational" | "yield" | "prediction" | "fx" | "metal" | "equity" | "unknown";
 
 export function classifyIntent(input: string): IntentType {
   const t = input.trim();
@@ -17,6 +17,17 @@ export function classifyIntent(input: string): IntentType {
   const hasOpinionSignal     = /\b(should\s+i|is\s+(?:it|now|this)\s+(?:a\s+)?(?:good|worth|safe|wise)|worth\s+(?:buying|selling|holding)|would\s+you|do\s+you\s+(?:think|recommend)|good\s+(?:time\s+to|buy|investment)|undervalued|overvalued)\b/i.test(t);
   const hasYieldKeyword      = /\b(yield|apy|apr|earn|returns|best\s+(?:yield|rate|apy|apr)|interest\s+(?:on|rate)|earning\s+(?:on|from))\b/i.test(t);
   const hasPredictionKeyword = /\b(polymarket|prediction\s+markets?|odds|betting\s+odds|market\s+odds|chances?|what\s+(?:are\s+)?people\s+betting|polymarket\s+trends?|top\s+(?:prediction\s+)?markets?|market\s+predictions?|what\s+(?:can\s+i|do\s+i)\s+bet\s+on|bet|wager|buy\s+(?:yes|no)|place\s+(?:a\s+)?bet|take\s+(?:a\s+)?position\s+on)\b/i.test(t);
+
+  // FX must run before execution — "convert 100 EUR to JPY" has exec verb + amount
+  // but EUR/GBP/JPY/CHF/AUD are never chain names or crypto tokens in this system.
+  const hasFiatCurrency = /\b(eur(?:o|os)?|gbp|pounds?|sterling|jpy|yen|chf|swiss\s+franc|aud|australian)\b/i.test(t);
+  if (hasFiatCurrency) return "fx";
+
+  // Metal keywords are unambiguous — gold/silver/XAU/XAG never appear in crypto bridge flows
+  if (/\b(gold|silver|xau|xag)\b/i.test(t)) return "metal";
+
+  // Equity — narrow list, only what we have feed IDs for
+  if (/\b(aapl|apple\s+stock|msft|microsoft\s+stock)\b/i.test(t)) return "equity";
 
   // Execution intent takes priority — "how much to swap 1 ETH" is a quote request, not a price query
   if (hasExecVerb && hasAmount) return "execution";

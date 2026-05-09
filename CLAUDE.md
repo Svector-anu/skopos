@@ -30,8 +30,11 @@ POST /api/chat { message, senderAddress, solanaAddress, history, slippage }
   → special handlers short-circuit (ENS, address, tx hash, portfolio, rebalance)
   → missing-source guard  ← hard error, no LLM
   → classifyIntent()      ← pure regex, no LLM
-      "execution"   → parseIntent() → resolveLeg() → Delora quote
+      "fx"          → Pyth Hermes (EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD)
+      "metal"       → Pyth Hermes (XAU/USD, XAG/USD)
+      "equity"      → Pyth Hermes (AAPL, MSFT)
       "price"       → priceCache (CoinGecko → DexScreener fallback)
+      "execution"   → parseIntent() → resolveLeg() → Delora quote
       "informational" → Groq chat reply
       "analysis"    → DexScreener token risk scan
       "yield"       → DeFiLlama yield pools
@@ -52,6 +55,7 @@ POST /api/chat { message, senderAddress, solanaAddress, history, slippage }
 
 ### Key data structures
 
+- `lib/pyth.ts` — Pyth Hermes REST wrapper (`getPythRates`, `getPythRate`, `toUSDRate`). **Never** replaces `priceCache.ts` — fills gaps only (FX, metals, equities). Feed IDs and cross-rate math documented in `docs/pyth-integration.md`.
 - `ParsedIntent` — `{ originChain, destinationChain, token, amount, destinationToken }`
 - `CHAIN_IDS` in `lib/chains.ts` — NLP alias map ("ethereum" → 1, "base" → 8453, etc.)
 - `CHAIN_AS_TOKEN` in `lib/parseIntent.ts` — chain names users say as tokens ("move 1 base to arb")
@@ -133,6 +137,16 @@ Never add LLM calls outside `lib/parseIntent.ts`.
 | DexScreener | Price fallback + token risk | none |
 | DeFiLlama | Yield pools | none |
 | Polymarket Gamma | Prediction markets | none |
+| Pyth Hermes (`hermes.pyth.network`) | FX rates, metals, equities | none |
+
+**Price source ownership** — never duplicate across sources:
+| Query type | Source |
+|---|---|
+| Crypto spot price | CoinGecko → DexScreener (`priceCache.ts`) |
+| 7-day sparkline | CoinGecko (`priceCache.ts`) |
+| FX conversion / rate | Pyth (`lib/pyth.ts`) |
+| Gold / silver | Pyth (`lib/pyth.ts`) |
+| Equity price | Pyth (`lib/pyth.ts`) |
 
 All external fetches use an 8s `AbortController` timeout via `fetchWithTimeout()`.
 
@@ -141,4 +155,5 @@ All external fetches use an 8s `AbortController` timeout via `fetchWithTimeout()
 ## Docs
 
 `docs/skopos-system.md` — authoritative architecture reference, update when anything structural changes.  
-`docs/skopos-core.md` — deeper architecture and routing waterfall detail.
+`docs/skopos-core.md` — deeper architecture and routing waterfall detail.  
+`docs/pyth-integration.md` — verified feed IDs, Hermes API endpoints, cross-rate math, staleness rules. Update when adding new Pyth feeds.

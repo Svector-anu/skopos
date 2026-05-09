@@ -17,6 +17,7 @@ import { getTopYields } from "@/lib/defillama";
 import { getTopMarkets, PolymarketEvent } from "@/lib/polymarket";
 import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "@/lib/polymarket-bridge";
 import { getPrice, getPriceChart } from "@/lib/priceCache";
+import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -373,6 +374,107 @@ export async function POST(req: NextRequest) {
       volume24h:         chart?.volume24h         ?? null,
       circulatingSupply: chart?.circulatingSupply ?? null,
       maxSupply:         chart?.maxSupply         ?? null,
+    });
+  }
+
+  // ── FX conversion / rate ──────────────────────────────────────────────────
+  if (queryType === "fx") {
+    const CURRENCY_NORM: Record<string, string> = {
+      euro: "EUR", euros: "EUR",
+      pound: "GBP", pounds: "GBP", sterling: "GBP",
+      yen: "JPY",
+      franc: "CHF", francs: "CHF",
+      dollar: "USD", dollars: "USD",
+      australian: "AUD",
+    };
+    const SUPPORTED = new Set(["EUR", "GBP", "AUD", "JPY", "CHF", "USD"]);
+    const FEED_FOR: Record<string, PythFeedKey> = {
+      EUR: "EUR/USD", GBP: "GBP/USD", AUD: "AUD/USD", JPY: "USD/JPY", CHF: "USD/CHF",
+    };
+
+    const norm = trimmed.toLowerCase().replace(
+      /\b(euro|euros|pound|pounds|sterling|yen|franc|francs|dollar|dollars|australian)\b/gi,
+      (w: string) => CURRENCY_NORM[w.toLowerCase()] ?? w,
+    );
+
+    const currencies = [...(norm.match(/\b(EUR|GBP|JPY|CHF|AUD|USD)\b/gi) ?? [])]
+      .map(c => c.toUpperCase())
+      .filter(c => SUPPORTED.has(c));
+    const from = currencies[0] ?? "EUR";
+    const to   = currencies[1] ?? "USD";
+
+    const amountMatch = trimmed.match(/[\d,]+(?:\.\d+)?/);
+    const amount = amountMatch ? parseFloat(amountMatch[0].replace(/,/g, "")) : null;
+
+    const keysNeeded = [...new Set([FEED_FOR[from], FEED_FOR[to]].filter(Boolean))] as PythFeedKey[];
+    const rates = await getPythRates(keysNeeded);
+
+    const fromUSD = toUSDRate(from, rates);
+    const toUSD_  = toUSDRate(to, rates);
+
+    if (!isFinite(fromUSD) || !isFinite(toUSD_)) {
+      return json({ type: "error", text: `FX rate unavailable for ${from}/${to} right now.` });
+    }
+
+    const rate = fromUSD / toUSD_;
+    const stale = keysNeeded.some(k => rates[k]?.stale);
+    const staleNote = stale ? " (markets closed — last quoted rate)" : "";
+    const fmt = (n: number, decimals = 4) =>
+      n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: decimals });
+
+    if (amount !== null && from !== to) {
+      const converted = amount * rate;
+      return json({
+        type: "text",
+        text: `${fmt(amount, 2)} ${from} = ${fmt(converted, 2)} ${to} (rate: 1 ${from} = ${fmt(rate)} ${to})${staleNote}`,
+      });
+    }
+
+    return json({
+      type: "text",
+      text: `1 ${from} = ${fmt(rate)} ${to}${staleNote}`,
+    });
+  }
+
+  // ── Metal spot prices ─────────────────────────────────────────────────────
+  if (queryType === "metal") {
+    const isSilver = /\b(silver|xag)\b/i.test(trimmed);
+    const key: PythFeedKey = isSilver ? "XAG/USD" : "XAU/USD";
+    const name  = isSilver ? "Silver" : "Gold";
+    const label = isSilver ? "XAG" : "XAU";
+
+    const rate = await getPythRate(key);
+    if (!rate || rate.price <= 0) {
+      return json({ type: "error", text: `Unable to fetch ${name} price right now.` });
+    }
+
+    const staleNote = rate.stale ? " (markets closed — last quoted price)" : "";
+    const fmt = rate.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return json({
+      type: "text",
+      text: `${name} (${label}/USD): $${fmt} / troy oz${staleNote}`,
+    });
+  }
+
+  // ── Equity prices ─────────────────────────────────────────────────────────
+  if (queryType === "equity") {
+    const isMSFT = /\b(msft|microsoft)\b/i.test(trimmed);
+    const key: PythFeedKey  = isMSFT ? "MSFT" : "AAPL";
+    const ticker = isMSFT ? "MSFT" : "AAPL";
+    const name   = isMSFT ? "Microsoft" : "Apple";
+
+    const rate = await getPythRate(key);
+    if (!rate || rate.price <= 0) {
+      return json({ type: "error", text: `Unable to fetch ${name} price right now.` });
+    }
+
+    const fmt = rate.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const staleNote = rate.stale
+      ? " (US markets closed — last close price)"
+      : " (live — US market hours)";
+    return json({
+      type: "text",
+      text: `${name} (${ticker}): $${fmt}${staleNote}`,
     });
   }
 
