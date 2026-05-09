@@ -77,7 +77,7 @@ function buildTokenAnalysisPrompt(risk: TokenRisk): string {
 }
 
 function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
-  const lines = pools.slice(0, 3).map(p => {
+  const lines = pools.filter(p => p.apy <= 10_000).slice(0, 3).map(p => {
     const base    = p.apyBase  ?? 0;
     const reward  = p.apyReward ?? 0;
     const total   = base + reward;
