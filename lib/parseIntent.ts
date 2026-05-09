@@ -525,6 +525,34 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
   }
 }
 
+const DECISION_ANALYSIS_SYSTEM = `You are a blunt DeFi risk analyst. Real on-chain market data has been provided to you.
+
+Rules — no exceptions:
+1. Give a clear directional opinion. Name who this setup structurally favors and who it disadvantages.
+2. Never hedge with "it could go either way", "it depends on your risk tolerance", or "do your own research."
+3. Use ONLY the numbers in the data provided. Never invent or recall figures from training data.
+4. 3–4 sentences max. Lead with the strongest signal in the data.
+5. Your final sentence must be exactly: "Not financial advice."`;
+
+export async function generateDecisionAnalysis(prompt: string): Promise<string> {
+  const groq = getGroq();
+  if (!groq) return "";
+  try {
+    const completion = await groq.chat.completions.create({
+      model:       "llama-3.1-8b-instant",
+      max_tokens:  200,
+      temperature: 0.4,
+      messages: [
+        { role: "system", content: DECISION_ANALYSIS_SYSTEM },
+        { role: "user",   content: prompt },
+      ],
+    });
+    return completion.choices[0]?.message?.content?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 const GROQ_INFORMATIONAL_SYSTEM = `You are Skopos, a DeFi knowledge assistant. Answer the user's question directly and accurately.
 
 STRICT RULES — no exceptions:

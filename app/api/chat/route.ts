@@ -6,14 +6,15 @@ import {
   parseRebalanceIntent,
   looksLikeRebalance,
   getGroqInformationalReply,
+  generateDecisionAnalysis,
   generateTxSummary,
   generateAddressSummary,
   classifyIntent,
   ParsedIntent,
 } from "@/lib/parseIntent";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
-import { scanToken } from "@/lib/dexscreener";
-import { getTopYields } from "@/lib/defillama";
+import { scanToken, type TokenRisk } from "@/lib/dexscreener";
+import { getTopYields, type YieldPool } from "@/lib/defillama";
 import { getTopMarkets, PolymarketEvent } from "@/lib/polymarket";
 import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "@/lib/polymarket-bridge";
 import { getPrice, getPriceChart } from "@/lib/priceCache";
@@ -40,6 +41,76 @@ const TOKEN_NAME_TO_SYMBOL: Record<string, string> = {
   maker: "MKR",     curve: "CRV",      lido: "LDO",
   synthetix: "SNX", megeth: "MEGA",    megaeth: "MEGA",
 };
+
+// ── decision analysis prompt builders ────────────────────────────────────────
+
+function buildTokenAnalysisPrompt(risk: TokenRisk): string {
+  const mcap = risk.marketCap ?? 0;
+  const liq  = risk.totalLiquidityUsd;
+  const fmtUsd = (n: number) =>
+    n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M` : `$${(n / 1_000).toFixed(1)}K`;
+
+  const liquidityPct   = mcap > 0 ? ((liq / mcap) * 100).toFixed(2) : "N/A";
+  const volToLiq       = liq > 0  ? (risk.volume24h / liq).toFixed(1) : "N/A";
+  const buys           = risk.topPair?.txns?.h24.buys  ?? 0;
+  const sells          = risk.topPair?.txns?.h24.sells ?? 0;
+  const buyPct         = (buys + sells) > 0 ? Math.round((buys / (buys + sells)) * 100) : null;
+  const pairAgeDays    = risk.topPair?.pairCreatedAt
+    ? Math.floor((Date.now() - risk.topPair.pairCreatedAt) / 86_400_000)
+    : null;
+
+  return [
+    `Token: ${risk.symbol} (${risk.name})`,
+    `Price: ${risk.priceUsd ? `$${risk.priceUsd}` : "N/A"}`,
+    `Market cap: ${mcap > 0 ? fmtUsd(mcap) : "N/A"}`,
+    `Liquidity: ${fmtUsd(liq)} (${liquidityPct}% of market cap)`,
+    `24h volume: ${fmtUsd(risk.volume24h)} (${volToLiq}× liquidity)`,
+    buyPct != null ? `Buy/sell split: ${buyPct}% buys, ${100 - buyPct}% sells` : null,
+    risk.priceChange24h != null
+      ? `24h price change: ${risk.priceChange24h >= 0 ? "+" : ""}${risk.priceChange24h.toFixed(1)}%`
+      : null,
+    `Risk score: ${risk.label} (${risk.score}/4)`,
+    risk.flags.length > 0 ? `Flags: ${risk.flags.join(", ")}` : null,
+    pairAgeDays != null ? `Pair age: ${pairAgeDays} days` : null,
+    `\nGive a directional take: who does this setup favor — buyers, sellers, or neither? What is the key risk?`,
+  ].filter(Boolean).join("\n");
+}
+
+function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
+  const lines = pools.slice(0, 3).map(p => {
+    const base    = p.apyBase  ?? 0;
+    const reward  = p.apyReward ?? 0;
+    const total   = base + reward;
+    const emPct   = total > 0 ? Math.round((reward / total) * 100) : 0;
+    const tvl     = p.tvlUsd >= 1_000_000
+      ? `$${(p.tvlUsd / 1_000_000).toFixed(0)}M` : `$${(p.tvlUsd / 1_000).toFixed(0)}K`;
+    return `${p.project} on ${p.chain}: ${p.apy.toFixed(1)}% APY (${base.toFixed(1)}% fees + ${reward.toFixed(1)}% emissions = ${emPct}% emission-funded) · TVL ${tvl}`;
+  }).join("\n");
+
+  return `${symbol} yield opportunities:\n${lines}\n\nClassify each as sustainable real yield or an emission-funded coordination game. Give a directional take on which pool structurally favors LPs vs. which extracts from them.`;
+}
+
+function buildBridgeAnalysisPrompt(
+  intent: ParsedIntent,
+  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null },
+): string {
+  const inputAmt  = parseFloat(intent.amount);
+  const outputAmt = parseFloat(route.outputAmount);
+  const sameToken = intent.token.toUpperCase() === intent.destinationToken.toUpperCase();
+  const efficiencyPct = sameToken && inputAmt > 0
+    ? ((outputAmt / inputAmt) * 100).toFixed(2)
+    : null;
+
+  return [
+    `Bridge: ${intent.amount} ${intent.token} from ${intent.originChain} → ${intent.destinationChain}, receiving ${intent.destinationToken}`,
+    `Adapter: ${route.tool}`,
+    `Output: ${route.outputAmount} ${intent.destinationToken}`,
+    efficiencyPct ? `Route efficiency: ${efficiencyPct}% (${(100 - parseFloat(efficiencyPct)).toFixed(2)}% lost)` : null,
+    route.feesUSD ? `Total fees: $${route.feesUSD}` : null,
+    route.gasUSD  ? `Gas: $${route.gasUSD}` : null,
+    `\nGive a directional take: is this route worth executing at these costs, or should the user reconsider? Flag anything worth knowing about the adapter or route.`,
+  ].filter(Boolean).join("\n");
+}
 
 // ── in-memory rate limiter (sliding window, per IP) ──────────────────────────
 const RATE_WINDOW_MS = 60_000; // 1 minute
@@ -825,7 +896,10 @@ export async function POST(req: NextRequest) {
         if (unknownMatch) {
           const query = unknownMatch[1].replace(/^\$/, "");
           const risk  = await scanToken(query);
-          if (risk) return json({ type: "token_risk", risk });
+          if (risk) {
+            const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk));
+            return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
+          }
         }
       }
     }
@@ -841,7 +915,8 @@ export async function POST(req: NextRequest) {
     const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress);
     if (!result.ok) return json({ type: "error", text: result.text });
     const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;
-    return json({ type: "quote", mode: "preview", quotedAt: Date.now(), intent: legIntent, route, approval, calldata, raw });
+    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(intent, route));
+    return json({ type: "quote", mode: "preview", quotedAt: Date.now(), intent: legIntent, route, approval, calldata, raw, ...(bridgeAnalysis && { analysis: bridgeAnalysis }) });
   }
 
   // ── token risk scanner ────────────────────────────────────────────────────
@@ -856,7 +931,10 @@ export async function POST(req: NextRequest) {
   if (riskMatch && /\b(scan|risk|safe|rug|analyze|legit)\b/i.test(trimmed)) {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
-    if (risk) return json({ type: "token_risk", risk });
+    if (risk) {
+      const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk));
+      return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
+    }
     return json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
   }
 
@@ -873,7 +951,8 @@ export async function POST(req: NextRequest) {
     if (pools.length === 0) {
       return json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
     }
-    return json({ type: "yield_pools", symbol, pools });
+    const analysis = await generateDecisionAnalysis(buildYieldAnalysisPrompt(symbol, pools));
+    return json({ type: "yield_pools", symbol, pools, ...(analysis && { analysis }) });
   }
 
   // Yield query with no recognized token — prompt for specifics

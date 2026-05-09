@@ -33,6 +33,7 @@ type QuoteResult = {
   route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null };
   approval: ApprovalInfo;
   calldata: { to: string; value: string; data: string } | null;
+  analysis?: string;
 };
 
 type TextResult      = { type: "text";      text: string; suggestions?: { label: string; command: string }[] };
@@ -53,6 +54,7 @@ type TokenRiskResult = {
     flags: string[]; topPair: { url: string; dexId: string; chainId: string } | null;
     sparkline?: number[];
   };
+  analysis?: string;
 };
 
 type YieldPool = {
@@ -60,7 +62,7 @@ type YieldPool = {
   tvlUsd: number; apy: number; apyBase: number | null; apyReward: number | null;
   apyMean30d: number | null; rewardTokens: string[] | null;
 };
-type YieldPoolsResult = { type: "yield_pools"; symbol: string; pools: YieldPool[] };
+type YieldPoolsResult = { type: "yield_pools"; symbol: string; pools: YieldPool[]; analysis?: string };
 
 type PolymarketMarket = {
   id: string; question: string; outcomes: string[]; outcomePrices: string[];
@@ -946,6 +948,11 @@ export default function AppPage() {
                             </span>
                           )}
                         </p>
+                        {msg.result.analysis && (
+                          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.5)", lineHeight: 1.7, margin: "8px 0 0" }}>
+                            {msg.result.analysis}
+                          </p>
+                        )}
                         <ErrorBoundary label="Quote failed to render.">
                           <QuoteDisplay
                             result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} slippage={slippage}
@@ -2414,6 +2421,14 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
           </a>
         </div>
       )}
+
+      {result.analysis && (
+        <div style={{ padding: "12px 18px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.55)", lineHeight: 1.7, margin: 0 }}>
+            {result.analysis}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -2495,6 +2510,14 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
           </div>
         ))}
       </div>
+
+      {result.analysis && (
+        <div style={{ padding: "12px 18px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.55)", lineHeight: 1.7, margin: 0 }}>
+            {result.analysis}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
