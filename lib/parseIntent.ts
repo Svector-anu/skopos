@@ -31,10 +31,10 @@ export function classifyIntent(input: string): IntentType {
 
   // Execution intent takes priority — "how much to swap 1 ETH" is a quote request, not a price query
   if (hasExecVerb && hasAmount) return "execution";
-  // Explicit price keywords with a known token always resolve to price
-  if (hasPriceKeyword && hasKnownToken) return "price";
-  // Opinion signals override the token-only fallback ("should i buy eth" → informational, not price)
+  // Opinion signals beat price keywords — "is ETH worth buying" has "worth" (price kw) + opinion signal
   if (hasOpinionSignal) return "informational";
+  // Explicit price keywords with a known token resolve to price
+  if (hasPriceKeyword && hasKnownToken) return "price";
   if (hasYieldKeyword) return "yield";
   if (hasPredictionKeyword) return "prediction";
 

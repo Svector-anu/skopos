@@ -531,7 +531,7 @@ export async function POST(req: NextRequest) {
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Portfolio (connected wallet)
-  if (/\b(my\s+)?(portfolio|wallet|balances?|holdings?)\b/i.test(trimmed)) {
+  if (/\b(my\s+)?(portfolio|wallet|balances?|holdings)\b/i.test(trimmed)) {
     if (!senderAddress) {
       return json({ type: "text", text: "Connect your wallet first — I'll fetch your live balances across all supported chains." });
     }
@@ -801,6 +801,21 @@ export async function POST(req: NextRequest) {
 
   // ── informational — handled before parseIntent to avoid a wasted Groq call ──
   if (queryType === "informational") {
+    // Trading-opinion + known token → fetch live price inline instead of redirecting
+    const OPINION_RE = /\b(long|short|buy|sell|hold|good\s+time|should\s+i|worth\s+(?:buying|holding)|time\s+to\s+(?:buy|sell|long|short))\b/i;
+    const tokenMatch = trimmed.match(PRICE_TOKEN_RE);
+    if (OPINION_RE.test(trimmed) && tokenMatch) {
+      const rawToken  = tokenMatch[1].toLowerCase();
+      const symbol    = TOKEN_NAME_TO_SYMBOL[rawToken] ?? rawToken.toUpperCase();
+      const priceResult = await getPrice(symbol);
+      if (priceResult) {
+        const fmt    = priceResult.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const change = priceResult.change24h !== null
+          ? ` (${priceResult.change24h >= 0 ? "+" : ""}${priceResult.change24h.toFixed(2)}% 24h)`
+          : "";
+        return json({ type: "text", text: `I can't give trading advice, but here's the data: ${symbol} is currently $${fmt}${change}.` });
+      }
+    }
     const text = await getGroqInformationalReply(message, history);
     return json({ type: "text", text });
   }
