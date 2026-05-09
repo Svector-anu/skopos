@@ -1,5 +1,8 @@
 const HERMES    = "https://hermes.pyth.network";
 const TIMEOUT_MS = 8_000;
+const TTL_MS     = 60_000;
+
+const pythCache = new Map<string, { data: PythPrice; fetchedAt: number }>();
 
 // Feed IDs verified live against Hermes API, May 2026.
 // All FX/metal/equity feeds are quoted against USD.
@@ -53,12 +56,27 @@ export async function getPythRates(
 ): Promise<Partial<Record<PythFeedKey, PythPrice>>> {
   if (keys.length === 0) return {};
 
-  const qs  = keys.map(k => `ids[]=${PYTH_FEEDS[k]}`).join("&");
+  const now       = Date.now();
+  const result: Partial<Record<PythFeedKey, PythPrice>> = {};
+  const toFetch: PythFeedKey[] = [];
+
+  for (const key of keys) {
+    const cached = pythCache.get(key);
+    if (cached && now - cached.fetchedAt < TTL_MS) {
+      result[key] = cached.data;
+    } else {
+      toFetch.push(key);
+    }
+  }
+
+  if (toFetch.length === 0) return result;
+
+  const qs  = toFetch.map(k => `ids[]=${PYTH_FEEDS[k]}`).join("&");
   const url = `${HERMES}/v2/updates/price/latest?parsed=true&ignore_invalid_price_ids=true&${qs}`;
 
   try {
     const res = await fetchWithTimeout(url);
-    if (!res.ok) return {};
+    if (!res.ok) return result;
 
     const data = await res.json() as {
       parsed: Array<{ id: string; price: { price: string; expo: number; publish_time: number } }>;
@@ -67,23 +85,24 @@ export async function getPythRates(
     const byId: Record<string, typeof data.parsed[0]> = {};
     for (const p of data.parsed) byId[p.id] = p;
 
-    const result: Partial<Record<PythFeedKey, PythPrice>> = {};
-    const now = Math.floor(Date.now() / 1000);
+    const nowSec = Math.floor(now / 1000);
 
-    for (const key of keys) {
+    for (const key of toFetch) {
       const raw = byId[PYTH_FEEDS[key].slice(2)]; // strip 0x
       if (!raw) continue;
       const price = parseInt(raw.price.price) * Math.pow(10, raw.price.expo);
-      result[key] = {
+      const entry: PythPrice = {
         price,
         publishTime: raw.price.publish_time,
-        stale:       now - raw.price.publish_time > 14_400, // 4 h — FX/metals/equities are off on weekends
+        stale:       nowSec - raw.price.publish_time > 14_400,
       };
+      pythCache.set(key, { data: entry, fetchedAt: now });
+      result[key] = entry;
     }
 
     return result;
   } catch {
-    return {};
+    return result;
   }
 }
 
