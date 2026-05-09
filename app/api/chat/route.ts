@@ -889,9 +889,11 @@ export async function POST(req: NextRequest) {
           return json({ type: "text", text: `I can't give trading advice, but here's the data: ${symbol} is currently $${fmt}${change}.` });
         }
       } else {
-        // Unknown token — extract from "buy/sell/long/short/hold X" and run DexScreener scan
+        // Unknown token — extract from "buy BONK" (verb-first) or "is BONK a good buy" (noun-first)
         const unknownMatch = trimmed.match(
           /(?:buy|sell|long|short|hold(?:ing)?|invest\s+in)\s+(\$?[a-z]{2,15})\b/i
+        ) ?? trimmed.match(
+          /\b(?:is|should\s+i)\s+(\$?[a-z]{2,15})\b/i
         );
         if (unknownMatch) {
           const query = unknownMatch[1].replace(/^\$/, "");
