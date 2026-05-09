@@ -801,21 +801,35 @@ export async function POST(req: NextRequest) {
 
   // ── informational — handled before parseIntent to avoid a wasted Groq call ──
   if (queryType === "informational") {
-    // Trading-opinion + known token → fetch live price inline instead of redirecting
     const OPINION_RE = /\b(long|short|buy|sell|hold|good\s+time|should\s+i|worth\s+(?:buying|holding)|time\s+to\s+(?:buy|sell|long|short))\b/i;
     const tokenMatch = trimmed.match(PRICE_TOKEN_RE);
-    if (OPINION_RE.test(trimmed) && tokenMatch) {
-      const rawToken  = tokenMatch[1].toLowerCase();
-      const symbol    = TOKEN_NAME_TO_SYMBOL[rawToken] ?? rawToken.toUpperCase();
-      const priceResult = await getPrice(symbol);
-      if (priceResult) {
-        const fmt    = priceResult.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const change = priceResult.change24h !== null
-          ? ` (${priceResult.change24h >= 0 ? "+" : ""}${priceResult.change24h.toFixed(2)}% 24h)`
-          : "";
-        return json({ type: "text", text: `I can't give trading advice, but here's the data: ${symbol} is currently $${fmt}${change}.` });
+
+    if (OPINION_RE.test(trimmed)) {
+      if (tokenMatch) {
+        // Known token (ETH, BTC…) — live price inline, no Groq needed
+        const rawToken    = tokenMatch[1].toLowerCase();
+        const symbol      = TOKEN_NAME_TO_SYMBOL[rawToken] ?? rawToken.toUpperCase();
+        const priceResult = await getPrice(symbol);
+        if (priceResult) {
+          const fmt    = priceResult.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const change = priceResult.change24h !== null
+            ? ` (${priceResult.change24h >= 0 ? "+" : ""}${priceResult.change24h.toFixed(2)}% 24h)`
+            : "";
+          return json({ type: "text", text: `I can't give trading advice, but here's the data: ${symbol} is currently $${fmt}${change}.` });
+        }
+      } else {
+        // Unknown token — extract from "buy/sell/long/short/hold X" and run DexScreener scan
+        const unknownMatch = trimmed.match(
+          /(?:buy|sell|long|short|hold(?:ing)?|invest\s+in)\s+(\$?[a-z]{2,15})\b/i
+        );
+        if (unknownMatch) {
+          const query = unknownMatch[1].replace(/^\$/, "");
+          const risk  = await scanToken(query);
+          if (risk) return json({ type: "token_risk", risk });
+        }
       }
     }
+
     const text = await getGroqInformationalReply(message, history);
     return json({ type: "text", text });
   }
