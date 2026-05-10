@@ -949,7 +949,7 @@ export default function AppPage() {
                           )}
                         </p>
                         {msg.result.analysis && (
-                          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.5)", lineHeight: 1.7, margin: "8px 0 0" }}>
+                          <p style={{ ...MONO, fontSize: "0.68rem", color: T.textMuted, lineHeight: 1.7, margin: "8px 0 0" }}>
                             {msg.result.analysis}
                           </p>
                         )}
@@ -1598,10 +1598,10 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
       )}
 
       {/* Summary card */}
-      <div style={{ margin: "0 14px 14px", padding: "12px 14px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12 }}>
+      <div style={{ margin: "0 14px 14px", padding: "12px 14px", background: "var(--card-bg)", border: "1px solid var(--card-border-faint)", borderRadius: 12 }}>
         <p style={{ ...MONO, fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.25))", margin: "0 0 9px" }}>SUMMARY</p>
         {summaryRows.map(({ label, value }, i) => (
-          <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: i > 0 ? "1px solid rgba(255,255,255,0.04)" : undefined }}>
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: i > 0 ? "1px solid var(--card-bg)" : undefined }}>
             <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{label}</span>
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{value}</span>
           </div>
@@ -1639,9 +1639,9 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
               style={{
                 ...MONO, padding: "11px 14px", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.03em",
                 background: "none",
-                border: `1px solid ${isExpired ? "rgba(245,184,0,0.35)" : "rgba(255,255,255,0.09)"}`,
+                border: `1px solid ${isExpired ? "rgba(245,184,0,0.35)" : "var(--card-border)"}`,
                 borderRadius: 10,
-                color: isExpired ? "rgba(245,184,0,0.85)" : "rgba(255,255,255,0.35)",
+                color: isExpired ? "rgba(245,184,0,0.85)" : "var(--card-text-dim)",
                 cursor: isRefreshing || !onRefresh ? "not-allowed" : "pointer", flexShrink: 0,
               }}
               className={isRefreshing ? "animate-pulse" : ""}
@@ -1666,7 +1666,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
               </button>
             ) : (
               <button onClick={execute} disabled={!calldata || isSending || isExpired}
-                style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: calldata && !isExpired ? "#F5B800" : "rgba(255,255,255,0.05)", border: calldata && !isExpired ? "none" : "1px solid rgba(255,255,255,0.09)", borderRadius: 10, color: calldata && !isExpired ? "#000" : "rgba(255,255,255,0.22)", cursor: calldata && !isSending && !isExpired ? "pointer" : "not-allowed" }}>
+                style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: calldata && !isExpired ? "#F5B800" : "var(--card-surface)", border: calldata && !isExpired ? "none" : "1px solid var(--card-border)", borderRadius: 10, color: calldata && !isExpired ? "#000" : "var(--card-text-faint)", cursor: calldata && !isSending && !isExpired ? "pointer" : "not-allowed" }}>
                 {isSending ? "Confirm in wallet…" : isExpired ? "Quote expired — refresh" : "Execute →"}
               </button>
             )}
@@ -2184,7 +2184,7 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
 
   return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 16, overflow: "hidden", maxWidth: 420, background: "var(--card-container-bg, #0D0D0D)" }}>
+    <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 420, background: "var(--card-container-bg, #0D0D0D)" }}>
 
       {/* Header — circular icon + name/ticker left · price + change right */}
       <div style={{ padding: "16px 18px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -2193,13 +2193,13 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src={image} alt={symbol} width={40} height={40} style={{ borderRadius: "50%", flexShrink: 0 }} />
           ) : (
-            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,0.08)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ ...MONO, fontSize: "0.65rem", color: "rgba(255,255,255,0.5)" }}>{symbol.slice(0, 3)}</span>
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--card-surface)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim)" }}>{symbol.slice(0, 3)}</span>
             </div>
           )}
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--card-text, #fff)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ?? symbol}</p>
-            <p style={{ ...MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.38)", margin: "2px 0 0" }}>{symbol}</p>
+            <p style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-dim)", margin: "2px 0 0" }}>{symbol}</p>
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -2221,7 +2221,7 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
 
       {/* 7-day no-fill line chart with hover crosshair */}
       {pts.length >= 2 && (
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ borderTop: "1px solid var(--card-border-faint)" }}>
           <svg
             width="100%"
             viewBox={`0 0 ${W} ${H + 22}`}
@@ -2232,12 +2232,12 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
             <path d={line} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             {hoverPt && (
               <>
-                <line x1={hoverPt.x} y1={PAD_Y} x2={hoverPt.x} y2={H - PAD_Y} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="3,3" />
-                <circle cx={hoverPt.x} cy={hoverPt.y} r={3.5} fill={lineColor} stroke="#0D0D0D" strokeWidth="2" />
+                <line x1={hoverPt.x} y1={PAD_Y} x2={hoverPt.x} y2={H - PAD_Y} style={{ stroke: "var(--card-text-faint)" }} strokeWidth="1" strokeDasharray="3,3" />
+                <circle cx={hoverPt.x} cy={hoverPt.y} r={3.5} fill={lineColor} style={{ stroke: "var(--card-container-bg)" }} strokeWidth="2" />
               </>
             )}
             {dayLabels.map(({ x, label }) => (
-              <text key={label} x={Math.min(Math.max(x, 16), W - 16)} y={H + 17} textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.22)" fontFamily="monospace">{label}</text>
+              <text key={label} x={Math.min(Math.max(x, 16), W - 16)} y={H + 17} textAnchor="middle" fontSize="9" style={{ fill: "var(--card-text-faint)" }} fontFamily="monospace">{label}</text>
             ))}
           </svg>
         </div>
@@ -2245,10 +2245,10 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
 
       {/* Stats grid — 2 columns */}
       {stats.length > 0 && (
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: "rgba(255,255,255,0.04)" }}>
+        <div style={{ borderTop: "1px solid var(--card-border-faint)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: "var(--card-border-faint)" }}>
           {stats.map(([label, val]) => (
             <div key={label} style={{ padding: "10px 14px", background: "var(--card-container-bg, #0D0D0D)" }}>
-              <p style={{ ...MONO, fontSize: "0.57rem", color: "rgba(255,255,255,0.28)", margin: "0 0 3px", letterSpacing: "0.07em", textTransform: "uppercase" }}>{label}</p>
+              <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint)", margin: "0 0 3px", letterSpacing: "0.07em", textTransform: "uppercase" }}>{label}</p>
               <p style={{ ...MONO, fontSize: "0.82rem", color: "var(--card-text, #fff)", margin: 0 }}>{val}</p>
             </div>
           ))}
@@ -2256,7 +2256,7 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
       )}
 
       {/* Buy / Sell buttons — submit to chat, backend responds with swap suggestions */}
-      <div style={{ padding: "12px 16px", display: "flex", gap: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <div style={{ padding: "12px 16px", display: "flex", gap: 8, borderTop: "1px solid var(--card-border-faint)" }}>
         <button
           onClick={() => {
             const chain = detectedChain ?? "ethereum";
@@ -2272,7 +2272,7 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
             const msg = impliedChain ? `sell ${symbol} on ${impliedChain}` : `sell ${symbol}`;
             onSubmit(msg);
           }}
-          style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.14)", background: "transparent", color: "rgba(255,255,255,0.65)", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer" }}
+          style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid var(--card-border)", background: "transparent", color: "var(--card-text-muted)", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer" }}
         >
           Sell {symbol}
         </button>
@@ -2339,7 +2339,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
   };
 
   return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
+    <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
 
       {/* Header: name + risk badge */}
       <div style={{ padding: "14px 18px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -2374,13 +2374,13 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
 
       {/* Sparkline chart */}
       {risk.sparkline && risk.sparkline.length > 2 && (
-        <div style={{ padding: "0 0 0 0", borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ padding: "0 0 0 0", borderTop: "1px solid var(--card-border-faint)", borderBottom: "1px solid var(--card-border-faint)" }}>
           <Sparkline prices={risk.sparkline} positive={changePositive} width={400} height={72} />
         </div>
       )}
 
       {/* Stats grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: "rgba(255,255,255,0.05)", margin: "0" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: "var(--card-surface)", margin: "0" }}>
         {[
           ["Market Cap",  risk.marketCap ? fmt(risk.marketCap) : "—"],
           ["Vol (24h)",   fmt(risk.volume24h)],
@@ -2411,11 +2411,11 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
 
       {/* Footer link */}
       {risk.topPair?.url && (
-        <div style={{ padding: "10px 18px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ padding: "10px 18px 14px", borderTop: "1px solid var(--card-border-faint)" }}>
           <a href={risk.topPair.url} target="_blank" rel="noopener noreferrer"
-            style={{ ...MONO, fontSize: "0.64rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))", textDecoration: "none" }}
-            onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
-            onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.4)")}
+            style={{ ...MONO, fontSize: "0.64rem", color: "var(--card-text-dim)", textDecoration: "none" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "var(--card-text-muted)")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--card-text-dim)")}
           >
             view on dexscreener · {risk.topPair.dexId} · {risk.topPair.chainId} ↗
           </a>
@@ -2423,8 +2423,8 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
       )}
 
       {result.analysis && (
-        <div style={{ padding: "12px 18px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.55)", lineHeight: 1.7, margin: 0 }}>
+        <div style={{ padding: "12px 18px 14px", borderTop: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))", lineHeight: 1.7, margin: 0 }}>
             {result.analysis}
           </p>
         </div>
@@ -2512,8 +2512,8 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
       </div>
 
       {result.analysis && (
-        <div style={{ padding: "12px 18px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-          <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(255,255,255,0.55)", lineHeight: 1.7, margin: 0 }}>
+        <div style={{ padding: "12px 18px 14px", borderTop: "1px solid var(--card-border-faint)" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-muted)", lineHeight: 1.7, margin: 0 }}>
             {result.analysis}
           </p>
         </div>
