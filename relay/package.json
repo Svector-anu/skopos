@@ -1,0 +1,23 @@
+{
+  "name": "skopos-vara-relay",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "tsx scripts/test-request.ts"
+  },
+  "dependencies": {
+    "@gear-js/api": "^0.45.0",
+    "better-sqlite3": "^12.10.0",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.6"
+  }
+}

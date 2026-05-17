@@ -1,0 +1,20 @@
+[package]
+name = "skopos-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "skopos_bridge"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sails-rs = { version = "1.0.0-beta.5", features = ["gstd"] }
+gstd     = { version = "1.10.0", features = ["debug"] }
+keccak-const = "0.2.0"
+
+[build-dependencies]
+gear-wasm-builder = "1.10.0"
+
+[profile.release]
+lto       = true
+opt-level = "s"
