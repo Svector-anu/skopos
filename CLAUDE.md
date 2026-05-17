@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-pnpm dev        # Start dev server (Next.js 16 / Turbopack)
+pnpm dev        # Start dev server (Next.js / Turbopack)
 pnpm build      # Production build
 pnpm lint       # ESLint
 ```
@@ -22,40 +22,57 @@ No test suite — verification is manual against the chat UI.
 
 **Skopos** is a cross-chain DeFi copilot deployed at https://www.tryskopos.xyz (Vercel, auto-deploys from `main`).
 
-### Request flow
+### LLM stack
 
-```
-POST /api/chat { message, senderAddress, solanaAddress, history, slippage }
-  → rate limiter (30 req/min/IP, in-memory per serverless instance)
-  → special handlers short-circuit (ENS, address, tx hash, portfolio, rebalance)
-  → missing-source guard  ← hard error, no LLM
-  → classifyIntent()      ← pure regex, no LLM
-      "fx"          → Pyth Hermes (EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD)
-      "metal"       → Pyth Hermes (XAU/USD, XAG/USD)
-      "equity"      → Pyth Hermes (AAPL, MSFT)
-      "price"       → priceCache (CoinGecko → DexScreener fallback)
-      "execution"   → parseIntent() → resolveLeg() → Delora quote
-      "informational" → Groq chat reply
-      "analysis"    → DexScreener token risk scan
-      "yield"       → DeFiLlama yield pools
-      "prediction"  → Polymarket markets
-      "unknown"     → Groq suggestions + streaming fallback
-```
+All LLM calls use **Groq** (`groq-sdk`, model `llama-3.1-8b-instant`). The `@anthropic-ai/sdk` package is installed but not imported or used anywhere — it is a leftover dependency. Do not add Claude/Anthropic API calls.
 
-### Intent parsing (two-layer)
+### Request handler — 3 layers (`app/api/chat/route.ts`)
 
-`lib/parseIntent.ts` has two layers chained via `parseIntent()`:
+The POST handler executes checks in strict order. Each layer short-circuits on match — later layers never run.
 
+**Pre-layer: fast-paths** (run before structural checks)
+- Guided buy/sell (`buy TOKEN on CHAIN` / `sell TOKEN on CHAIN`) → conversational prompt asking for amount
+- Price fast-path (`queryType === "price"`) → CoinGecko/DexScreener price card
+- FX / Metal / Equity → Pyth Hermes rate
+
+**Layer 1 — STRUCTURAL** (format-based, no intent classification, no wallet required)
+- ENS name (`*.eth`) → resolveENS → address card
+- Embedded `0x40` address in sentence → address card
+- `0x64` tx hash → tx card
+- Bare `0x40` address → address card
+
+**Layer 2 — ACCOUNT** (wallet-state queries, runs before `classifyIntent`)
+- Portfolio keywords → lookupAddress → address card
+- Polymarket balance keywords → pUSD balance check
+- Deposit address embedded + balance keywords → deposit status
+
+**Layer 3 — INTENT** (`classifyIntent()` → specialized tool → LLM fallback)
+- `META_RE` security boundary fires first — blocks model-identity questions before any LLM path
+- Multi-leg rebalance check (`looksLikeRebalance`) runs before single-leg parse
+- Missing-source guard fires before `parseIntent` to prevent Groq hallucinating a source chain
+- Remaining intent types: `execution` → `resolveLeg()` + Delora quote; `informational` → Groq; `analysis` → DexScreener scan; `yield` → DeFiLlama; `prediction` → Polymarket
+- Final fallback: `getGroqInformationalReply`
+
+### Intent parsing (two-layer, `lib/parseIntent.ts`)
+
+`parseIntent()` chains two layers:
 1. **`regexParse()`** — 8 ordered patterns (pCross → p1 → p2 → p5Cross → p3 → p6 → p4 → p5). Covers ~90% of inputs, instant, free.
-2. **`groqParseIntent()`** — Groq `llama-3.1-8b-instant` JSON-mode fallback. Only fires if regex returns null **or** the regex result contains an unresolvable chain name.
+2. **`groqParseIntent()`** — Groq JSON-mode fallback. Fires only when regex returns null **or** the regex result contains an unresolvable chain name.
 
-`parseIntent()` applies a chain-validation gate: if `resolveChainId()` fails for either origin or destination from the regex result, it falls through to Groq instead of returning the bad result.
+`classifyIntent()` is pure regex — never calls an LLM.
 
-`classifyIntent()` is a pure-regex classifier — it never calls an LLM.
+### Decision analysis (`generateDecisionAnalysis`)
+
+Prompt builders for token risk, yield, and bridge quotes live in `route.ts` (`buildTokenAnalysisPrompt`, `buildYieldAnalysisPrompt`, `buildBridgeAnalysisPrompt`). The actual Groq call (`generateDecisionAnalysis`) lives in `parseIntent.ts`. Analysis is additive — `...(analysis && { analysis })` — never breaks existing rendering when Groq fails.
+
+APY outlier filter: `pools.filter(p => p.apy <= 10_000)` before passing to yield prompt — dead incentive pools can show nonsense APYs.
+
+### Groq output safety
+
+`redactLiveNumbers()` strips price and yield claims from Groq text responses. Applied to: `getGroqInformationalReply`, `getGroqReply`. **Not** applied to `streamSuggestion` (known gap).
 
 ### Key data structures
 
-- `lib/pyth.ts` — Pyth Hermes REST wrapper (`getPythRates`, `getPythRate`, `toUSDRate`). **Never** replaces `priceCache.ts` — fills gaps only (FX, metals, equities). Feed IDs and cross-rate math documented in `docs/pyth-integration.md`.
 - `ParsedIntent` — `{ originChain, destinationChain, token, amount, destinationToken }`
 - `CHAIN_IDS` in `lib/chains.ts` — NLP alias map ("ethereum" → 1, "base" → 8453, etc.)
 - `CHAIN_AS_TOKEN` in `lib/parseIntent.ts` — chain names users say as tokens ("move 1 base to arb")
@@ -99,6 +116,18 @@ Ghost session (authenticated but no EVM address): `logout().then(() => login())`
 
 ---
 
+## CSS theming
+
+`globals.css` defines `--card-*` CSS variables in `:root` (dark) with `[data-theme="light"]` overrides. All card components (standalone, no access to the `T` theme object) must use these vars — never hardcode `rgba(255,255,255,...)`. SVG presentation attributes do not resolve CSS variables; use the React `style` prop instead (`style={{ stroke: "var(--card-text-faint)" }}`).
+
+---
+
+## Orphaned exports
+
+`lib/commands.ts` and the `buildSuggestions` / `streamSuggestion` / `getSuggestion` functions in `lib/parseIntent.ts` are exported but not called anywhere in the current codebase. Do not add calls without understanding the intent.
+
+---
+
 ## Environment Variables
 
 ```
@@ -115,14 +144,11 @@ NEXT_PUBLIC_SOLANA_RPC   # optional
 
 ## LLM Usage Rules
 
-All LLM calls use Groq `llama-3.1-8b-instant`.
-
 - `classifyIntent` and `regexParse` — **no LLM, pure regex**
 - `groqParseIntent` — JSON mode, temp=0, guarded by `chainMentioned` sanity check
-- `getGroqInformationalReply` / `getGroqReply` — guarded by `redactLiveNumbers` (strips price claims)
+- `getGroqInformationalReply` / `getGroqReply` — guarded by `redactLiveNumbers`
 - `streamSuggestion` — streaming fallback, **no** `redactLiveNumbers` (known gap)
-
-Never add LLM calls outside `lib/parseIntent.ts`.
+- Prompt builders live in `route.ts`; Groq calls must stay in `lib/parseIntent.ts`
 
 ---
 
@@ -154,6 +180,6 @@ All external fetches use an 8s `AbortController` timeout via `fetchWithTimeout()
 
 ## Docs
 
-`docs/skopos-system.md` — authoritative architecture reference, update when anything structural changes.  
-`docs/skopos-core.md` — deeper architecture and routing waterfall detail.  
+`docs/skopos-system.md` — authoritative architecture reference, update when anything structural changes.
+`docs/skopos-core.md` — deeper architecture and routing waterfall detail.
 `docs/pyth-integration.md` — verified feed IDs, Hermes API endpoints, cross-rate math, staleness rules. Update when adding new Pyth feeds.
