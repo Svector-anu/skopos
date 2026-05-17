@@ -7,12 +7,14 @@ import type { BridgePayload, RequestPendingEvent } from "./types.js";
 // The SailsMessageHeader:
 //   [0x47, 0x4D][version=1][hlen=16][INTERFACE_ID:8][entry_id:u16LE][route_idx:u8][reserved=0]
 //
-// INTERFACE_ID = 55a712416e41af40
+// INTERFACE_ID = 55c109cd0059cf2c (all 9 methods in alphabetical order)
 // #[event] macro sorts variants alphabetically: RequestFulfilled=0, RequestPending=1
-// Service methods sorted alphabetically: FulfillRequest=0, NextId=1, QueryPending=2, Relay=3, RequestData=4
+// Service methods (9 total) sorted alphabetically by lowercase route:
+//   FeePlanks=0, FulfillRequest=1, NextId=2, QueryPending=3, Relay=4,
+//   RequestData=5, SetFee=6, SetRelay=7, Withdraw=8
 
 const GM_MAGIC = [0x47, 0x4d];
-const INTERFACE_ID = Uint8Array.from([0x55, 0xa7, 0x12, 0x41, 0x6e, 0x41, 0xaf, 0x40]);
+const INTERFACE_ID = Uint8Array.from([0x55, 0xc1, 0x09, 0xcd, 0x00, 0x59, 0xcf, 0x2c]);
 const REQUEST_PENDING_ENTRY_ID = 1; // alphabetical: RequestFulfilled=0, RequestPending=1
 const BRIDGE_ROUTE_IDX = 1;
 const HEADER_LEN = 16;

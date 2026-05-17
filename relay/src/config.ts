@@ -8,6 +8,7 @@ export const config = {
   rpcWs: process.env.VARA_RPC_WS ?? "ws://127.0.0.1:9944",
   bridgeProgramId: required("BRIDGE_PROGRAM_ID"),
   relayMnemonic: process.env.RELAY_MNEMONIC ?? "//Alice",
+  relayWalletJson: process.env.RELAY_WALLET_JSON ?? null,
   skoposBaseUrl: process.env.SKOPOS_BASE_URL ?? "http://localhost:3000",
   relaySecret: process.env.RELAY_SECRET ?? "local-dev-secret",
   dbPath: process.env.RELAY_DB_PATH ?? "./relay.db",

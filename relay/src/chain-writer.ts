@@ -1,17 +1,33 @@
 import { GearApi, GearKeyring } from "@gear-js/api";
+import { Keyring } from "@polkadot/keyring";
+import type { KeyringPair } from "@polkadot/keyring/types";
+import { readFileSync } from "node:fs";
 import { config } from "./config.js";
 import type { BridgeResult } from "./types.js";
 
+async function loadRelayKeyring(): Promise<KeyringPair> {
+  if (config.relayWalletJson) {
+    const path = config.relayWalletJson.replace(/^~/, process.env.HOME ?? "");
+    const json = JSON.parse(readFileSync(path, "utf8"));
+    const kr = new Keyring({ type: "sr25519" });
+    const pair = kr.addFromJson(json);
+    pair.unlock("");
+    return pair;
+  }
+  return GearKeyring.fromMnemonic(config.relayMnemonic);
+}
+
 // Sails 1.0.0-beta.5 binary message header constants for BridgeService.
 // INTERFACE_ID = first 8 bytes of keccak256 of (all method hashes + BridgeEvent hash).
-// Computed by scripts/compute-interface-id.ts.
+// Computed by scripts/compute-interface-id.ts — includes all 9 exported methods.
 // Methods sorted alphabetically by lowercase route name (sails-macros-core):
-//   FulfillRequest=0, NextId=1, QueryPending=2, Relay=3, RequestData=4
+//   FeePlanks=0, FulfillRequest=1, NextId=2, QueryPending=3, Relay=4,
+//   RequestData=5, SetFee=6, SetRelay=7, Withdraw=8
 // Events sorted alphabetically: RequestFulfilled=0, RequestPending=1
-const INTERFACE_ID = Uint8Array.from([0x55, 0xa7, 0x12, 0x41, 0x6e, 0x41, 0xaf, 0x40]);
-const FULFILL_REQUEST_ENTRY_ID = 0;  // alphabetical: FulfillRequest is first
-const QUERY_PENDING_ENTRY_ID   = 2;  // alphabetical: QueryPending is third
-const BRIDGE_ROUTE_IDX = 1;          // first (and only) service in the program
+const INTERFACE_ID = Uint8Array.from([0x55, 0xc1, 0x09, 0xcd, 0x00, 0x59, 0xcf, 0x2c]);
+const FULFILL_REQUEST_ENTRY_ID = 1;  // alphabetical index among 9 methods
+const QUERY_PENDING_ENTRY_ID   = 3;  // alphabetical index among 9 methods
+const BRIDGE_ROUTE_IDX = 1;          // route IDs start at 1 (sails-idl-meta)
 
 export async function fulfillRequest(
   api: GearApi,
@@ -19,7 +35,7 @@ export async function fulfillRequest(
   requestId: bigint,
   result: BridgeResult,
 ): Promise<void> {
-  const keyring = await GearKeyring.fromMnemonic(config.relayMnemonic);
+  const keyring = await loadRelayKeyring();
   const resultJson = JSON.stringify(result);
   const payload = encodeFulfillRequest(requestId, resultJson);
 
@@ -60,7 +76,7 @@ export async function queryPending(
 ): Promise<boolean> {
   const payload = encodeQueryPending(requestId);
   try {
-    const keyring = await GearKeyring.fromMnemonic(config.relayMnemonic);
+    const keyring = await loadRelayKeyring();
     const reply = await api.message.calculateReply({
       destination: bridgeProgramId as `0x${string}`,
       origin: keyring.address as `0x${string}`,

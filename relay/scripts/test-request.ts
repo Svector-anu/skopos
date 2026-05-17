@@ -13,13 +13,14 @@ const RPC_WS = process.env.VARA_RPC_WS ?? "ws://127.0.0.1:9944";
 const BRIDGE_PROGRAM_ID = process.env.BRIDGE_PROGRAM_ID!;
 if (!BRIDGE_PROGRAM_ID) throw new Error("BRIDGE_PROGRAM_ID required");
 
-// Sails 1.0.0-beta.5 constants for BridgeService.
+// Sails 1.0.0-beta.5 constants for BridgeService — all 9 methods included.
 // Methods sorted alphabetically by lowercase route name:
-//   FulfillRequest=0, NextId=1, QueryPending=2, Relay=3, RequestData=4
+//   FeePlanks=0, FulfillRequest=1, NextId=2, QueryPending=3, Relay=4,
+//   RequestData=5, SetFee=6, SetRelay=7, Withdraw=8
 // Events sorted alphabetically: RequestFulfilled=0, RequestPending=1
-const INTERFACE_ID = Uint8Array.from([0x55, 0xa7, 0x12, 0x41, 0x6e, 0x41, 0xaf, 0x40]);
-const REQUEST_DATA_ENTRY_ID = 4; // alphabetical: RequestData is last
-const BRIDGE_ROUTE_IDX = 1;     // first (and only) service in the program
+const INTERFACE_ID = Uint8Array.from([0x55, 0xc1, 0x09, 0xcd, 0x00, 0x59, 0xcf, 0x2c]);
+const REQUEST_DATA_ENTRY_ID = 5; // alphabetical index among 9 methods
+const BRIDGE_ROUTE_IDX = 1;     // route IDs start at 1 (sails-idl-meta)
 
 const QUERY_PAYLOAD = JSON.stringify({
   v: "1",
