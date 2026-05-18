@@ -67,10 +67,14 @@ export function decodeRequestPending(hexPayload: string): RequestPendingEvent | 
   }
 }
 
+const MAX_PAYLOAD_BYTES = 4096;
+
 export function parsePayload(raw: string): BridgePayload | null {
+  if (raw.length > MAX_PAYLOAD_BYTES) return null;
   try {
     const parsed = JSON.parse(raw) as BridgePayload;
     if (parsed.v !== "1" || !parsed.type || !parsed.params) return null;
+    if (typeof parsed.params !== "object" || Array.isArray(parsed.params) || parsed.params === null) return null;
     return parsed;
   } catch {
     return null;

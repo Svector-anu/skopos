@@ -154,8 +154,10 @@ const query = new URLSearchParams({
   const res = await fetchWithTimeout(`${BASE}/v1/quotes?${query}`);
   if (!res.ok) {
     if (res.status === 429) throw new Error("Rate limit reached — please wait a moment and try again.");
+    // Read body for server-side logging only — never forward raw upstream errors to clients
     const text = await res.text();
-    throw new Error(`Delora quote failed ${res.status}: ${text}`);
+    console.error(`[delora] quote error ${res.status}:`, text.slice(0, 500));
+    throw new Error(`Could not get a quote (status ${res.status}).`);
   }
   return res.json();
 }
