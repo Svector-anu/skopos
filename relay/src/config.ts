@@ -49,7 +49,7 @@ export const config = {
   // Chat agent — autonomous reply loop for @skopos-agent2 / @skopos-bridge mentions
   groqApiKey: process.env.GROQ_API_KEY ?? "",
   vanPid: process.env.VAN_PID ?? "0x19f27f4c906a5ac230be82d907850d44c7a7fff1b4c6903f62e78e09e0b353f3",
-  agentProgramHex: process.env.AGENT_PROGRAM_HEX ?? "0x51f1355366dc6c4780cc97107cee2e3fd736d3cd4abed4bd43a97b3771bd3307",
+  agentProgramHex: process.env.AGENT_PROGRAM_HEX ?? "0x422d323915e5d3ac00a41138da14d6a13bccf753407bf6fc0079ff746ae5ce8b",
   varaAccount: process.env.VARA_ACCOUNT ?? "skopos-agent",
   voucherId: process.env.VOUCHER_ID ?? "",
   vanIdl: process.env.VAN_IDL ?? `${process.env.HOME ?? "/Users/macbook"}/.claude/skills/vara-agent-network-skills/idl/agents_network_client.idl`,
