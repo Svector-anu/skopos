@@ -1,38 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const KEY    = "skopos-whatsnew-v2";
-const TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const DEFAULT_KEY     = "skopos-whatsnew-v2";
+const TTL_MS          = 3 * 24 * 60 * 60 * 1000;
 
-const CHANGES = [
+const DEFAULT_CHANGES = [
   "Ask Skopos anything — bridges, swaps, gas, yields, market odds",
   "Live prediction market odds directly in chat",
   "Responses are 2× faster",
 ];
 
-export function WhatsNewToast() {
-  const [visible, setVisible] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+interface WhatsNewToastProps {
+  storageKey?: string;
+  changes?: string[];
+}
 
-  useEffect(() => {
-    setIsMobile(window.innerWidth < 600);
+export function WhatsNewToast({ storageKey = DEFAULT_KEY, changes = DEFAULT_CHANGES }: WhatsNewToastProps) {
+  const [isMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 600 : false
+  );
+  const [visible, setVisible] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw === "dismissed") return;
+      const raw = localStorage.getItem(storageKey);
+      if (raw === "dismissed") return false;
       if (raw) {
-        if (Date.now() - Number(raw) > TTL_MS) { localStorage.removeItem(KEY); return; }
-        setVisible(true);
-        return;
+        if (Date.now() - Number(raw) > TTL_MS) { localStorage.removeItem(storageKey); return false; }
+        return true;
       }
-      localStorage.setItem(KEY, String(Date.now()));
-      setVisible(true);
-    } catch {}
-  }, []);
+      localStorage.setItem(storageKey, String(Date.now()));
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
   function dismiss() {
-    localStorage.setItem(KEY, "dismissed");
+    localStorage.setItem(storageKey, "dismissed");
     setVisible(false);
   }
 
@@ -77,7 +83,7 @@ export function WhatsNewToast() {
           </div>
 
           <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 9 }}>
-            {CHANGES.map((c, i) => (
+            {changes.map((c, i) => (
               <li key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
                 <span style={{ color: "#F5B800", fontSize: "0.65rem", marginTop: 3, flexShrink: 0 }}>→</span>
                 <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.76rem", lineHeight: 1.5 }}>{c}</span>
