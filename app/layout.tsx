@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Source_Serif_4, Source_Sans_3, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
 import { PageTransitionWrapper } from "@/components/shared/PageTransitionWrapper";
 import "./globals.css";
 
@@ -80,8 +81,9 @@ export default function RootLayout({
       className={`${sourceSerif.variable} ${sourceSans.variable} ${jetbrainsMono.variable} h-full`}
     >
       <head>
-        {/* Force dark mode — clear any stale light-mode value */}
-        <script
+        <Script
+          id="clear-theme"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `try{localStorage.removeItem('skopos-theme');}catch(e){}`,
           }}

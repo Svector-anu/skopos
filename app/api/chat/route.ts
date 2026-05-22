@@ -349,28 +349,46 @@ function json(data: unknown, init?: ResponseInit): NextResponse {
 }
 
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  // CORS — only allow requests from the production origin and localhost dev
+  const origin = req.headers.get("origin") ?? "";
+  const allowedOrigins = new Set(["https://www.tryskopos.xyz", "https://tryskopos.xyz"]);
+  const corsOrigin = allowedOrigins.has(origin) ? origin : (origin.startsWith("http://localhost") ? origin : null);
+  const corsHeaders: Record<string, string> = corsOrigin
+    ? { "Access-Control-Allow-Origin": corsOrigin, "Vary": "Origin" }
+    : {};
+
+  // Body size guard — reject before parsing to avoid memory pressure from large payloads
+  const contentLength = parseInt(req.headers.get("content-length") ?? "0", 10);
+  if (contentLength > 64_000) {
+    return json({ type: "error", text: "Request too large." }, { status: 413 });
+  }
+
+  // Use the rightmost trusted IP from x-forwarded-for to prevent header spoofing
+  const forwardedFor = req.headers.get("x-forwarded-for") ?? "";
+  const ips = forwardedFor.split(",").map(s => s.trim()).filter(Boolean);
+  const ip = ips[ips.length - 1] ?? req.headers.get("x-real-ip") ?? "unknown";
   if (!checkRateLimit(ip)) {
-    return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429 });
+    return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429, headers: corsHeaders });
   }
 
   const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage } = await req.json();
 
   if (!message?.trim()) {
-    return json({ error: "No message provided" }, { status: 400 });
+    return json({ error: "No message provided" }, { status: 400, headers: corsHeaders });
   }
 
   const trimmed = message.trim();
+
+  // Length check runs before any regex to prevent adversarial ReDoS inputs
+  if (trimmed.length > 2000) {
+    return json({ type: "error", text: "Message too long." }, { status: 400, headers: corsHeaders });
+  }
 
   // If Phantom isn't connected, the user can paste their Solana address inline.
   // Extract it so EVM→Solana bridges can proceed without Phantom.
   const SOLANA_INLINE_RE = /\b([1-9A-HJ-NP-Za-km-z]{32,44})\b/;
   const inlineSolanaAddr  = !rawSolanaAddress ? trimmed.match(SOLANA_INLINE_RE)?.[1] : undefined;
   const solanaAddress     = rawSolanaAddress ?? inlineSolanaAddr;
-
-  if (trimmed.length > 2000) {
-    return json({ type: "error", text: "Message too long." }, { status: 400 });
-  }
 
   const rawSlip = typeof slippage === "number" ? slippage : parseFloat(String(slippage ?? ""));
   const safeSlippage = Number.isFinite(rawSlip) && rawSlip >= 0 && rawSlip <= 0.1 ? rawSlip : 0.005;

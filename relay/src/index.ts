@@ -3,6 +3,7 @@ import { GearApi } from "@gear-js/api";
 import { WsProvider } from "@polkadot/api";
 import { config } from "./config.js";
 import { startSubscription, waitForDrain } from "./subscription.js";
+import { startChatAgent } from "./chat-agent.js";
 import { closeDb, getCursor, queryStats } from "./request-state.js";
 
 async function main(): Promise<void> {
@@ -54,6 +55,20 @@ async function main(): Promise<void> {
   process.on("SIGINT",  () => { void shutdown("SIGINT"); });
 
   await startSubscription(api);
+
+  if (config.groqApiKey && config.voucherId) {
+    startChatAgent({
+      groqApiKey: config.groqApiKey,
+      varaAccount: config.varaAccount,
+      voucherId: config.voucherId,
+      vanPid: config.vanPid,
+      agentProgramHex: config.agentProgramHex,
+      varaNetwork: config.varaNetwork,
+      vanIdl: config.vanIdl,
+    });
+  } else {
+    console.warn("[relay] chat-agent disabled — set GROQ_API_KEY, VOUCHER_ID, VAN_IDL to enable");
+  }
 }
 
 main().catch((err) => {

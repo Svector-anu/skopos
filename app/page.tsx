@@ -3,6 +3,7 @@ import { HeaderIcons } from "@/components/landing/HeaderIcons";
 import { HeroTitle } from "@/components/landing/HeroTitle";
 import { TerminalCard } from "@/components/landing/TerminalCard";
 import { ActionButtons } from "@/components/landing/ActionButtons";
+import { OracleChip } from "@/components/landing/OracleChip";
 
 export default function LandingPage() {
   return (
@@ -19,6 +20,7 @@ export default function LandingPage() {
         <div className="flex flex-col items-center gap-8 w-full max-w-xl">
           <TerminalCard />
           <ActionButtons />
+          <OracleChip />
         </div>
       </div>
     </main>

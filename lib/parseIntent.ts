@@ -575,7 +575,8 @@ function safeHistory(
         m != null &&
         typeof m === "object" &&
         (m.role === "user" || m.role === "assistant") &&
-        typeof m.content === "string",
+        typeof m.content === "string" &&
+        m.content.length <= 2000,
     )
     .slice(-limit);
 }
@@ -620,7 +621,8 @@ export async function getGroqReply(
   const groq = getGroq();
   const FALLBACK = "I can help you bridge, swap, and manage assets across chains. What would you like to do?";
   if (!groq) return FALLBACK;
-  const walletCtx = senderAddress ? `\n\nUser's connected wallet address: ${senderAddress}.` : "";
+  const safeAddr = /^0x[0-9a-fA-F]{40}$/.test(senderAddress ?? "") ? senderAddress : null;
+  const walletCtx = safeAddr ? `\n\nUser's connected wallet address: ${safeAddr}.` : "";
   try {
     const completion = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
@@ -857,8 +859,9 @@ export async function getSuggestion(
   const groq = getGroq();
   if (!groq) return FALLBACK;
 
-  const walletCtx = senderAddress
-    ? `\n\nUser's connected wallet address: ${senderAddress}. If the user mentions "this address", "my address", "my wallet", or pastes this exact address, it is their own wallet — not a third party. Answer accordingly (e.g. yes they can receive tokens there, guide them to fund it).`
+  const safeAddr2 = /^0x[0-9a-fA-F]{40}$/.test(senderAddress ?? "") ? senderAddress : null;
+  const walletCtx = safeAddr2
+    ? `\n\nUser's connected wallet address: ${safeAddr2}. If the user mentions "this address", "my address", "my wallet", or pastes this exact address, it is their own wallet — not a third party. Answer accordingly (e.g. yes they can receive tokens there, guide them to fund it).`
     : "";
 
   try {

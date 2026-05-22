@@ -8,6 +8,9 @@ import { lookupAddress } from "@/lib/alchemy";
 import { CHAIN_IDS } from "@/lib/chains";
 
 const RELAY_SECRET = process.env.RELAY_SECRET;
+if (!RELAY_SECRET) {
+  console.error("[/api/vara] RELAY_SECRET is not set — all requests will be rejected with 401");
+}
 
 function respond(data: unknown): NextResponse {
   return NextResponse.json({ result: JSON.stringify(data) });

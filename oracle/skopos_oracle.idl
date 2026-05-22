@@ -1,0 +1,30 @@
+constructor {
+  New : (relay_address: actor_id);
+};
+
+service SkoposOracle {
+  /// Reads and removes the result in one call — prevents unbounded results accumulation.
+  ConsumeResult : (request_id: u64) -> opt str;
+  FulfillRequest : (request_id: u64, result: str) -> null;
+  RequestData : (data: str) -> u64;
+  /// Owner-only: rotate the relay address without redeploying.
+  UpdateRelay : (new_relay: actor_id) -> null;
+  query Owner : () -> actor_id;
+  query QueryPending : () -> vec u64;
+  query QueryResult : (request_id: u64) -> opt str;
+  query RelayAddress : () -> actor_id;
+
+  events {
+    RequestPending: struct {
+      request_id: u64,
+      data: str,
+    };
+    RequestFulfilled: struct {
+      request_id: u64
+    };
+    RelayUpdated: struct {
+      new_relay: actor_id
+    };
+  }
+};
+

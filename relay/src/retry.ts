@@ -51,10 +51,21 @@ export async function withRetry(
 }
 
 function writeDeadLetter(req: InFlightRequest, reason: string): void {
+  // Scrub wallet addresses and amounts before writing to disk.
+  // Full payload is logged server-side only for forensics; the file may be
+  // shipped to external log aggregators that should not see user wallet data.
+  const scrubbedParams = req.payload?.params
+    ? Object.fromEntries(
+        Object.entries(req.payload.params as Record<string, unknown>).map(([k, v]) => {
+          const sensitive = /address|wallet|sender|receiver|recipient/i.test(k);
+          return [k, sensitive ? "[redacted]" : v];
+        }),
+      )
+    : req.payload?.params;
   const entry = JSON.stringify({
     id: req.id.toString(),
-    caller: req.caller,
-    payload: req.payload,
+    caller: "[redacted]",
+    payload: { ...req.payload, params: scrubbedParams },
     reason,
     ts: new Date().toISOString(),
   });

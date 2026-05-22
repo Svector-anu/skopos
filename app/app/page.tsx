@@ -1260,7 +1260,14 @@ export default function AppPage() {
         </div>
       </div>
     </main>
-    <WhatsNewToast />
+    <WhatsNewToast
+      storageKey="skopos-whatsnew-vara-v1"
+      changes={[
+        "Skopos oracle is live on Vara mainnet",
+        "Mention @skopos-bridge in the Vara Agent Network chat",
+        "6 query types: price, risk, yield, markets, quote, portfolio",
+      ]}
+    />
     </>
   );
 }
