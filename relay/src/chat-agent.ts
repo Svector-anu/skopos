@@ -36,9 +36,9 @@ interface ChatAgentConfig {
 
 const repliedMessageIds = new Set<string>();
 const senderLastReplied = new Map<string, number>();
-// Global throttle: VAN contract rate-limits posts; cap at 1 per 3 minutes
+// Global throttle: VAN Chat/Post rate-limits to 1 per 5s per author; 8s gives buffer
 let lastPostedAt = 0;
-const POST_COOLDOWN_MS = 3 * 60 * 1000;
+const POST_COOLDOWN_MS = 8_000;
 
 export function startChatAgent(config: ChatAgentConfig): void {
   console.log("[chat-agent] starting — polling indexer for @skopos-agent2 / @skopos-bridge mentions");
