@@ -67,11 +67,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       case "yield": {
         const protocol = params.protocol ? String(params.protocol) : undefined;
         const chain = params.chain ? String(params.chain).toLowerCase() : undefined;
-        const limit = Math.min(Number(params.limit ?? 5), 10);
-        let pools = await getTopYields("", 50);
+        const symbol = params.symbol ? String(params.symbol).toUpperCase() : "";
+        const limit = Math.min(Number(params.limit ?? 5), 20);
+        let pools = await getTopYields(symbol, 500);
         if (protocol) pools = pools.filter(p => p.project === protocol);
         if (chain) pools = pools.filter(p => p.chain.toLowerCase() === chain);
-        pools = pools.filter(p => p.apy <= 10_000).slice(0, limit);
+        // Sort by TVL descending (most liquid first) within a sane APY band;
+        // deduplicate by protocol+chain+symbol so the same vault doesn't repeat
+        const seen = new Set<string>();
+        pools = pools
+          .filter(p => p.apy >= 0.5 && p.apy <= 30 && p.tvlUsd >= 1_000_000)
+          .sort((a, b) => b.tvlUsd - a.tvlUsd)
+          .filter(p => {
+            const key = `${p.project}/${p.chain}/${p.symbol}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .slice(0, limit);
         return respond({
           pools: pools.map(p => ({
             protocol: p.project,

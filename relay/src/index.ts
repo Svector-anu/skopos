@@ -65,6 +65,8 @@ async function main(): Promise<void> {
       agentProgramHex: config.agentProgramHex,
       varaNetwork: config.varaNetwork,
       vanIdl: config.vanIdl,
+      relaySecret: config.relaySecret,
+      skoposBaseUrl: config.skoposBaseUrl,
     });
   } else {
     console.warn("[relay] chat-agent disabled — set GROQ_API_KEY, VOUCHER_ID, VAN_IDL to enable");
