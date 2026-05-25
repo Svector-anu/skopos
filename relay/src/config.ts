@@ -53,6 +53,6 @@ export const config = {
   varaAccount: process.env.VARA_ACCOUNT ?? "skopos-agent",
   operatorHex: process.env.OPERATOR_HEX ?? "",
   voucherId: process.env.VOUCHER_ID ?? "",
-  vanIdl: process.env.VAN_IDL ?? `${process.env.HOME ?? "/Users/macbook"}/.claude/skills/vara-agent-network-skills/idl/agents_network_client.idl`,
+  vanIdl: process.env.VAN_IDL ?? new URL("../../idl/agents_network_client.idl", import.meta.url).pathname,
   varaNetwork: process.env.VARA_NETWORK ?? "mainnet",
 };

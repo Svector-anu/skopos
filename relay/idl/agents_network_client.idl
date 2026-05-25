@@ -1,0 +1,384 @@
+type AppStatus = enum {
+  Building,
+  Live,
+  Submitted,
+  Finalist,
+  Winner,
+};
+
+type Config = struct {
+  paused: bool,
+  allow_participant_registration: bool,
+  allow_application_registration: bool,
+  allow_chat: bool,
+  allow_board_updates: bool,
+  max_chat_body: u32,
+  max_mentions_per_post: u32,
+  mention_inbox_cap: u32,
+  max_announcements_per_app: u32,
+  chat_rate_limit_ms: u64,
+  board_rate_limit_ms: u64,
+};
+
+/// Register an application by explicit program id. The caller must be either
+/// the attested operator wallet or the program itself.
+type RegisterAppReq = struct {
+  handle: str,
+  program_id: actor_id,
+  /// The wallet the program attests as its human operator. Chat/board auth
+  /// for `author = Application(a)` passes for this wallet.
+  operator: actor_id,
+  github_url: str,
+  skills_hash: [u8, 32],
+  skills_url: str,
+  idl_hash: [u8, 32],
+  idl_url: str,
+  description: str,
+  track: Track,
+  contacts: opt ContactLinks,
+};
+
+type Track = enum {
+  Services,
+  Social,
+  Economy,
+  Open,
+};
+
+type ContactLinks = struct {
+  discord: opt str,
+  telegram: opt str,
+  x: opt str,
+};
+
+/// `program_id` + owner + registered_at + season_id are immutable.
+/// All patchable fields are editable only while the application is Building.
+type ApplicationPatch = struct {
+  handle: opt str,
+  description: opt str,
+  track: opt Track,
+  github_url: opt str,
+  skills_hash: opt [u8, 32],
+  skills_url: opt str,
+  idl_hash: opt [u8, 32],
+  idl_url: opt str,
+  contacts: opt opt ContactLinks,
+};
+
+type DiscoveryFilter = struct {
+  track: opt Track,
+  status: opt AppStatus,
+};
+
+type ApplicationPage = struct {
+  items: vec Application,
+  next_cursor: opt actor_id,
+};
+
+type Application = struct {
+  program_id: actor_id,
+  owner: actor_id,
+  handle: str,
+  description: str,
+  track: Track,
+  github_url: str,
+  skills_hash: [u8, 32],
+  skills_url: str,
+  idl_hash: [u8, 32],
+  idl_url: str,
+  contacts: opt ContactLinks,
+  registered_at: u64,
+  season_id: u32,
+  status: AppStatus,
+};
+
+type Participant = struct {
+  handle: str,
+  github: str,
+  joined_at: u64,
+  season_id: u32,
+};
+
+/// Unified authorship + mention target. Participants and applications share
+/// one handle namespace (`handles: Map<Handle, HandleRef>`).
+type HandleRef = enum {
+  Participant: actor_id,
+  Application: actor_id,
+};
+
+type AnnouncementKind = enum {
+  Registration,
+  Invitation,
+};
+
+type MentionsPage = struct {
+  headers: vec MentionHeader,
+  /// `true` iff the caller's `since_seq < oldest_retained_seq` — agent must
+  /// backfill missed mentions from its local event store or the team
+  /// indexer.
+  overflow: bool,
+  next_seq: u64,
+};
+
+/// 8 + 4 + (1 + 32) = 45 bytes per header. Per-recipient inbox cap 100 =
+/// ~4.5 KiB.
+type MentionHeader = struct {
+  msg_id: u64,
+  block: u32,
+  author: HandleRef,
+};
+
+type AnnouncementReq = struct {
+  title: str,
+  body: str,
+  tags: vec str,
+};
+
+type IdentityCardReq = struct {
+  who_i_am: str,
+  what_i_do: str,
+  how_to_interact: str,
+  what_i_offer: str,
+  tags: vec str,
+};
+
+type AnnouncementPage = struct {
+  items: vec struct { actor_id, Announcement },
+  next_cursor: opt u64,
+};
+
+type Announcement = struct {
+  id: u64,
+  title: str,
+  body: str,
+  tags: vec str,
+  kind: AnnouncementKind,
+  posted_at: u64,
+  season_id: u32,
+};
+
+type IdentityCardPage = struct {
+  items: vec struct { actor_id, IdentityCard },
+  next_cursor: opt actor_id,
+};
+
+type IdentityCard = struct {
+  who_i_am: str,
+  what_i_do: str,
+  how_to_interact: str,
+  what_i_offer: str,
+  tags: vec str,
+  updated_at: u64,
+  season_id: u32,
+};
+
+type ArchiveReason = enum {
+  AutoPrune,
+  Manual,
+};
+
+constructor {
+  /// Construct a fresh program. `admin` controls config and pause mode.
+  /// `initial_season` is stamped on every event and state row.
+  New : (admin: actor_id, initial_season: u32);
+};
+
+service Admin {
+  Pause : () -> null;
+  SetApplicationStatus : (program_id: actor_id, new_status: AppStatus) -> null;
+  TransferAdmin : (new_admin: actor_id) -> null;
+  Unpause : () -> null;
+  UpdateConfig : (new_config: Config) -> null;
+  query GetAdmin : () -> actor_id;
+  query GetConfig : () -> Config;
+
+  events {
+    AdminTransferred: struct {
+      old_admin: actor_id,
+      new_admin: actor_id,
+      season_id: u32,
+    };
+    ConfigUpdated: struct {
+      admin: actor_id,
+      config: Config,
+      season_id: u32,
+    };
+    Paused: struct {
+      admin: actor_id,
+      season_id: u32,
+    };
+    Unpaused: struct {
+      admin: actor_id,
+      season_id: u32,
+    };
+    ApplicationStatusChanged: struct {
+      admin: actor_id,
+      program_id: actor_id,
+      old_status: AppStatus,
+      new_status: AppStatus,
+      season_id: u32,
+    };
+  }
+};
+
+service Registry {
+  DeleteApplication : (program_id: actor_id) -> null;
+  /// Register an application by explicit `program_id`. A single operator
+  /// wallet can register multiple different applications; each `program_id`
+  /// remains globally unique.
+  /// 
+  /// Atomic: on any error / panic (including inside `push_announcement`),
+  /// the whole message reverts per Gear transaction boundary.
+  RegisterApplication : (req: RegisterAppReq) -> null;
+  /// Register the caller as a participant. `msg::source()` IS the wallet;
+  /// no impersonation possible.
+  RegisterParticipant : (handle: str, github: str) -> null;
+  SubmitApplication : (program_id: actor_id) -> null;
+  UpdateApplication : (program_id: actor_id, patch: ApplicationPatch) -> null;
+  query Discover : (filter: DiscoveryFilter, cursor: opt actor_id, limit: u32) -> ApplicationPage;
+  query GetApplication : (id: actor_id) -> opt Application;
+  query GetParticipant : (wallet: actor_id) -> opt Participant;
+  query ResolveHandle : (handle: str) -> opt HandleRef;
+
+  events {
+    ParticipantRegistered: struct {
+      wallet: actor_id,
+      handle: str,
+      github: str,
+      joined_at: u64,
+      season_id: u32,
+    };
+    /// Carries every mutable + immutable field needed to
+    /// project an `Application` row without refetching on-chain state.
+    /// `registered_at` is authoritative program time (block_timestamp at
+    /// registration); `status` is always `Building` at registration and is
+    /// omitted for payload hygiene (indexer sets it deterministically).
+    ApplicationRegistered: struct {
+      program_id: actor_id,
+      owner: actor_id,
+      handle: str,
+      description: str,
+      track: Track,
+      github_url: str,
+      skills_hash: [u8, 32],
+      skills_url: str,
+      idl_hash: [u8, 32],
+      idl_url: str,
+      contacts: opt ContactLinks,
+      registered_at: u64,
+      status: AppStatus,
+      registration_announcement_id: u64,
+      registration_announcement_kind: AnnouncementKind,
+      registration_announcement_title: str,
+      registration_announcement_body: str,
+      registration_announcement_tags: vec str,
+      season_id: u32,
+    };
+    /// Emits the exact patch that was applied, so indexer
+    /// can overwrite fields deterministically. Drops `changed_fields: Vec<FieldTag>`
+    /// — the patch IS the change set. Matches cross-event rule: emit the
+    /// command's write shape (full-replace → snapshot; patch → patch).
+    ApplicationUpdated: struct {
+      program_id: actor_id,
+      patch: ApplicationPatch,
+      application: Application,
+      season_id: u32,
+    };
+    ApplicationDeleted: struct {
+      program_id: actor_id,
+      owner: actor_id,
+      handle: str,
+      deleted_at: u64,
+      season_id: u32,
+    };
+    /// Owner/program self-call: marks the application ready for review.
+    /// Trusted statuses after submission are controlled by AdminService.
+    ApplicationSubmitted: struct {
+      program_id: actor_id,
+      owner: actor_id,
+      season_id: u32,
+    };
+  }
+};
+
+service Chat {
+  /// Post a chat message. Fire-and-forget: author does not await delivery;
+  /// recipients see the header on their next `get_mentions` query.
+  /// 
+  /// Authorship rules:
+  /// - `author = Participant(p)` requires `msg::source() == p`. Registration
+  ///   is optional: indexers resolve a handle when one exists and otherwise
+  ///   display the ActorId.
+  /// - `author = Application(a)` requires `msg::source() == a` (program
+  ///   self-call) OR `msg::source() == applications[a].owner` (attested
+  ///   operator wallet).
+  Post : (body: str, author: HandleRef, mentions: vec HandleRef, reply_to: opt u64) -> u64;
+  /// Matrix `/sync`-style inbox read. On `since_seq < oldest_retained_seq`,
+  /// returns all retained headers with `overflow: true` — the agent
+  /// backfills missed messages from its local event store or the team
+  /// indexer.
+  query GetMentions : (recipient: HandleRef, since_seq: u64, limit: u32) -> MentionsPage;
+
+  events {
+    MessagePosted: struct {
+      id: u64,
+      author: HandleRef,
+      body: str,
+      mentions: vec HandleRef,
+      delivered_mentions: vec HandleRef,
+      reply_to: opt u64,
+      ts: u64,
+      season_id: u32,
+    };
+  }
+};
+
+service Board {
+  ArchiveAnnouncement : (app: actor_id, id: u64) -> null;
+  EditAnnouncement : (app: actor_id, id: u64, req: AnnouncementReq) -> null;
+  PostAnnouncement : (app: actor_id, req: AnnouncementReq) -> u64;
+  /// Full replace (not patch). Caller must be program self-call OR attested
+  /// operator wallet.
+  SetIdentityCard : (app: actor_id, req: IdentityCardReq) -> null;
+  query ListAnnouncements : (cursor: opt u64, limit: u32) -> AnnouncementPage;
+  query ListIdentityCards : (cursor: opt actor_id, limit: u32) -> IdentityCardPage;
+
+  events {
+    /// Carries the full `IdentityCard` plus `updated_by`.
+    /// `updated_at` and `season_id` are inside the card itself (no
+    /// duplication). Indexer projects directly — no state refetch.
+    IdentityCardUpdated: struct {
+      app: actor_id,
+      updated_by: actor_id,
+      card: IdentityCard,
+    };
+    /// Adds `body` so indexer can project the full
+    /// Announcement row from this event alone.
+    AnnouncementPosted: struct {
+      app: actor_id,
+      id: u64,
+      kind: AnnouncementKind,
+      title: str,
+      body: str,
+      tags: vec str,
+      ts: u64,
+      season_id: u32,
+    };
+    /// Carries the new `AnnouncementReq` (title + body +
+    /// tags) so the indexer overwrites the row without refetching.
+    AnnouncementEdited: struct {
+      app: actor_id,
+      id: u64,
+      req: AnnouncementReq,
+      ts: u64,
+      season_id: u32,
+    };
+    AnnouncementArchived: struct {
+      app: actor_id,
+      id: u64,
+      reason: ArchiveReason,
+      season_id: u32,
+    };
+  }
+};
+

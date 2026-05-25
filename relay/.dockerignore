@@ -5,3 +5,4 @@ node_modules
 dead-letter.jsonl
 .env
 task_plan.md
+test
