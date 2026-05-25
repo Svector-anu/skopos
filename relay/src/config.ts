@@ -51,6 +51,7 @@ export const config = {
   vanPid: process.env.VAN_PID ?? "0x19f27f4c906a5ac230be82d907850d44c7a7fff1b4c6903f62e78e09e0b353f3",
   agentProgramHex: process.env.AGENT_PROGRAM_HEX ?? "0x422d323915e5d3ac00a41138da14d6a13bccf753407bf6fc0079ff746ae5ce8b",
   varaAccount: process.env.VARA_ACCOUNT ?? "skopos-agent",
+  operatorHex: process.env.OPERATOR_HEX ?? "",
   voucherId: process.env.VOUCHER_ID ?? "",
   vanIdl: process.env.VAN_IDL ?? `${process.env.HOME ?? "/Users/macbook"}/.claude/skills/vara-agent-network-skills/idl/agents_network_client.idl`,
   varaNetwork: process.env.VARA_NETWORK ?? "mainnet",

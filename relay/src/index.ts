@@ -60,6 +60,7 @@ async function main(): Promise<void> {
     startChatAgent({
       groqApiKey: config.groqApiKey,
       varaAccount: config.varaAccount,
+      operatorHex: config.operatorHex,
       voucherId: config.voucherId,
       vanPid: config.vanPid,
       agentProgramHex: config.agentProgramHex,

@@ -11,9 +11,11 @@ const OUR_HANDLES = ["skopos-agent2", "skopos-bridge"];
 const POLL_INTERVAL_MS = 30_000;
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MAX_MENTIONS_PER_POLL = 5;
-const SENDER_COOLDOWN_MS = 5 * 60 * 1000; // 1 reply per sender per 5 minutes
+const SENDER_COOLDOWN_MS = 60_000; // 1 reply per sender per 60s (demo mode)
 const HANDLE_RE = /^[a-z0-9_-]{1,64}$/i;
 const MAX_REPLY_CHARS = 450;
+const VOUCHER_BACKEND_URL = "https://voucher-backend-agents.vara.network/voucher";
+const VOUCHER_REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; // renew 12h before expiry window closes
 
 interface ChatMessage {
   id: string;
@@ -25,6 +27,7 @@ interface ChatMessage {
 interface ChatAgentConfig {
   groqApiKey: string;
   varaAccount: string;
+  operatorHex: string;
   voucherId: string;
   vanPid: string;
   agentProgramHex: string;
@@ -40,13 +43,80 @@ const senderLastReplied = new Map<string, number>();
 let lastPostedAt = 0;
 const POST_COOLDOWN_MS = 8_000;
 
+let currentVoucherId: string = "";
+let lastVoucherRefreshAt = 0;
+
+async function refreshVoucher(config: ChatAgentConfig): Promise<void> {
+  const now = Date.now();
+  if (currentVoucherId && now - lastVoucherRefreshAt < VOUCHER_REFRESH_INTERVAL_MS) return;
+
+  if (!config.operatorHex) {
+    console.warn("[chat-agent] OPERATOR_HEX not set — skipping voucher refresh");
+    return;
+  }
+
+  try {
+    const getRes = await fetch(`${VOUCHER_BACKEND_URL}/${config.operatorHex}`, {
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!getRes.ok) {
+      console.warn(`[chat-agent] voucher GET failed: ${getRes.status}`);
+      return;
+    }
+
+    const state = await getRes.json() as {
+      voucherId: string | null;
+      canTopUpNow: boolean;
+      validUpTo: string | null;
+    };
+
+    if (state.voucherId && !state.canTopUpNow) {
+      currentVoucherId = state.voucherId;
+      lastVoucherRefreshAt = now;
+      return;
+    }
+
+    const postRes = await fetch(VOUCHER_BACKEND_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account: config.operatorHex, programs: [config.vanPid] }),
+      signal: AbortSignal.timeout(8_000),
+    });
+
+    if (postRes.status === 429 && state.voucherId) {
+      currentVoucherId = state.voucherId;
+      lastVoucherRefreshAt = now;
+      console.log("[chat-agent] voucher rate-limited — reusing existing");
+      return;
+    }
+
+    if (!postRes.ok) {
+      console.warn(`[chat-agent] voucher POST failed: ${postRes.status}`);
+      return;
+    }
+
+    const data = await postRes.json() as { voucherId?: string };
+    if (data.voucherId) {
+      currentVoucherId = data.voucherId;
+      lastVoucherRefreshAt = now;
+      console.log(`[chat-agent] voucher refreshed: ${currentVoucherId}`);
+    }
+  } catch (err) {
+    console.warn("[chat-agent] voucher refresh error:", err);
+  }
+}
+
 export function startChatAgent(config: ChatAgentConfig): void {
   console.log("[chat-agent] starting — polling indexer for @skopos-agent2 / @skopos-bridge mentions");
-  void pollLoop(config);
+  currentVoucherId = config.voucherId;
+  void refreshVoucher(config).then(() => pollLoop(config));
 }
 
 async function pollLoop(config: ChatAgentConfig): Promise<void> {
+  let cycle = 0;
   while (true) {
+    if (cycle % 20 === 0) await refreshVoucher(config);
+    cycle++;
     try {
       await checkMentions(config);
     } catch (err) {
@@ -190,12 +260,16 @@ async function fetchLiveData(
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${relaySecret}` },
       body: JSON.stringify(intent),
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[chat-agent] /api/vara ${res.status} for ${intent.queryType}`);
+      return null;
+    }
     const json = await res.json() as { result?: string };
     return json.result ?? null;
-  } catch {
+  } catch (err) {
+    console.warn(`[chat-agent] /api/vara fetch failed (${intent.queryType}):`, err);
     return null;
   }
 }
@@ -315,7 +389,7 @@ async function postReply(body: string, config: ChatAgentConfig): Promise<void> {
       "call", config.vanPid,
       "Chat/Post",
       "--args-file", tmpFile,
-      "--voucher", config.voucherId,
+      "--voucher", currentVoucherId || config.voucherId,
       "--idl", config.vanIdl,
     ], { timeout: 60_000 });
   } finally {

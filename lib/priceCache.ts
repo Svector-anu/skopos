@@ -17,6 +17,24 @@ interface CacheEntry {
 
 const priceCache = new Map<string, CacheEntry>();
 
+// ── Full-name → ticker aliases (for natural-language queries like "solana price") ──
+const SYMBOL_ALIASES: Record<string, string> = {
+  SOLANA: "SOL",
+  BITCOIN: "BTC",
+  ETHEREUM: "ETH",
+  BINANCE: "BNB",
+  POLYGON: "MATIC",
+  AVALANCHE: "AVAX",
+  ARBITRUM: "ARB",
+  OPTIMISM: "OP",
+  CHAINLINK: "LINK",
+  UNISWAP: "UNI",
+  DOGECOIN: "DOGE",
+  CARDANO: "ADA",
+  POLKADOT: "DOT",
+  RIPPLE: "XRP",
+};
+
 // ── CoinGecko symbol → ID map ─────────────────────────────────────────────────
 // NOTE: matic-network is dead on CoinGecko — polygon-ecosystem-token is the correct ID for POL/MATIC
 const CG_IDS: Record<string, string> = {
@@ -148,7 +166,7 @@ export async function getPrices(
 
   // 1. Serve from cache where fresh
   for (const sym of symbols) {
-    const upper = sym.toUpperCase();
+    const upper = SYMBOL_ALIASES[sym.toUpperCase()] ?? sym.toUpperCase();
     const cached = priceCache.get(upper);
     if (cached && now - cached.fetchedAt < TTL_MS) {
       result[upper] = { symbol: upper, price: cached.price, change24h: cached.change24h, source: cached.source };
@@ -202,8 +220,9 @@ export async function getPrices(
 }
 
 export async function getPrice(symbol: string): Promise<PriceResult | null> {
-  const results = await getPrices([symbol]);
-  return results[symbol.toUpperCase()] ?? null;
+  const normalized = SYMBOL_ALIASES[symbol.toUpperCase()] ?? symbol.toUpperCase();
+  const results = await getPrices([normalized]);
+  return results[normalized] ?? null;
 }
 
 // ── 7-day chart + token metadata ─────────────────────────────────────────────
