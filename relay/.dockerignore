@@ -1,0 +1,7 @@
+node_modules
+*.db
+*.db-shm
+*.db-wal
+dead-letter.jsonl
+.env
+task_plan.md
