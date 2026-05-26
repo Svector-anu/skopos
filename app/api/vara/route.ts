@@ -6,6 +6,7 @@ import { getTopMarkets } from "@/lib/polymarket";
 import { getQuote, getToken } from "@/lib/delora";
 import { lookupAddress } from "@/lib/alchemy";
 import { CHAIN_IDS } from "@/lib/chains";
+import { classifyIntent } from "@/lib/parseIntent";
 
 const RELAY_SECRET = process.env.RELAY_SECRET;
 if (!RELAY_SECRET) {
@@ -177,6 +178,72 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           })),
         ].filter(b => parseFloat(b.amount) > 0);
         return respond({ address: data.address, balances });
+      }
+
+      case "text": {
+        const rawBody = String(params.body ?? "");
+        if (!rawBody) return fail("params.body is required", 400);
+
+        // Strip VAN @mentions so classifyIntent sees clean query text
+        const cleanBody = rawBody.replace(/@\w+/g, "").trim();
+        const intent = classifyIntent(cleanBody);
+        const lower = cleanBody.toLowerCase();
+
+        if (intent === "price") {
+          const PRICE_SKIP = new Set(["the", "a", "an", "my", "your", "its", "our", "this", "that"]);
+          const priceRaw =
+            lower.match(/\bprice\s+of\s+([a-z0-9]+)/)?.[1] ??
+            lower.match(/\bhow\s+much\s+(?:is|does)\s+([a-z0-9]+)/)?.[1] ??
+            lower.match(/\b([a-z0-9]{2,10})\s+price\b/)?.[1] ??
+            lower.match(/\b(eth|weth|btc|wbtc|sol|bnb|matic|pol|avax|usdc|usdt|dai|doge|shib|pepe|link|uni|aave|xrp|ada|dot|op|arb|mkr|crv|ldo|snx|comp|frax|trump|wif|bonk|jup|pyth|jto|render|sui|apt|sei|tia|inj|atom|near|ftm|ton|not|hmstr|melania)\b/)?.[1];
+
+          if (!priceRaw || PRICE_SKIP.has(priceRaw))
+            return respond({ intent, noLiveData: true });
+
+          const symbol = priceRaw.toUpperCase();
+          const result = await getPrice(symbol);
+          if (!result) return respond({ intent, noLiveData: true });
+          return respond({ symbol: result.symbol, price: result.price, change24h: result.change24h, source: result.source });
+        }
+
+        if (intent === "yield") {
+          const yieldToken =
+            lower.match(/\b(usdt|dai|eth|weth|btc|wbtc|sol|bnb|usdc)\b/)?.[1]?.toUpperCase() ?? "USDC";
+          let pools = await getTopYields(yieldToken, 500);
+          const seen = new Set<string>();
+          pools = pools
+            .filter(p => p.apy >= 0.5 && p.apy <= 30 && p.tvlUsd >= 1_000_000)
+            .sort((a, b) => b.tvlUsd - a.tvlUsd)
+            .filter(p => {
+              const key = `${p.project}/${p.chain}/${p.symbol}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+            .slice(0, 5);
+          return respond({ pools: pools.map(p => ({ protocol: p.project, chain: p.chain, symbol: p.symbol, apy: p.apy, tvlUsd: p.tvlUsd })) });
+        }
+
+        if (intent === "prediction") {
+          const topic = cleanBody
+            .replace(/\b(hey|hi|what|are|the|odds|chance|will|does|is|a|an|of|for|on|to|you|me|tell|give|polymarket|prediction|markets?|betting)\b/gi, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 80);
+          const events = await getTopMarkets(topic || undefined, 10);
+          const markets = events
+            .flatMap(e => e.markets.map(m => ({
+              title: m.question,
+              probability: m.outcomePrices[0] != null ? parseFloat(m.outcomePrices[0]) : 0.5,
+              volume24h: m.volume,
+              endDate: m.endDate ?? undefined,
+            })))
+            .slice(0, 3);
+          return respond({ markets });
+        }
+
+        // informational, execution, analysis, fx, metal, equity, unknown — no live data
+        return respond({ intent, noLiveData: true });
       }
 
       default:

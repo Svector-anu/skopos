@@ -258,24 +258,21 @@ async function fetchLiveData(
   skoposBaseUrl: string,
   relaySecret: string,
 ): Promise<string | null> {
-  const intent = detectQueryType(body);
-  if (!intent) return null;
-
   try {
     const res = await fetch(`${skoposBaseUrl}/api/vara`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${relaySecret}` },
-      body: JSON.stringify(intent),
+      body: JSON.stringify({ queryType: "text", params: { body } }),
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
-      console.warn(`[chat-agent] /api/vara ${res.status} for ${intent.queryType}`);
+      console.warn(`[chat-agent] /api/vara ${res.status} for text query`);
       return null;
     }
     const json = await res.json() as { result?: string };
     return json.result ?? null;
   } catch (err) {
-    console.warn(`[chat-agent] /api/vara fetch failed (${intent.queryType}):`, err);
+    console.warn("[chat-agent] /api/vara fetch failed:", err);
     return null;
   }
 }
