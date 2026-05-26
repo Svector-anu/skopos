@@ -33,6 +33,14 @@ const SYMBOL_ALIASES: Record<string, string> = {
   CARDANO: "ADA",
   POLKADOT: "DOT",
   RIPPLE: "XRP",
+  TONCOIN: "TON",
+  INJECTIVE: "INJ",
+  CELESTIA: "TIA",
+  COSMOS: "ATOM",
+  FANTOM: "FTM",
+  RENDER: "RENDER",
+  APTOS: "APT",
+  NOTCOIN: "NOT",
 };
 
 // ── CoinGecko symbol → ID map ─────────────────────────────────────────────────
@@ -69,6 +77,25 @@ const CG_IDS: Record<string, string> = {
   FRAX: "frax",
   XDAI: "xdai",
   MEGA: "megaeth",
+  TRUMP:"official-trump",
+  MELANIA:"melania-meme",
+  WIF:  "dogwifcoin",
+  BONK: "bonk",
+  JUP:  "jupiter-exchange-solana",
+  PYTH: "pyth-network",
+  JTO:  "jito-governance-token",
+  RENDER:"render-token",
+  SUI:  "sui",
+  APT:  "aptos",
+  SEI:  "sei-network",
+  TIA:  "celestia",
+  INJ:  "injective-protocol",
+  ATOM: "cosmos",
+  NEAR: "near",
+  FTM:  "fantom",
+  TON:  "the-open-network",
+  NOT:  "notcoin",
+  HMSTR:"hamster-kombat",
 };
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
