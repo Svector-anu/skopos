@@ -35,8 +35,8 @@ async function main(): Promise<void> {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(body);
   });
-  healthServer.listen(config.healthPort, "127.0.0.1", () => {
-    console.log(`[relay] health check: http://127.0.0.1:${config.healthPort}/`);
+  healthServer.listen(config.healthPort, "0.0.0.0", () => {
+    console.log(`[relay] health check: http://0.0.0.0:${config.healthPort}/`);
   });
 
   async function shutdown(signal: string): Promise<void> {

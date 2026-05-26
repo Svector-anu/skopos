@@ -1,0 +1,33 @@
+[app]
+name = "skopos-relay"
+primary_region = "iad"
+
+[build]
+dockerfile = "Dockerfile"
+
+[env]
+RELAY_HEALTH_PORT = "8080"
+VAN_IDL = "/app/idl/agents_network_client.idl"
+VARA_ACCOUNT = "skopos-agent"
+VARA_NETWORK = "mainnet"
+VARA_RPC_WS = "wss://rpc.vara.network"
+NODE_ENV = "production"
+
+[[services]]
+internal_port = 8080
+protocol = "tcp"
+
+[[services.tcp_checks]]
+interval = "15s"
+timeout = "10s"
+
+[http_service]
+internal_port = 8080
+force_https = false
+
+[[http_service.checks]]
+interval = "30s"
+timeout = "10s"
+grace_period = "60s"
+method = "GET"
+path = "/"
