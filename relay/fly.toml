@@ -1,33 +1,33 @@
-[app]
-name = "skopos-relay"
-primary_region = "iad"
+# fly.toml app configuration file generated for relay-tranquil-log-8398 on 2026-05-26T13:14:41+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'relay-tranquil-log-8398'
+primary_region = 'iad'
 
 [build]
-dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
-RELAY_HEALTH_PORT = "8080"
-VAN_IDL = "/app/idl/agents_network_client.idl"
-VARA_ACCOUNT = "skopos-agent"
-VARA_NETWORK = "mainnet"
-VARA_RPC_WS = "wss://rpc.vara.network"
-NODE_ENV = "production"
-
-[[services]]
-internal_port = 8080
-protocol = "tcp"
-
-[[services.tcp_checks]]
-interval = "15s"
-timeout = "10s"
+  RELAY_HEALTH_PORT = "8080"
+  VAN_IDL = "/app/idl/agents_network_client.idl"
+  VARA_ACCOUNT = "skopos-agent"
+  VARA_NETWORK = "mainnet"
+  VARA_RPC_WS = "wss://rpc.vara.network"
+  NODE_ENV = "production"
+  RELAY_WALLET_JSON = "/root/.vara-wallet/wallets/skopos-agent.json"
 
 [http_service]
-internal_port = 8080
-force_https = false
+  internal_port = 8080
+  force_https = false
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
 
-[[http_service.checks]]
-interval = "30s"
-timeout = "10s"
-grace_period = "60s"
-method = "GET"
-path = "/"
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024
