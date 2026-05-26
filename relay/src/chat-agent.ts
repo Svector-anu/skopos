@@ -241,7 +241,13 @@ export function detectQueryType(
   }
 
   if (/\b(?:market|predict|odds|probability|chance|likely|will\s+\w+\s+(?:win|happen|hit|reach))\b/.test(lower)) {
-    return { queryType: "markets", params: { topic: body.slice(0, 120), limit: 3 } };
+    const topic = body
+      .replace(/@\w+/g, "")
+      .replace(/\b(hey|hi|what|are|the|odds|chance|will|does|is|a|an|of|for|on|to|you|me|tell|give)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80);
+    return { queryType: "markets", params: { topic: topic || body.slice(0, 80), limit: 3 } };
   }
 
   return null;
