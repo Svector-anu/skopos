@@ -184,8 +184,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const rawBody = String(params.body ?? "");
         if (!rawBody) return fail("params.body is required", 400);
 
-        // Strip VAN @mentions so classifyIntent sees clean query text
-        const cleanBody = rawBody.replace(/@\w+/g, "").trim();
+        // Strip VAN @mentions (handles can contain hyphens, e.g. @skopos-bridge)
+        const cleanBody = rawBody.replace(/@[\w-]+/g, "").trim();
         const intent = classifyIntent(cleanBody);
         const lower = cleanBody.toLowerCase();
 
