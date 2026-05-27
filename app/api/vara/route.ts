@@ -226,11 +226,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         if (intent === "prediction") {
           const topic = cleanBody
-            .replace(/\b(hey|hi|what|are|the|odds|chance|will|does|is|a|an|of|for|on|to|you|me|tell|give|polymarket|prediction|markets?|betting)\b/gi, " ")
+            .replace(/\b(hey|hi|what|are|the|odds|chance|will|does|is|a|an|of|for|on|to|you|me|tell|give|polymarket|prediction|markets?|betting|winning|happening|hit|reach|by|in|on)\b/gi, " ")
+            .replace(/\?/g, "")
             .replace(/\s+/g, " ")
             .trim()
             .slice(0, 80);
-          const events = await getTopMarkets(topic || undefined, 10);
+
+          // getTopMarkets does phrase matching — fall back to first word if full phrase misses
+          let events = await getTopMarkets(topic || undefined, 10);
+          if (events.length === 0 && topic) {
+            const firstWord = topic.split(/\s+/)[0];
+            if (firstWord && firstWord.length > 2) events = await getTopMarkets(firstWord, 10);
+          }
+
           const markets = events
             .flatMap(e => e.markets.map(m => ({
               title: m.question,
