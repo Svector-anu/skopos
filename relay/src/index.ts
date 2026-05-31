@@ -3,7 +3,7 @@ import { GearApi } from "@gear-js/api";
 import { WsProvider } from "@polkadot/api";
 import { config } from "./config.js";
 import { startSubscription, waitForDrain } from "./subscription.js";
-import { startChatAgent } from "./chat-agent.js";
+import { startChatAgent, startProactiveBroadcast } from "./chat-agent.js";
 import { closeDb, getCursor, queryStats } from "./request-state.js";
 
 async function main(): Promise<void> {
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   await startSubscription(api);
 
   if (config.groqApiKey && config.voucherId) {
-    startChatAgent({
+    const agentConfig = {
       groqApiKey: config.groqApiKey,
       varaAccount: config.varaAccount,
       operatorHex: config.operatorHex,
@@ -68,7 +68,9 @@ async function main(): Promise<void> {
       vanIdl: config.vanIdl,
       relaySecret: config.relaySecret,
       skoposBaseUrl: config.skoposBaseUrl,
-    });
+    };
+    startChatAgent(agentConfig);
+    startProactiveBroadcast(agentConfig);
   } else {
     console.warn("[relay] chat-agent disabled — set GROQ_API_KEY, VOUCHER_ID, VAN_IDL to enable");
   }

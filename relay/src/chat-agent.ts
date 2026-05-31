@@ -17,6 +17,16 @@ const MAX_REPLY_CHARS = 450;
 const VOUCHER_BACKEND_URL = "https://voucher-backend-agents.vara.network/voucher";
 const VOUCHER_REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; // renew 12h before expiry window closes
 
+// ── proactive broadcaster constants ───────────────────────────────────────────
+const BROADCAST_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const BROADCAST_TOKENS  = ["ETH", "BTC", "SOL", "ARB", "OP", "LINK"];
+const CRYPTO_MKTOPICS   = ["Bitcoin", "Ethereum", "crypto", "Fed rate", "SEC", "stablecoin", "Trump tariff"];
+const BROADCAST_PAIRS   = [
+  { from: "ethereum", to: "base",     token: "ETH",  dest: "USDC", amount: "1" },
+  { from: "ethereum", to: "arbitrum", token: "ETH",  dest: "USDC", amount: "1" },
+  { from: "ethereum", to: "base",     token: "USDC", dest: "USDC", amount: "500" },
+] as const;
+
 interface ChatMessage {
   id: string;
   body: string;
@@ -104,6 +114,133 @@ async function refreshVoucher(config: ChatAgentConfig): Promise<void> {
   } catch (err) {
     console.warn("[chat-agent] voucher refresh error:", err);
   }
+}
+
+// ── proactive broadcast helpers ────────────────────────────────────────────────
+
+function fmt(n: number, decimals = 2): string {
+  return n.toLocaleString("en-US", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
+}
+
+async function skoposQuery(
+  queryType: string,
+  params: Record<string, unknown>,
+  config: ChatAgentConfig,
+): Promise<unknown> {
+  const res = await fetch(`${config.skoposBaseUrl}/api/vara`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${config.relaySecret}`,
+    },
+    body: JSON.stringify({ queryType, params }),
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!res.ok) throw new Error(`${queryType} HTTP ${res.status}`);
+  const { result, error } = await res.json() as { result?: string; error?: string };
+  if (error) throw new Error(error);
+  return JSON.parse(result ?? "null");
+}
+
+async function buildPriceMsg(config: ChatAgentConfig): Promise<string> {
+  const settled = await Promise.allSettled(
+    BROADCAST_TOKENS.map(sym =>
+      skoposQuery("price", { symbol: sym }, config)
+        .then(d => ({ sym, ...(d as Record<string, unknown>) }))
+    )
+  );
+  const prices = settled
+    .filter(r => r.status === "fulfilled")
+    .map(r => (r as PromiseFulfilledResult<Record<string, unknown>>).value)
+    .filter(d => typeof d.change24h === "number");
+  if (prices.length === 0) throw new Error("no price data");
+
+  prices.sort((a, b) => Math.abs(b.change24h as number) - Math.abs(a.change24h as number));
+  const top  = prices[0];
+  const sym  = top.sym as string;
+  const px   = top.price as number;
+  const chg  = top.change24h as number;
+  const dir  = chg >= 0 ? "▲" : "▼";
+  const sign = chg >= 0 ? "+" : "";
+  return `${sym} ${dir} ${sign}${fmt(Math.abs(chg))}% in 24h — $${fmt(px)}. Bridge cross-chain at tryskopos.xyz`;
+}
+
+async function buildYieldMsg(config: ChatAgentConfig): Promise<string> {
+  const data = await skoposQuery("yield", { symbol: "USDC", limit: 1 }, config) as {
+    pools: Array<{ protocol: string; chain: string; apy: number; tvlUsd: number }>;
+  };
+  const pool = data.pools?.[0];
+  if (!pool) throw new Error("no yield data");
+  const tvl = pool.tvlUsd >= 1e9
+    ? `$${fmt(pool.tvlUsd / 1e9)}B`
+    : `$${fmt(pool.tvlUsd / 1e6, 0)}M`;
+  return `Top USDC yield: ${pool.protocol} on ${pool.chain} at ${fmt(pool.apy)}% APY — ${tvl} TVL. tryskopos.xyz`;
+}
+
+async function buildQuoteMsg(pairIdx: number, config: ChatAgentConfig): Promise<string> {
+  const pair = BROADCAST_PAIRS[pairIdx % BROADCAST_PAIRS.length];
+  const DUMMY = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+  const data  = await skoposQuery("quote", {
+    originChain: pair.from, destinationChain: pair.to,
+    token: pair.token, destinationToken: pair.dest,
+    amount: pair.amount,
+    senderAddress: DUMMY, receiverAddress: DUMMY,
+  }, config) as { outputAmount?: string; adapter?: string; feesUsd?: string };
+
+  const decimals = pair.dest === "USDC" ? 6 : 18;
+  const out      = Number(data.outputAmount ?? 0) / 10 ** decimals;
+  const adapter  = data.adapter ?? "bridge";
+  const fees     = data.feesUsd ? `, ~$${fmt(Number(data.feesUsd))} fees` : "";
+  return `Live quote: ${pair.amount} ${pair.token} (${pair.from}) → ${fmt(out, 2)} ${pair.dest} (${pair.to}) via ${adapter}${fees}. tryskopos.xyz`;
+}
+
+async function buildMarketMsg(config: ChatAgentConfig): Promise<string> {
+  for (const topic of CRYPTO_MKTOPICS) {
+    try {
+      const data = await skoposQuery("markets", { topic, limit: 1 }, config) as {
+        markets: Array<{ title: string; probability: number; volume24h: number }>;
+      };
+      const m = data.markets?.[0];
+      if (!m) continue;
+      const vol = m.volume24h >= 1e6
+        ? `$${fmt(m.volume24h / 1e6, 1)}M vol`
+        : m.volume24h >= 1e3 ? `$${fmt(m.volume24h / 1e3, 0)}K vol` : "";
+      return `Polymarket: "${m.title}" — ${Math.round(m.probability * 100)}% odds${vol ? `, ${vol}` : ""}. tryskopos.xyz`;
+    } catch { /* try next topic */ }
+  }
+  throw new Error("no crypto market found");
+}
+
+async function broadcastLoop(config: ChatAgentConfig): Promise<void> {
+  // Stagger the first broadcast by 2 minutes so startup is clean
+  await sleep(2 * 60_000);
+
+  let round = 0;
+  while (true) {
+    try {
+      // Rotate: price → yield → quote(pair0) → market → price → yield → quote(pair1) → …
+      const slot = round % 4;
+      let msg: string;
+
+      if (slot === 0)      msg = await buildPriceMsg(config);
+      else if (slot === 1) msg = await buildYieldMsg(config);
+      else if (slot === 2) msg = await buildQuoteMsg(Math.floor(round / 4), config);
+      else                 msg = await buildMarketMsg(config);
+
+      const truncated = msg.slice(0, MAX_REPLY_CHARS);
+      console.log(`[broadcast] round=${round} slot=${slot}: ${truncated}`);
+      await postReply(truncated, config);
+      round++;
+    } catch (err) {
+      console.warn("[broadcast] failed:", err instanceof Error ? err.message : err);
+    }
+    await sleep(BROADCAST_INTERVAL_MS);
+  }
+}
+
+export function startProactiveBroadcast(config: ChatAgentConfig): void {
+  console.log("[broadcast] proactive broadcaster starting — interval: 15 min");
+  void broadcastLoop(config);
 }
 
 export function startChatAgent(config: ChatAgentConfig): void {
