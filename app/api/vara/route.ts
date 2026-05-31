@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { parseUnits } from "viem";
 import { getPrice } from "@/lib/priceCache";
 import { scanToken } from "@/lib/dexscreener";
 import { getTopYields } from "@/lib/defillama";
@@ -140,10 +141,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         if (!originTok) return fail(`token ${token} not found on ${originChain}`, 400);
         if (!destTok) return fail(`token ${destinationToken} not found on ${destinationChain}`, 400);
 
+        // Delora expects amount as a raw integer string (in token's smallest unit).
+        // The oracle payload carries human-readable amounts (e.g. "0.1"), so convert here.
+        let amountWei: string;
+        try {
+          amountWei = parseUnits(amount, originTok.decimals).toString();
+        } catch {
+          return fail(`invalid amount: ${amount}`, 400);
+        }
+
         const quote = await getQuote({
           originChainId,
           destinationChainId,
-          amount,
+          amount: amountWei,
           originCurrency: originTok.address,
           destinationCurrency: destTok.address,
           senderAddress,

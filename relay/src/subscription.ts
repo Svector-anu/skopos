@@ -1,4 +1,5 @@
 import { GearApi } from "@gear-js/api";
+import type { UserMessageSent } from "@gear-js/api";
 import { decodeRequestPending, parsePayload } from "./event-parser.js";
 import { dispatch } from "./dispatcher.js";
 import { fulfillRequest, queryPending } from "./chain-writer.js";
@@ -6,7 +7,6 @@ import { config } from "./config.js";
 import { withRetry } from "./retry.js";
 import {
   getCursor,
-  saveCursor,
   insertRequest,
   updateRequestStatus,
   loadPendingRequests,
@@ -34,8 +34,24 @@ function track(p: Promise<void>): void {
   p.finally(() => activeRequests.delete(p));
 }
 
+// subscribeToGearEvent does not survive WS reconnections — the returned promise
+// stays pending but stops delivering events after a disconnect/reconnect cycle.
+// runSubscription wraps it so it can be called again on each reconnect.
+async function runSubscription(api: GearApi): Promise<void> {
+  const cursor = getCursor();
+  console.log(`[relay] (re)subscribing to UserMessageSent from block ${cursor || "genesis"}`);
+  await api.gearEvents.subscribeToGearEvent(
+    "UserMessageSent",
+    (event: UserMessageSent) => {
+      void processEvent(api, event);
+    },
+    cursor > 0 ? cursor : undefined,
+    "finalized",
+  );
+}
+
 export async function startSubscription(api: GearApi): Promise<void> {
-  console.log(`[relay] subscribing to finalized heads on ${config.rpcWs}`);
+  console.log(`[relay] subscribing to UserMessageSent on ${config.rpcWs}`);
   console.log(`[relay] watching bridge program: ${config.bridgeProgramId}`);
 
   const cursor = getCursor();
@@ -64,74 +80,66 @@ export async function startSubscription(api: GearApi): Promise<void> {
     }
   }
 
-  let lastProcessedBlock = cursor;
-
-  await api.rpc.chain.subscribeFinalizedHeads(async (header) => {
-    const blockNumber = header.number.toNumber();
-    if (blockNumber <= lastProcessedBlock) return;
-
-    try {
-      await processBlock(api, blockNumber);
-      lastProcessedBlock = blockNumber;
-      saveCursor(blockNumber);
-    } catch (err) {
-      console.error(`[relay] block ${blockNumber} processing error:`, err);
-    }
+  // Re-subscribe whenever the WS connection is restored.
+  // Guard against multiple rapid disconnects racing to re-subscribe.
+  let resubscribePending = false;
+  api.on("disconnected", () => {
+    console.log("[relay] WS disconnected — subscription paused, waiting for reconnect");
+    if (resubscribePending) return;
+    resubscribePending = true;
+    api.once("connected", () => {
+      resubscribePending = false;
+      void api.isReady
+        .then(() => runSubscription(api))
+        .catch((err: unknown) => {
+          console.error("[relay] resubscribe after reconnect failed:", err);
+        });
+    });
   });
+
+  await runSubscription(api);
 }
 
-async function processBlock(api: GearApi, blockNumber: number): Promise<void> {
-  const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
-  const events = await api.query.system.events.at(blockHash);
+async function processEvent(api: GearApi, event: UserMessageSent): Promise<void> {
+  const { message } = event.data;
+  const sourceHex = message.source.toHex();
 
-  let found = 0;
-  for (const record of events) {
-    const { event } = record;
-    if (event.section !== "gear" || event.method !== "UserMessageSent") continue;
+  if (sourceHex !== config.bridgeProgramId) return;
 
-    const rawData = event.data as unknown as {
-      message: {
-        source: { toHex(): string };
-        payload: { toHex(): string };
-      };
-    };
-    const sourceHex = rawData.message.source.toHex();
-    const payloadHex = rawData.message.payload.toHex();
+  const blockNumber = 0; // block number not directly on event; use for logging only
+  const payloadHex = message.payload.toHex();
 
-    if (sourceHex !== config.bridgeProgramId) continue;
+  console.log(`[relay] oracle UserMessageSent src=${sourceHex.slice(0, 10)} payload=${payloadHex.slice(0, 40)}`);
 
-    found++;
-    const decoded = decodeRequestPending(payloadHex);
-    if (!decoded) continue;
-
-    const payload = parsePayload(decoded.payload);
-    if (!payload) {
-      console.warn(`[relay] block ${blockNumber}: invalid BridgePayload schema`);
-      continue;
-    }
-
-    const idStr = decoded.id.toString();
-    if (sessionSeen.has(idStr)) continue;
-
-    const req: InFlightRequest = {
-      id: decoded.id,
-      caller: decoded.caller,
-      payload,
-      status: "pending",
-      retryCount: 0,
-    };
-
-    const inserted = insertRequest(req, config.bridgeProgramId, blockNumber);
-    if (!inserted) continue; // DB INSERT OR IGNORE → already in DB from a prior run
-
-    sessionSeen.add(idStr);
-    console.log(`[relay] block ${blockNumber}: RequestPending id=${decoded.id} type=${payload.type}`);
-    track(handleRequest(api, req));
+  const decoded = decodeRequestPending(payloadHex);
+  if (!decoded) {
+    console.warn(`[relay] decode failed payload=${payloadHex.slice(0, 60)}`);
+    return;
   }
 
-  if (found === 0 && blockNumber % 10 === 0) {
-    console.log(`[relay] block ${blockNumber}: alive, no bridge events`);
+  const payload = parsePayload(decoded.payload);
+  if (!payload) {
+    console.warn(`[relay] invalid BridgePayload schema`);
+    return;
   }
+
+  const idStr = decoded.id.toString();
+  if (sessionSeen.has(idStr)) return;
+
+  const req: InFlightRequest = {
+    id: decoded.id,
+    caller: decoded.caller,
+    payload,
+    status: "pending",
+    retryCount: 0,
+  };
+
+  const inserted = insertRequest(req, config.bridgeProgramId, blockNumber);
+  if (!inserted) return; // DB INSERT OR IGNORE → already in DB from a prior run
+
+  sessionSeen.add(idStr);
+  console.log(`[relay] RequestPending id=${decoded.id} type=${payload.type}`);
+  track(handleRequest(api, req));
 }
 
 export async function handleRequest(api: GearApi, req: InFlightRequest): Promise<void> {
