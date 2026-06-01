@@ -3,7 +3,7 @@ import { GearApi } from "@gear-js/api";
 import { WsProvider } from "@polkadot/api";
 import { config } from "./config.js";
 import { startSubscription, waitForDrain } from "./subscription.js";
-import { startChatAgent, startProactiveBroadcast } from "./chat-agent.js";
+import { startChatAgent, startProactiveBroadcast, startHerald } from "./chat-agent.js";
 import { closeDb, getCursor, queryStats } from "./request-state.js";
 
 async function main(): Promise<void> {
@@ -71,6 +71,9 @@ async function main(): Promise<void> {
     };
     startChatAgent(agentConfig);
     startProactiveBroadcast(agentConfig);
+    const heraldAccount = process.env.HERALD_ACCOUNT ?? "";
+    if (heraldAccount) startHerald(agentConfig, heraldAccount);
+    else console.log("[herald] disabled — set HERALD_ACCOUNT to enable");
   } else {
     console.warn("[relay] chat-agent disabled — set GROQ_API_KEY, VOUCHER_ID, VAN_IDL to enable");
   }

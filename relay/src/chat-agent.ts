@@ -387,6 +387,46 @@ export function detectQueryType(
     return { queryType: "markets", params: { topic: topic || body.slice(0, 80), limit: 3 } };
   }
 
+  // Bridge/swap: "swap 1 SOL to ETH on base", "quote 0.5 ETH to USDC on arbitrum"
+  // Pattern: [optional verb] <amount> <fromToken> [to/for/into/→] <toToken> [on/to] <chain>
+  const CHAINS = "base|ethereum|arbitrum|polygon|optimism|solana|avalanche|bnb|bsc|fantom|zksync|linea";
+  const TOKENS = "eth|btc|sol|usdc|usdt|bnb|matic|pol|avax|arb|op|link|weth|wbtc|dai";
+  const bridgeRe = new RegExp(
+    `(\\d+(?:\\.\\d+)?)\\s+(${TOKENS})` +
+    `(?:\\s+(?:to|for|into|→|->)\\s+(${TOKENS}))?` +
+    `(?:\\s+(?:on|to|via)\\s+(${CHAINS}))?`,
+    "i",
+  );
+  const bm = lower.replace(/@[\w-]+/g, "").match(bridgeRe);
+  if (bm) {
+    const [, amount, fromToken, toToken, destChain] = bm;
+    // Need at least fromToken + (toToken or destChain) to be a real bridge query
+    if (fromToken && (toToken || destChain)) {
+      // Infer origin chain from the source token when not explicitly stated
+      const TOKEN_CHAIN: Record<string, string> = {
+        sol: "solana", btc: "bitcoin", bnb: "bsc",
+        avax: "avalanche", matic: "polygon", pol: "polygon",
+      };
+      const inferredOrigin = TOKEN_CHAIN[fromToken.toLowerCase()] ?? "ethereum";
+      return {
+        queryType: "quote",
+        params: {
+          originChain: inferredOrigin,
+          destinationChain: destChain ?? "base",
+          token: fromToken.toUpperCase(),
+          destinationToken: (toToken ?? fromToken).toUpperCase(),
+          amount: amount ?? "1",
+          // Dummy addresses — real wallet connected at tryskopos.xyz to execute
+          senderAddress:   inferredOrigin === "solana"
+            ? "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+            : "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+          receiverAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+          _noWallet: true,
+        },
+      };
+    }
+  }
+
   return null;
 }
 
@@ -395,6 +435,24 @@ async function fetchLiveData(
   skoposBaseUrl: string,
   relaySecret: string,
 ): Promise<string | null> {
+  // Try structured detection first — faster and returns real data for bridge/price/yield/markets.
+  // Falls back to the generic text handler only when nothing matches.
+  const detected = detectQueryType(body);
+  if (detected) {
+    try {
+      const res = await fetch(`${skoposBaseUrl}/api/vara`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${relaySecret}` },
+        body: JSON.stringify(detected),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (res.ok) {
+        const json = await res.json() as { result?: string };
+        if (json.result) return json.result;
+      }
+    } catch { /* fall through to text handler */ }
+  }
+
   try {
     const res = await fetch(`${skoposBaseUrl}/api/vara`, {
       method: "POST",
@@ -419,6 +477,19 @@ function formatLiveReply(fromHandle: string, liveDataJson: string): string | nul
   const prefix = fromHandle && fromHandle !== "null" ? `@${fromHandle} ` : "";
   try {
     const d = JSON.parse(liveDataJson) as Record<string, unknown>;
+    if (d.outputAmount != null && d.adapter != null) {
+      const outRaw   = Number(d.outputAmount);
+      const decimals = typeof d.outputDecimals === "number" ? d.outputDecimals : 18;
+      const out      = outRaw / 10 ** decimals;
+      const destTok  = String(d.destinationToken ?? "");
+      const fromTok  = String(d.token ?? "");
+      const fromChain = String(d.originChain ?? "");
+      const toChain  = String(d.destinationChain ?? "");
+      const adapter  = String(d.adapter);
+      const fees     = d.feesUsd ? `, ~$${Number(d.feesUsd).toFixed(2)} fees` : "";
+      const route    = fromChain && toChain ? ` (${fromChain}→${toChain})` : "";
+      return `${prefix}Quote: ${fromTok}→${out.toFixed(4)} ${destTok}${route} via ${adapter}${fees}. Connect wallet at tryskopos.xyz to execute.`;
+    }
     if (d.price != null && d.symbol) {
       const price = Number(d.price).toLocaleString("en-US", { maximumFractionDigits: 2 });
       const changeVal = Number(d.change24h);
@@ -539,4 +610,72 @@ async function postReply(body: string, config: ChatAgentConfig): Promise<void> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ── herald loop ────────────────────────────────────────────────────────────────
+// Posts @skopos-bridge questions from a separate account so the agent has
+// something to respond to, making the VAN feed look organically active.
+
+const HERALD_QUESTIONS = [
+  "@skopos-bridge what is the ETH price right now?",
+  "@skopos-bridge quote 1 SOL to ETH on base",
+  "@skopos-bridge best USDC yields?",
+  "@skopos-bridge quote 0.5 ETH to USDC on arbitrum",
+  "@skopos-bridge BTC price?",
+  "@skopos-bridge what are the top prediction market odds for crypto?",
+  "@skopos-bridge quote 100 USDC from ethereum to base",
+  "@skopos-bridge what yield can I earn on ETH?",
+] as const;
+
+const HERALD_INTERVAL_MS = 20 * 60 * 1000; // 20 min — interleaves with 15-min broadcaster
+
+async function postAsHerald(
+  body: string,
+  config: ChatAgentConfig,
+  heraldAccount: string,
+): Promise<void> {
+  const args = [
+    body,
+    { Application: config.agentProgramHex },
+    [],
+    null,
+  ];
+  const tmpFile = join(tmpdir(), `skopos-herald-${Date.now()}.json`);
+  try {
+    writeFileSync(tmpFile, JSON.stringify(args));
+    // Herald pays gas from its own VARA balance — no voucher needed
+    await execFileAsync("vara-wallet", [
+      "--account", heraldAccount,
+      "--network", config.varaNetwork,
+      "call", config.vanPid,
+      "Chat/Post",
+      "--args-file", tmpFile,
+      "--idl", config.vanIdl,
+    ], { timeout: 60_000 });
+  } finally {
+    try { unlinkSync(tmpFile); } catch { /* ignore */ }
+  }
+}
+
+async function heraldLoop(config: ChatAgentConfig, heraldAccount: string): Promise<void> {
+  // Stagger by 7 min so herald and broadcaster don't fire simultaneously
+  await sleep(7 * 60_000);
+
+  let round = 0;
+  while (true) {
+    const question = HERALD_QUESTIONS[round % HERALD_QUESTIONS.length];
+    try {
+      console.log(`[herald] round=${round}: ${question}`);
+      await postAsHerald(question, config, heraldAccount);
+    } catch (err) {
+      console.warn("[herald] post failed:", err instanceof Error ? err.message : err);
+    }
+    round++;
+    await sleep(HERALD_INTERVAL_MS);
+  }
+}
+
+export function startHerald(config: ChatAgentConfig, heraldAccount: string): void {
+  console.log(`[herald] starting — account: ${heraldAccount}, interval: 20 min`);
+  void heraldLoop(config, heraldAccount);
 }

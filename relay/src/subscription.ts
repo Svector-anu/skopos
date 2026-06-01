@@ -154,18 +154,16 @@ export async function handleRequest(api: GearApi, req: InFlightRequest): Promise
   );
 
   if (!result.ok) {
-    updateRequestStatus(req.id, config.bridgeProgramId, "failed", req.retryCount);
-    console.error(`[relay] id=${req.id}: all retries exhausted — dead-lettered`);
-    return;
+    console.error(`[relay] id=${req.id}: all retries exhausted — submitting error result to chain`);
+  } else {
+    console.log(`[relay] id=${req.id}: skopos ok, submitting fulfill_request`);
   }
 
   updateRequestStatus(req.id, config.bridgeProgramId, "submitting");
-  console.log(`[relay] id=${req.id}: skopos ok, submitting fulfill_request`);
-
   try {
     await fulfillRequest(api, config.bridgeProgramId, req.id, result);
-    updateRequestStatus(req.id, config.bridgeProgramId, "done");
-    console.log(`[relay] id=${req.id}: DONE`);
+    updateRequestStatus(req.id, config.bridgeProgramId, result.ok ? "done" : "failed");
+    console.log(`[relay] id=${req.id}: ${result.ok ? "DONE" : "DONE (error result delivered)"}`);
   } catch (err) {
     updateRequestStatus(req.id, config.bridgeProgramId, "failed");
     console.error(`[relay] id=${req.id}: fulfill_request failed:`, err);

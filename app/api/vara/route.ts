@@ -163,6 +163,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         return respond({
           outputAmount: quote.outputAmount ?? "0",
+          outputDecimals: destTok.decimals,
+          token,
+          destinationToken,
+          originChain,
+          destinationChain,
           adapter: quote.adapter ?? "unknown",
           feesUsd: quote.fees?.totalUsd ?? quote.fees?.total?.amountUsd,
           calldata: quote.calldata,
