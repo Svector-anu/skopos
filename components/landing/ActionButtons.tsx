@@ -77,9 +77,8 @@ export function ActionButtons() {
         }
       />
       <OutlineButton
-        href="https://docs.delora.build"
+        href="/docs"
         label="Read Docs"
-        external
         icon={
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M9 12h6M9 16h6M7 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2" strokeLinecap="round" />
