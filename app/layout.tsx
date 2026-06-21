@@ -92,6 +92,7 @@ export default function RootLayout({
       <body className="h-full antialiased">
         <PageTransitionWrapper>{children}</PageTransitionWrapper>
         <Script src="/_vercel/insights/script.js" strategy="afterInteractive" />
+        <Script src="/_vercel/speed-insights/script.js" strategy="afterInteractive" />
       </body>
     </html>
   );
