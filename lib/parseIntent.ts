@@ -5,7 +5,7 @@ import { resolveChainId } from "./chains";
 // Intent classifier — runs before any LLM call
 // ---------------------------------------------------------------------------
 
-export type IntentType = "price" | "execution" | "analysis" | "informational" | "yield" | "prediction" | "fx" | "metal" | "equity" | "unknown";
+export type IntentType = "price" | "execution" | "analysis" | "informational" | "yield" | "prediction" | "fx" | "metal" | "equity" | "launch" | "unknown";
 
 export function classifyIntent(input: string): IntentType {
   const t = input.trim();
@@ -29,6 +29,13 @@ export function classifyIntent(input: string): IntentType {
   // Equity — narrow list, only what we have feed IDs for
   if (/\b(aapl|apple\s+stock|msft|microsoft\s+stock)\b/i.test(t)) return "equity";
 
+  // Token launch — a deploy verb plus an explicit token noun or a $ticker.
+  // Requires both so "launch the dashboard" never trips it.
+  const hasLaunchVerb = /\b(launch|deploy|create|mint)\b/i.test(t);
+  const hasTokenNoun  = /\b(token|coin|memecoin|meme\s*coin|erc-?20)\b/i.test(t);
+  const hasTicker     = /\$[a-z][a-z0-9]{1,9}\b/i.test(t);
+  if (hasLaunchVerb && (hasTokenNoun || hasTicker)) return "launch";
+
   // Execution intent takes priority — "how much to swap 1 ETH" is a quote request, not a price query
   if (hasExecVerb && hasAmount) return "execution";
   // Opinion signals beat price keywords — "is ETH worth buying" has "worth" (price kw) + opinion signal
@@ -45,6 +52,39 @@ export function classifyIntent(input: string): IntentType {
   if (hasKnownToken && !hasExecVerb && !hasAmount && !hasOpinionSignal && !hasYieldKeyword) return "price";
 
   return "unknown";
+}
+
+export interface LaunchParams {
+  name: string;
+  symbol?: string;
+  chain: string;
+}
+
+// Pulls a token name, optional ticker, and target chain out of a launch request
+// like `launch a token called Skopos ($SKO) on base`. Returns null if no name
+// can be found. Symbol falls back to the ticker; chain defaults to base, which
+// is the only chain Bankr launches on today.
+export function parseLaunchIntent(input: string): LaunchParams | null {
+  const t = input.trim();
+
+  const symMatch =
+    t.match(/\$([A-Za-z][A-Za-z0-9]{1,9})\b/) ||
+    t.match(/\(([A-Za-z][A-Za-z0-9]{1,9})\)/) ||
+    t.match(/\b(?:symbol|ticker)\s+\$?([A-Za-z][A-Za-z0-9]{1,9})\b/i);
+  const symbol = symMatch?.[1]?.toUpperCase();
+
+  const nameMatch =
+    t.match(/\b(?:called|named)\s+["']?([A-Za-z0-9][A-Za-z0-9 ]{0,39})["']?/i) ||
+    t.match(/["']([^"']{1,40})["']/);
+  let name = nameMatch?.[1]?.trim();
+  if (name) name = name.replace(/\s+(on|with|symbol|ticker|and)\b.*$/i, "").trim();
+  if (!name && symbol) name = symbol;
+  if (!name) return null;
+
+  const chainMatch = t.match(/\bon\s+([a-z][a-z0-9]+)\b/i);
+  const chain = chainMatch?.[1]?.toLowerCase() ?? "base";
+
+  return { name, symbol, chain };
 }
 
 export interface ParsedIntent {

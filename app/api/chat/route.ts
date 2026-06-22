@@ -10,8 +10,10 @@ import {
   generateTxSummary,
   generateAddressSummary,
   classifyIntent,
+  parseLaunchIntent,
   ParsedIntent,
 } from "@/lib/parseIntent";
+import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken, type TokenRisk } from "@/lib/dexscreener";
 import { getTopYields, type YieldPool } from "@/lib/defillama";
@@ -714,6 +716,41 @@ export async function POST(req: NextRequest) {
   const META_RE = /\b(system\s*prompt|your\s*instructions?|what\s*(?:model|llm|ai)\s*(?:are\s*you|is\s*this)|which\s*(?:model|api|llm)\s*(?:do\s*you|are\s*you)|openai|anthropic|are\s*you\s*(?:gpt|claude|chatgpt|llama)|gpt[-\s]?\d|how\s+old\s+are\s+you|when\s+(?:were|was)\s+you\s+(?:created|born|built|made|trained|launched)|(?:your|you\s+have\s+a?)\s*(?:age|birthday|birth\s*date)|knowledge\s+cutoff|training\s+(?:data|cutoff)|(?:do\s+you|you)\s+know\s+(?:about\s+)?\d{4}|what\s+year\s+(?:is\s+it|are\s+you|do\s+you\s+think)|who\s+(?:made|built|created|trained)\s+you)\b/i;
   if (META_RE.test(trimmed)) {
     return json({ type: "text", text: "I'm here to help with DeFi and on-chain tasks." });
+  }
+
+  // Token launch via Bankr Partner Deploy API. Two-step: a launch request previews,
+  // an explicit "confirm" deploys — never a one-shot launch from a single message.
+  if (queryType === "launch") {
+    if (!isBankrEnabled()) {
+      return json({ type: "text", text: "Token launching is coming soon to Skopos." });
+    }
+    const launch = parseLaunchIntent(trimmed);
+    if (!launch) {
+      return json({ type: "text", text: `Tell me the name, e.g. "launch a token called Skopos ($SKO) on base".` });
+    }
+    if (!senderAddress || !senderAddress.startsWith("0x")) {
+      return json({ type: "error", text: "Connect your wallet first — creator fees route to your address." });
+    }
+    const symbol = launch.symbol ?? launch.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 6).toUpperCase();
+    if (launch.chain !== "base") {
+      return json({ type: "text", text: `Bankr launches run on Base. Send "launch a token called ${launch.name} $${symbol} on base" to go ahead.` });
+    }
+    if (!/\bconfirm\b/i.test(trimmed)) {
+      return json({
+        type: "text",
+        text: `Ready to launch ${launch.name} ($${symbol}) on Base. Creator fees route to ${senderAddress.slice(0, 6)}…${senderAddress.slice(-4)}.\n\nTo deploy, send: confirm launch token called ${launch.name} $${symbol}`,
+      });
+    }
+    try {
+      const token = await launchToken({ name: launch.name, symbol, feeRecipient: senderAddress });
+      const addr = token.tokenAddress;
+      return json({
+        type: "text",
+        text: `Launched ${token.name ?? launch.name} ($${token.symbol ?? symbol}) on Base.${addr ? `\nContract: ${addr}\nhttps://basescan.org/token/${addr}` : ""}\nCreator fees route to your wallet.`,
+      });
+    } catch (err) {
+      return json({ type: "error", text: err instanceof Error ? err.message : "Could not launch the token right now." });
+    }
   }
 
   // Multi-leg rebalance — must run before single-leg so "split X across Y and Z" isn't parsed as one bridge

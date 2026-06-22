@@ -138,6 +138,7 @@ ALCHEMY_API_KEY
 NEXT_PUBLIC_PRIVY_APP_ID
 NEXT_PUBLIC_PRIVY_CLIENT_ID
 NEXT_PUBLIC_SOLANA_RPC   # optional
+BANKR_PARTNER_KEY        # optional — enables in-chat token launch via Bankr Partner Deploy API
 ```
 
 ---
