@@ -257,9 +257,27 @@ function regexParse(input: string): ParsedIntent | null {
 
 let groqClient: Groq | null = null;
 
+// LLM provider is env-selected; default "groq" keeps behaviour byte-for-byte
+// unchanged. The Bankr LLM Gateway is OpenAI-compatible, so the same groq-sdk
+// client drives it — only base URL, key, and model differ. Phase 0: wiring only,
+// not enabled until LLM_PROVIDER=bankr is set.
+const LLM_PROVIDER = process.env.LLM_PROVIDER === "bankr" ? "bankr" : "groq";
+const LLM_MODEL =
+  process.env.LLM_MODEL ??
+  (LLM_PROVIDER === "bankr" ? "gemini-3-flash" : "llama-3.1-8b-instant");
+
 function getGroq(): Groq | null {
+  if (groqClient) return groqClient;
+  if (LLM_PROVIDER === "bankr") {
+    if (!process.env.BANKR_LLM_KEY) return null;
+    groqClient = new Groq({
+      apiKey: process.env.BANKR_LLM_KEY,
+      baseURL: "https://llm.bankr.bot/v1",
+    });
+    return groqClient;
+  }
   if (!process.env.GROQ_API_KEY) return null;
-  if (!groqClient) groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
   return groqClient;
 }
 
@@ -353,7 +371,7 @@ async function groqParseIntent(input: string): Promise<ParsedIntent | null> {
 
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: LLM_MODEL,
       response_format: { type: "json_object" },
       max_tokens: 128,
       temperature: 0,
@@ -447,7 +465,7 @@ export async function parseRebalanceIntent(input: string): Promise<ParsedIntent[
 
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: LLM_MODEL,
       response_format: { type: "json_object" },
       max_tokens: 512,
       temperature: 0,
@@ -522,7 +540,7 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
   ].filter(Boolean).join("\n");
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: LLM_MODEL,
       max_tokens: 80,
       temperature: 0.1,
       messages: [
@@ -551,7 +569,7 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
   const prompt = `Address: ${data.address}\nNative balances: ${nativeBalances}\nToken balances: ${tokenBalances}\nRecent: ${recent || "none"}`;
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: LLM_MODEL,
       max_tokens: 80,
       temperature: 0.1,
       messages: [
@@ -579,7 +597,7 @@ export async function generateDecisionAnalysis(prompt: string): Promise<string> 
   if (!groq) return "";
   try {
     const completion = await groq.chat.completions.create({
-      model:       "llama-3.1-8b-instant",
+      model:       LLM_MODEL,
       max_tokens:  200,
       temperature: 0.4,
       messages: [
@@ -637,7 +655,7 @@ export async function getGroqInformationalReply(
   if (!groq) return "I don't have reliable information on that right now.";
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: LLM_MODEL,
       max_tokens: 200,
       temperature: 0,
       messages: [
@@ -665,7 +683,7 @@ export async function getGroqReply(
   const walletCtx = safeAddr ? `\n\nUser's connected wallet address: ${safeAddr}.` : "";
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: LLM_MODEL,
       max_tokens: 256,
       temperature: 0.2,
       stream: false,
@@ -703,7 +721,7 @@ export function streamSuggestion(
       }
       try {
         const stream = await groq.chat.completions.create({
-          model: "llama-3.1-8b-instant",
+          model: LLM_MODEL,
           max_tokens: 256,
           temperature: 0.2,
           stream: true,
@@ -906,7 +924,7 @@ export async function getSuggestion(
 
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: LLM_MODEL,
       max_tokens: 200,
       temperature: 0.1,
       messages: [
