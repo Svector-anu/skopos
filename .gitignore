@@ -42,3 +42,6 @@ next-env.d.ts
 
 # local planning docs (not for version control)
 docs/vara-mvp-prd.md
+
+# internal research / notes (never commit)
+/internal/
