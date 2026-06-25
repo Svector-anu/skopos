@@ -2336,6 +2336,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
   const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
   const { data: walletClient } = useWalletClient();
+  const { login, logout, authenticated } = usePrivy();
   const [smState, setSmState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [smMessage, setSmMessage] = useState<string | null>(null);
 
@@ -2343,8 +2344,12 @@ function IntelDisplay({ result }: { result: IntelResult }) {
   async function handleSmartMoney() {
     if (!token) return;
     if (!walletClient) {
-      setSmState("error");
-      setSmMessage("Connect your wallet to pay the $0.05 read.");
+      // Reuse the app's existing Privy connect (mirrors handleWalletAction):
+      // reconnect a ghost session, otherwise open login.
+      setSmState("idle");
+      setSmMessage("Connect your wallet, then tap again to pay $0.05.");
+      if (authenticated) await logout().catch(() => {});
+      login();
       return;
     }
     setSmState("loading");
@@ -2425,7 +2430,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
               opacity: premium.available ? 1 : 0.65,
             }}
           >
-            {smState === "loading" ? "…" : smState === "done" ? "✓" : premium.price}
+            {smState === "loading" ? "…" : smState === "done" ? "✓" : !walletClient ? "Connect" : premium.price}
           </button>
         </div>
       )}
