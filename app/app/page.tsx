@@ -77,7 +77,13 @@ type PolymarketResult = { type: "polymarket"; topic: string | null; markets: Pol
 
 type SuggestionsResult = { type: "suggestions"; prompts: { label: string; command: string }[] };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult;
+type IntelResult = {
+  type: "intel";
+  context: { url: string; sourceHost: string; title: string; excerpt: string };
+  premium: { available: boolean; label: string; price: string; note: string };
+};
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1017,6 +1023,11 @@ export default function AppPage() {
                     )}
                     {msg.result.type === "suggestions" && (
                       <SuggestionsDisplay result={msg.result} onSelect={(cmd: string) => submit(cmd)} />
+                    )}
+                    {msg.result.type === "intel" && (
+                      <ErrorBoundary label="Intel card failed to render.">
+                        <IntelDisplay result={msg.result} />
+                      </ErrorBoundary>
                     )}
                     {msg.result.type === "price" && (
                       <ErrorBoundary label="Price chart failed to render.">
@@ -2313,6 +2324,55 @@ function Sparkline({ prices, positive, width = 280, height = 64 }: { prices: num
 }
 
 // ─── TokenRiskDisplay ─────────────────────────────────────────────────────────
+
+function IntelDisplay({ result }: { result: IntelResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const ACCENT = "#38bdf8";
+  const { context, premium } = result;
+
+  return (
+    <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
+
+      {/* Eyebrow: distinct intel identity */}
+      <div style={{ padding: "12px 18px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+        <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>WEB INTEL</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>{context.sourceHost}</span>
+      </div>
+
+      {/* Title + excerpt */}
+      <div style={{ padding: "0 18px 14px" }}>
+        <a href={context.url} target="_blank" rel="noopener noreferrer"
+          style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, #ffffff)", textDecoration: "none", lineHeight: 1.3, display: "block", marginBottom: 8 }}>
+          {context.title}
+        </a>
+        <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+          {context.excerpt}
+        </p>
+      </div>
+
+      {/* Premium upsell — gated, pay-to-call lives here */}
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--card-surface)" }}>
+        <div>
+          <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
+          <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>{premium.note}</p>
+        </div>
+        <span style={{
+          ...MONO, fontSize: "0.66rem", fontWeight: 700,
+          color: premium.available ? ACCENT : "var(--card-text-faint, rgba(255,255,255,0.28))",
+          background: premium.available ? `${ACCENT}18` : "transparent",
+          border: `1px solid ${premium.available ? `${ACCENT}40` : "var(--card-border)"}`,
+          borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
+          opacity: premium.available ? 1 : 0.65,
+        }}>
+          {premium.price}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };

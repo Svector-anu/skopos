@@ -21,6 +21,7 @@ import { getTopMarkets, PolymarketEvent } from "@/lib/polymarket";
 import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "@/lib/polymarket-bridge";
 import { getPrice, getPriceChart } from "@/lib/priceCache";
 import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
+import { fetchWebContext, extractUrl } from "@/lib/intel";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -397,6 +398,25 @@ export async function POST(req: NextRequest) {
 
   const queryType = classifyIntent(trimmed);
   console.log(`[chat] ip=${ip} type=${queryType} len=${trimmed.length}`);
+
+  // ── Embedded URL → free web-context intel card (Jina Reader) ──────────────
+  // A URL is the strongest structural signal, so this runs before the price /
+  // intent fast-paths — otherwise a link containing a token-name substring
+  // (e.g. docs.uniswap.org) gets hijacked into a price card. Distinct surface,
+  // not merged into other cards. Paid on-chain/social alpha is gated behind the
+  // card's pay-to-call button. Falls through on failure so the message still
+  // gets a normal answer.
+  const intelUrl = extractUrl(trimmed);
+  if (intelUrl) {
+    const context = await fetchWebContext(intelUrl);
+    if (context) {
+      return json({
+        type: "intel",
+        context,
+        premium: { available: false, label: "Get smart-money read", price: "$0.05", note: "On-chain alpha — coming soon" },
+      });
+    }
+  }
 
   // ── Guided buy/sell — must run BEFORE the price fast-path ──────────────────
   // Price card buttons emit "buy MEGA on base" / "sell MEGA on megaeth".
