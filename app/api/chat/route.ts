@@ -430,7 +430,7 @@ export async function POST(req: NextRequest) {
       return json({
         type: "intel",
         token: { symbol, address },
-        premium: { available: false, label: "Smart-money read", price: "$0.05", note: "USDC on Base · Nansen · wiring next" },
+        premium: { available: true, label: "Smart-money read", price: "$0.05", note: "Pays $0.05 USDC on Base from your wallet · Nansen" },
       });
     }
   }

@@ -7,8 +7,9 @@ import { usePrivy, useFundWallet, useWallets, useConnectWallet } from "@privy-io
 import {
 useAccount, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
-  useWaitForTransactionReceipt,
+  useWaitForTransactionReceipt, useWalletClient,
 } from "wagmi";
+import { fetchSmartMoney } from "@/lib/smartMoneyClient";
 import {
   useWallet as useSolanaWallet,
   useConnection as useSolanaConnection,
@@ -2334,6 +2335,35 @@ function IntelDisplay({ result }: { result: IntelResult }) {
 
   const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
+  const { data: walletClient } = useWalletClient();
+  const [smState, setSmState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [smMessage, setSmMessage] = useState<string | null>(null);
+
+  // Untested at live settlement — first real run needs a connected, funded wallet.
+  async function handleSmartMoney() {
+    if (!token) return;
+    if (!walletClient) {
+      setSmState("error");
+      setSmMessage("Connect your wallet to pay the $0.05 read.");
+      return;
+    }
+    setSmState("loading");
+    setSmMessage(null);
+    try {
+      const res = await fetchSmartMoney(walletClient, token);
+      if (res.ok) {
+        setSmState("done");
+        setSmMessage("Smart-money data received.");
+      } else {
+        setSmState("error");
+        setSmMessage(res.error ?? "Request failed.");
+      }
+    } catch (err) {
+      setSmState("error");
+      setSmMessage(err instanceof Error ? err.message : "Payment failed.");
+    }
+  }
+
   return (
     <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
 
@@ -2376,20 +2406,27 @@ function IntelDisplay({ result }: { result: IntelResult }) {
       {/* Premium upsell — gated pay-to-call. Only meaningful with a token target. */}
       {premium && (
         <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--card-surface)" }}>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
-            <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>{premium.note}</p>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: smState === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
+              {smMessage ?? premium.note}
+            </p>
           </div>
-          <span style={{
-            ...MONO, fontSize: "0.66rem", fontWeight: 700,
-            color: premium.available ? ACCENT : "var(--card-text-faint, rgba(255,255,255,0.28))",
-            background: premium.available ? `${ACCENT}18` : "transparent",
-            border: `1px solid ${premium.available ? `${ACCENT}40` : "var(--card-border)"}`,
-            borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
-            opacity: premium.available ? 1 : 0.65,
-          }}>
-            {premium.price}
-          </span>
+          <button
+            onClick={handleSmartMoney}
+            disabled={!premium.available || smState === "loading"}
+            style={{
+              ...MONO, fontSize: "0.66rem", fontWeight: 700,
+              color: premium.available ? ACCENT : "var(--card-text-faint, rgba(255,255,255,0.28))",
+              background: premium.available ? `${ACCENT}18` : "transparent",
+              border: `1px solid ${premium.available ? `${ACCENT}40` : "var(--card-border)"}`,
+              borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
+              cursor: premium.available && smState !== "loading" ? "pointer" : "default",
+              opacity: premium.available ? 1 : 0.65,
+            }}
+          >
+            {smState === "loading" ? "…" : smState === "done" ? "✓" : premium.price}
+          </button>
         </div>
       )}
     </div>
