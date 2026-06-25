@@ -403,17 +403,34 @@ export async function POST(req: NextRequest) {
   // A URL is the strongest structural signal, so this runs before the price /
   // intent fast-paths — otherwise a link containing a token-name substring
   // (e.g. docs.uniswap.org) gets hijacked into a price card. Distinct surface,
-  // not merged into other cards. Paid on-chain/social alpha is gated behind the
-  // card's pay-to-call button. Falls through on failure so the message still
+  // not merged into other cards. Falls through on failure so the message still
   // gets a normal answer.
   const intelUrl = extractUrl(trimmed);
   if (intelUrl) {
     const context = await fetchWebContext(intelUrl);
     if (context) {
+      return json({ type: "intel", context });
+    }
+  }
+
+  // ── Token intel — explicit "smart money" / "intel on" a $ticker or contract.
+  // Gated on the intel keyword so it never swallows normal price or risk-scan
+  // queries. Gives the smart-money read (paid, user-signed x402) a token target.
+  if (/\b(smart[\s-]?money|intel)\b/i.test(trimmed)) {
+    const STOP = new Set(["ON", "FOR", "READ", "ABOUT", "THE", "OF", "IS", "A", "AN", "DOING", "WITH"]);
+    const address = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1] ?? null;
+    let symbol = trimmed.match(/\$([a-zA-Z][a-zA-Z0-9]{1,14})\b/)?.[1]?.toUpperCase() ?? null;
+    if (!symbol && !address) {
+      const bareword = trimmed
+        .match(/\b(?:smart[\s-]?money|intel)(?:\s+(?:on|for|read|about))?\s+([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
+        ?.toUpperCase();
+      if (bareword && !STOP.has(bareword)) symbol = bareword;
+    }
+    if (address || symbol) {
       return json({
         type: "intel",
-        context,
-        premium: { available: false, label: "Get smart-money read", price: "$0.05", note: "On-chain alpha — coming soon" },
+        token: { symbol, address },
+        premium: { available: false, label: "Smart-money read", price: "$0.05", note: "USDC on Base · Nansen · wiring next" },
       });
     }
   }

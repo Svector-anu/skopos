@@ -79,8 +79,9 @@ type SuggestionsResult = { type: "suggestions"; prompts: { label: string; comman
 
 type IntelResult = {
   type: "intel";
-  context: { url: string; sourceHost: string; title: string; excerpt: string };
-  premium: { available: boolean; label: string; price: string; note: string };
+  context?: { url: string; sourceHost: string; title: string; excerpt: string };
+  token?: { symbol: string | null; address: string | null };
+  premium?: { available: boolean; label: string; price: string; note: string };
 };
 
 type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult;
@@ -2328,7 +2329,10 @@ function Sparkline({ prices, positive, width = 280, height = 64 }: { prices: num
 function IntelDisplay({ result }: { result: IntelResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const ACCENT = "#38bdf8";
-  const { context, premium } = result;
+  const { context, token, premium } = result;
+  const isToken = !!token;
+
+  const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
   return (
     <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
@@ -2338,38 +2342,56 @@ function IntelDisplay({ result }: { result: IntelResult }) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
-        <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>WEB INTEL</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>{context.sourceHost}</span>
-      </div>
-
-      {/* Title + excerpt */}
-      <div style={{ padding: "0 18px 14px" }}>
-        <a href={context.url} target="_blank" rel="noopener noreferrer"
-          style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, #ffffff)", textDecoration: "none", lineHeight: 1.3, display: "block", marginBottom: 8 }}>
-          {context.title}
-        </a>
-        <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
-          {context.excerpt}
-        </p>
-      </div>
-
-      {/* Premium upsell — gated, pay-to-call lives here */}
-      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--card-surface)" }}>
-        <div>
-          <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
-          <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>{premium.note}</p>
-        </div>
-        <span style={{
-          ...MONO, fontSize: "0.66rem", fontWeight: 700,
-          color: premium.available ? ACCENT : "var(--card-text-faint, rgba(255,255,255,0.28))",
-          background: premium.available ? `${ACCENT}18` : "transparent",
-          border: `1px solid ${premium.available ? `${ACCENT}40` : "var(--card-border)"}`,
-          borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
-          opacity: premium.available ? 1 : 0.65,
-        }}>
-          {premium.price}
+        <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>
+          {isToken ? "TOKEN INTEL" : "WEB INTEL"}
+        </span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>
+          {isToken ? (token!.address ? shorten(token!.address) : "on-chain") : context!.sourceHost}
         </span>
       </div>
+
+      {isToken ? (
+        /* Token mode — header is the smart-money target */
+        <div style={{ padding: "0 18px 14px" }}>
+          <p style={{ ...MONO, fontSize: "1.15rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.2 }}>
+            {token!.symbol ? `$${token!.symbol}` : (token!.address ? shorten(token!.address) : "Token")}
+          </p>
+          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+            See whether smart-money wallets are accumulating or exiting this token.
+          </p>
+        </div>
+      ) : (
+        /* Web mode — free Jina context */
+        <div style={{ padding: "0 18px 14px" }}>
+          <a href={context!.url} target="_blank" rel="noopener noreferrer"
+            style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, #ffffff)", textDecoration: "none", lineHeight: 1.3, display: "block", marginBottom: 8 }}>
+            {context!.title}
+          </a>
+          <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+            {context!.excerpt}
+          </p>
+        </div>
+      )}
+
+      {/* Premium upsell — gated pay-to-call. Only meaningful with a token target. */}
+      {premium && (
+        <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--card-surface)" }}>
+          <div>
+            <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>{premium.note}</p>
+          </div>
+          <span style={{
+            ...MONO, fontSize: "0.66rem", fontWeight: 700,
+            color: premium.available ? ACCENT : "var(--card-text-faint, rgba(255,255,255,0.28))",
+            background: premium.available ? `${ACCENT}18` : "transparent",
+            border: `1px solid ${premium.available ? `${ACCENT}40` : "var(--card-border)"}`,
+            borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
+            opacity: premium.available ? 1 : 0.65,
+          }}>
+            {premium.price}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
