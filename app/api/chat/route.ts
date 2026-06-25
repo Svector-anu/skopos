@@ -12,6 +12,7 @@ import {
   classifyIntent,
   parseLaunchIntent,
   ParsedIntent,
+  type LlmTier,
 } from "@/lib/parseIntent";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
@@ -374,7 +375,10 @@ export async function POST(req: NextRequest) {
     return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429, headers: corsHeaders });
   }
 
-  const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage } = await req.json();
+  const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage, llmTier } = await req.json();
+
+  // Fast (Groq) vs Smart (Bankr gateway). Default fast → behaviour unchanged.
+  const tier: LlmTier = llmTier === "smart" ? "smart" : "fast";
 
   if (!message?.trim()) {
     return json({ error: "No message provided" }, { status: 400, headers: corsHeaders });
@@ -991,14 +995,14 @@ export async function POST(req: NextRequest) {
           const query = unknownMatch[1].replace(/^\$/, "");
           const risk  = await scanToken(query);
           if (risk) {
-            const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk));
+            const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier);
             return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
           }
         }
       }
     }
 
-    const text = await getGroqInformationalReply(message, history);
+    const text = await getGroqInformationalReply(message, history, tier);
     return json({ type: "text", text });
   }
 
@@ -1009,7 +1013,7 @@ export async function POST(req: NextRequest) {
     const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress);
     if (!result.ok) return json({ type: "error", text: result.text });
     const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;
-    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(intent, route));
+    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(intent, route), tier);
     return json({ type: "quote", mode: "preview", quotedAt: Date.now(), intent: legIntent, route, approval, calldata, raw, ...(bridgeAnalysis && { analysis: bridgeAnalysis }) });
   }
 
@@ -1026,7 +1030,7 @@ export async function POST(req: NextRequest) {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
     if (risk) {
-      const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk));
+      const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier);
       return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
     }
     return json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
@@ -1045,7 +1049,7 @@ export async function POST(req: NextRequest) {
     if (pools.length === 0) {
       return json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
     }
-    const analysis = await generateDecisionAnalysis(buildYieldAnalysisPrompt(symbol, pools));
+    const analysis = await generateDecisionAnalysis(buildYieldAnalysisPrompt(symbol, pools), tier);
     return json({ type: "yield_pools", symbol, pools, ...(analysis && { analysis }) });
   }
 
@@ -1055,6 +1059,6 @@ export async function POST(req: NextRequest) {
   }
 
   // ── constrained informational fallback — no live data, no transaction suggestions ──
-  const text = await getGroqInformationalReply(message, history);
+  const text = await getGroqInformationalReply(message, history, tier);
   return json({ type: "text", text });
 }

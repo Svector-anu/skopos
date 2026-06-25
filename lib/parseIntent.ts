@@ -255,30 +255,41 @@ function regexParse(input: string): ParsedIntent | null {
 // Layer 2: Groq LLM — intent extraction + general chat
 // ---------------------------------------------------------------------------
 
-let groqClient: Groq | null = null;
+export type LlmTier = "fast" | "smart";
 
-// LLM provider is env-selected; default "groq" keeps behaviour byte-for-byte
-// unchanged. The Bankr LLM Gateway is OpenAI-compatible, so the same groq-sdk
-// client drives it — only base URL, key, and model differ. Phase 0: wiring only,
-// not enabled until LLM_PROVIDER=bankr is set.
-const LLM_PROVIDER = process.env.LLM_PROVIDER === "bankr" ? "bankr" : "groq";
-const LLM_MODEL =
-  process.env.LLM_MODEL ??
-  (LLM_PROVIDER === "bankr" ? "gemini-3-flash" : "llama-3.1-8b-instant");
+let fastClient: Groq | null = null;
+let smartClient: Groq | null = null;
 
-function getGroq(): Groq | null {
-  if (groqClient) return groqClient;
-  if (LLM_PROVIDER === "bankr") {
-    if (!process.env.BANKR_LLM_KEY) return null;
-    groqClient = new Groq({
-      apiKey: process.env.BANKR_LLM_KEY,
-      baseURL: "https://llm.bankr.bot/v1",
-    });
-    return groqClient;
+// Fast = Groq free tier. Smart = Bankr LLM Gateway (OpenAI-compatible, so the same
+// groq-sdk client drives it — only base URL + key + model differ). Models are
+// env-overridable. Default tier is "fast" everywhere → behaviour unchanged.
+const FAST_MODEL  = process.env.FAST_LLM_MODEL  ?? "llama-3.1-8b-instant";
+const SMART_MODEL = process.env.SMART_LLM_MODEL ?? "gemini-3-flash";
+
+// Smart silently falls back to the Fast client when no gateway key is set, so a
+// disabled/misconfigured Smart never breaks a reply — it just isn't premium.
+// getGroq and modelFor share the same smart-vs-fast condition → always consistent.
+function smartEnabled(tier: LlmTier): boolean {
+  return tier === "smart" && !!process.env.BANKR_LLM_KEY;
+}
+
+function getGroq(tier: LlmTier = "fast"): Groq | null {
+  if (smartEnabled(tier)) {
+    if (!smartClient) {
+      smartClient = new Groq({
+        apiKey: process.env.BANKR_LLM_KEY,
+        baseURL: "https://llm.bankr.bot/v1",
+      });
+    }
+    return smartClient;
   }
   if (!process.env.GROQ_API_KEY) return null;
-  groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  return groqClient;
+  if (!fastClient) fastClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return fastClient;
+}
+
+function modelFor(tier: LlmTier = "fast"): string {
+  return smartEnabled(tier) ? SMART_MODEL : FAST_MODEL;
 }
 
 const GROQ_INTENT_SYSTEM = `You are a DeFi intent parser. Extract swap/bridge intent from user messages into JSON.
@@ -371,7 +382,7 @@ async function groqParseIntent(input: string): Promise<ParsedIntent | null> {
 
   try {
     const completion = await groq.chat.completions.create({
-      model: LLM_MODEL,
+      model: modelFor("fast"),
       response_format: { type: "json_object" },
       max_tokens: 128,
       temperature: 0,
@@ -465,7 +476,7 @@ export async function parseRebalanceIntent(input: string): Promise<ParsedIntent[
 
   try {
     const completion = await groq.chat.completions.create({
-      model: LLM_MODEL,
+      model: modelFor("fast"),
       response_format: { type: "json_object" },
       max_tokens: 512,
       temperature: 0,
@@ -540,7 +551,7 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
   ].filter(Boolean).join("\n");
   try {
     const completion = await groq.chat.completions.create({
-      model: LLM_MODEL,
+      model: modelFor("fast"),
       max_tokens: 80,
       temperature: 0.1,
       messages: [
@@ -569,7 +580,7 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
   const prompt = `Address: ${data.address}\nNative balances: ${nativeBalances}\nToken balances: ${tokenBalances}\nRecent: ${recent || "none"}`;
   try {
     const completion = await groq.chat.completions.create({
-      model: LLM_MODEL,
+      model: modelFor("fast"),
       max_tokens: 80,
       temperature: 0.1,
       messages: [
@@ -592,12 +603,12 @@ Rules — no exceptions:
 4. 3–4 sentences max. Lead with the strongest signal in the data.
 5. Your final sentence must be exactly: "Not financial advice."`;
 
-export async function generateDecisionAnalysis(prompt: string): Promise<string> {
-  const groq = getGroq();
+export async function generateDecisionAnalysis(prompt: string, tier: LlmTier = "fast"): Promise<string> {
+  const groq = getGroq(tier);
   if (!groq) return "";
   try {
     const completion = await groq.chat.completions.create({
-      model:       LLM_MODEL,
+      model: modelFor(tier),
       max_tokens:  200,
       temperature: 0.4,
       messages: [
@@ -650,12 +661,13 @@ function redactLiveNumbers(text: string): string {
 export async function getGroqInformationalReply(
   input: string,
   history?: { role: "user" | "assistant"; content: string }[],
+  tier: LlmTier = "fast",
 ): Promise<string> {
-  const groq = getGroq();
+  const groq = getGroq(tier);
   if (!groq) return "I don't have reliable information on that right now.";
   try {
     const completion = await groq.chat.completions.create({
-      model: LLM_MODEL,
+      model: modelFor(tier),
       max_tokens: 200,
       temperature: 0,
       messages: [
@@ -683,7 +695,7 @@ export async function getGroqReply(
   const walletCtx = safeAddr ? `\n\nUser's connected wallet address: ${safeAddr}.` : "";
   try {
     const completion = await groq.chat.completions.create({
-      model: LLM_MODEL,
+      model: modelFor("fast"),
       max_tokens: 256,
       temperature: 0.2,
       stream: false,
@@ -721,7 +733,7 @@ export function streamSuggestion(
       }
       try {
         const stream = await groq.chat.completions.create({
-          model: LLM_MODEL,
+          model: modelFor("fast"),
           max_tokens: 256,
           temperature: 0.2,
           stream: true,
@@ -924,7 +936,7 @@ export async function getSuggestion(
 
   try {
     const completion = await groq.chat.completions.create({
-      model: LLM_MODEL,
+      model: modelFor("fast"),
       max_tokens: 200,
       temperature: 0.1,
       messages: [

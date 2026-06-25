@@ -253,6 +253,7 @@ export default function AppPage() {
   const [featureSlide, setFeatureSlide]= useState(0);
   const [isMobile, setIsMobile]        = useState(false);
   const [slippage, setSlippage]        = useState(0.005);
+  const [llmTier, setLlmTier]          = useState<"fast" | "smart">("fast");
   const [horizonToast, setHorizonToast] = useState<string | null>(null);
   const [theme, setTheme]              = useState<"dark" | "light">(() => {
     if (typeof window === "undefined") return "dark";
@@ -493,7 +494,7 @@ export default function AppPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, senderAddress: connectedAddress, solanaAddress, history, slippage }),
+        body: JSON.stringify({ message: text, senderAddress: connectedAddress, solanaAddress, history, slippage, llmTier }),
         signal: abort.signal,
       });
 
@@ -971,7 +972,7 @@ export default function AppPage() {
                                 const res = await fetch("/api/chat", {
                                   method: "POST",
                                   headers: { "Content-Type": "application/json" },
-                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage }),                                });
+                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage, llmTier }),                                });
                                 const data: AssistantResult = await res.json();
                                 if (data.type === "quote") data.originMessage = origin;
                                 setMessages(prev => prev.map((m, j) =>
@@ -1219,6 +1220,23 @@ export default function AppPage() {
                       soon ✦
                     </span>
                   )}
+                  {(["fast", "smart"] as const).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setLlmTier(t)}
+                      title={t === "smart" ? "Smart — frontier models" : "Fast — quick & free"}
+                      style={{
+                        ...MONO, fontSize: "0.6rem", padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
+                        border: `1px solid ${llmTier === t ? "rgba(245,184,0,0.35)" : "var(--drawer-label)"}`,
+                        background: llmTier === t ? "rgba(245,184,0,0.06)" : "transparent",
+                        color: llmTier === t ? "rgba(245,184,0,0.85)" : "var(--drawer-action)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {t === "smart" ? "✦ Smart" : "⚡ Fast"}
+                    </button>
+                  ))}
                   <span style={{ ...MONO, fontSize: "0.58rem", color: T.textFaint }}>slip</span>
                   {SLIPPAGE_OPTIONS.map(({ value, label }) => (
                     <button
