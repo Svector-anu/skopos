@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Source_Serif_4, Source_Sans_3, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import { PageTransitionWrapper } from "@/components/shared/PageTransitionWrapper";
@@ -57,16 +57,16 @@ export const metadata: Metadata = {
     images: ["/api/header"],
   },
 
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    viewportFit: "cover",
-  },
-
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -81,9 +81,10 @@ export default function RootLayout({
       className={`${sourceSerif.variable} ${sourceSans.variable} ${jetbrainsMono.variable} h-full`}
     >
       <head>
-        <Script
-          id="clear-theme"
-          strategy="beforeInteractive"
+        {/* Plain server-rendered inline script: emitted into the SSR'd <head> and
+            runs once before hydration. Avoids next/script's beforeInteractive path,
+            which renders a React-managed <script> that React 19 flags on the client. */}
+        <script
           dangerouslySetInnerHTML={{
             __html: `try{localStorage.removeItem('skopos-theme');}catch(e){}`,
           }}
