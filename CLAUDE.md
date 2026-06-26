@@ -144,6 +144,8 @@ UPSTASH_REDIS_REST_URL   # optional — Smart-tier metering store; absent → me
 UPSTASH_REDIS_REST_TOKEN # optional — pairs with UPSTASH_REDIS_REST_URL
 SMART_FREE_DAILY_CAP     # optional — free Smart messages/day per wallet (default 20)
 SMART_ANON_TEASER_CAP    # optional — free Smart messages for anonymous (no-wallet) users before connect paywall (default 2)
+SUB_PRICE_USDC           # optional — Smart subscription price in USDC on Base, charged via x402 (placeholder; default 5)
+SUB_PAYTO                # optional — wallet that receives subscription settlement (default svector.eth main wallet)
 ```
 
 ---

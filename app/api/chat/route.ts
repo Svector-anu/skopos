@@ -16,6 +16,7 @@ import {
   type LlmMeta,
 } from "@/lib/parseIntent";
 import { checkSmartQuota, incrSmart } from "@/lib/usage";
+import { isEntitled } from "@/lib/subscription";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
@@ -399,8 +400,11 @@ export async function POST(req: NextRequest) {
   // client-generated id, then a connect paywall. Read-only here: the counter only
   // increments after a Smart reply genuinely serves (recordSmart, below), so a
   // structural card or a gateway fallback to Fast never burns a count.
+  // An active subscription bypasses the counter entirely (uncapped Smart): when
+  // entitled we leave smartKey null so recordSmart() never increments. Only
+  // non-subscribed wallets (and anon teaser users) hit the daily-cap path.
   let smartKey: string | null = null;
-  if (tier === "smart") {
+  if (tier === "smart" && !(await isEntitled(senderAddress))) {
     const quota = await checkSmartQuota({ wallet: senderAddress, anonId });
     if (!quota.allowed) {
       return json({ type: "paywall", reason: quota.reason, used: quota.used, cap: quota.cap }, { headers: corsHeaders });
