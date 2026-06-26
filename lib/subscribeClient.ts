@@ -43,11 +43,27 @@ export async function subscribe(walletClient: WalletClient): Promise<SubscribeRe
   const client = new x402Client().register(NETWORK, new ExactEvmScheme(walletToSigner(walletClient)));
   const payFetch = wrapFetchWithPayment(globalThis.fetch, client);
 
-  const res = await payFetch(SUBSCRIBE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ wallet: account.address }),
-  });
+  let res: Response;
+  try {
+    res = await payFetch(SUBSCRIBE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: account.address }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (/reject|denied|cancel|\b4001\b/i.test(msg)) {
+      return { ok: false, error: "Payment cancelled — you weren't charged." };
+    }
+    return { ok: false, error: "Could not complete payment. Please try again." };
+  }
+
+  // A 402 here means the payment was never attached (the user declined the
+  // signature), so the endpoint is still asking for payment — not a failure to
+  // surface as a raw error.
+  if (res.status === 402) {
+    return { ok: false, error: "Payment cancelled — you weren't charged." };
+  }
 
   if (!res.ok) {
     let error = `Subscription failed (${res.status}).`;
