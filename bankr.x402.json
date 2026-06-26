@@ -1,0 +1,17 @@
+{
+  "network": "base",
+  "currency": "USDC",
+  "services": {
+    "skopos-subscribe": {
+      "description": "Skopos Smart — 30-day subscription. Pay USDC on Base to unlock unlimited Smart-tier replies for your wallet.",
+      "price": "5",
+      "methods": ["POST"],
+      "schema": {
+        "input": { "wallet": "string" },
+        "output": { "ok": "boolean", "wallet": "string", "expiry": "number" }
+      },
+      "category": "subscription",
+      "tags": ["skopos", "subscription", "smart", "llm"]
+    }
+  }
+}

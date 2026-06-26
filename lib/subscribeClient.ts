@@ -2,12 +2,15 @@ import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 import type { WalletClient } from "viem";
 
-// User-signed x402 purchase for the Smart subscription. Mirrors smartMoneyClient:
-// the wallet signs an EIP-3009 USDC authorization against the 402 requirements
-// returned by /api/subscribe; no private key leaves the wallet. COMPILE-VERIFIED
-// ONLY — live settlement on Base needs a funded wallet + a mainnet facilitator.
+// User-signed x402 purchase for the Smart subscription. The wallet signs an
+// EIP-3009 USDC authorization against the 402 returned by the Bankr x402 Cloud
+// endpoint (x402.bankr.bot/<wallet>/skopos-subscribe); Bankr verifies + settles
+// on Base mainnet and our handler grants the sub. We send the connected wallet so
+// the handler knows which address to credit. COMPILE-VERIFIED ONLY — live
+// settlement needs a funded wallet on Base.
 
-const BASE_NETWORK = "eip155:8453";
+const NETWORK = "eip155:8453";
+const SUBSCRIBE_URL = process.env.NEXT_PUBLIC_SUBSCRIBE_URL;
 
 export interface SubscribeResult {
   ok: boolean;
@@ -33,13 +36,17 @@ function walletToSigner(walletClient: WalletClient) {
 }
 
 export async function subscribe(walletClient: WalletClient): Promise<SubscribeResult> {
-  const client = new x402Client().register(BASE_NETWORK, new ExactEvmScheme(walletToSigner(walletClient)));
+  if (!SUBSCRIBE_URL) return { ok: false, error: "Subscriptions are not enabled yet." };
+  const account = walletClient.account;
+  if (!account) return { ok: false, error: "Connect a wallet to subscribe." };
+
+  const client = new x402Client().register(NETWORK, new ExactEvmScheme(walletToSigner(walletClient)));
   const payFetch = wrapFetchWithPayment(globalThis.fetch, client);
 
-  const res = await payFetch("/api/subscribe", {
+  const res = await payFetch(SUBSCRIBE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: "{}",
+    body: JSON.stringify({ wallet: account.address }),
   });
 
   if (!res.ok) {
