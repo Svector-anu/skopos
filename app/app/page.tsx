@@ -253,7 +253,10 @@ export default function AppPage() {
   const [featureSlide, setFeatureSlide]= useState(0);
   const [isMobile, setIsMobile]        = useState(false);
   const [slippage, setSlippage]        = useState(0.005);
-  const [llmTier, setLlmTier]          = useState<"fast" | "smart">("fast");
+  const [llmTier, setLlmTier]          = useState<"fast" | "smart">(() => {
+    if (typeof window === "undefined") return "fast";
+    return localStorage.getItem("skopos-llm-tier") === "smart" ? "smart" : "fast";
+  });
   const [horizonToast, setHorizonToast] = useState<string | null>(null);
   const [theme, setTheme]              = useState<"dark" | "light">(() => {
     if (typeof window === "undefined") return "dark";
@@ -360,6 +363,10 @@ export default function AppPage() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("skopos-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("skopos-llm-tier", llmTier);
+  }, [llmTier]);
 
   useEffect(() => {
     setIsOnline(navigator.onLine);
