@@ -146,6 +146,9 @@ SMART_FREE_DAILY_CAP     # optional — free Smart messages/day per wallet (defa
 SMART_ANON_TEASER_CAP    # optional — free Smart messages for anonymous (no-wallet) users before connect paywall (default 2)
 SUB_PRICE_USDC           # optional — Smart subscription price in USDC on Base, charged via x402 (placeholder; default 5)
 SUB_PAYTO                # optional — wallet that receives subscription settlement (default svector.eth main wallet)
+X402_FACILITATOR_URL     # optional — remote x402 facilitator that verifies + settles; /api/subscribe returns 503 until set
+X402_FACILITATOR_AUTH_HEADER  # optional — static auth header name for the facilitator (e.g. CDP)
+X402_FACILITATOR_AUTH_VALUE   # optional — pairs with X402_FACILITATOR_AUTH_HEADER
 ```
 
 ---
