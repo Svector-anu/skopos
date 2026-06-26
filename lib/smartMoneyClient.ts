@@ -34,7 +34,7 @@ function walletToSigner(walletClient: WalletClient) {
   });
 }
 
-const LOOKBACK_DAYS = 7;
+const LOOKBACK_DAYS = 30;
 
 function isoNoMillis(date: Date): string {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -54,9 +54,12 @@ export async function fetchSmartMoney(
   const now = new Date();
   const from = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 
-  // Token God Mode "who-bought-sold" scoped to this token + chain, filtered to
-  // smart-money labels. Routed through the same-origin proxy (avoids CORS; the
-  // proxy relays to Nansen and the user's wallet signs the x402 payment).
+  // Token God Mode "who-bought-sold" scoped to this token + chain. No
+  // include_smart_money_labels filter: Nansen's entity labels are Pro-gated and
+  // unavailable over keyless x402 (their /labels/* data), so filtering by them
+  // returns an empty set. Without it the endpoint returns the token's top
+  // wallets by trade volume — which IS available at the $0.01 tier. Routed
+  // through the same-origin proxy; the user's wallet signs the x402 payment.
   const res = await payFetch("/api/intel/nansen", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -66,10 +69,6 @@ export async function fetchSmartMoney(
         chain: token.chain,
         token_address: token.address,
         date: { from: isoNoMillis(from), to: isoNoMillis(now) },
-        filters: {
-          include_smart_money_labels: ["Whale", "Smart Trader"],
-          trade_volume_usd: { min: 1 },
-        },
       },
     }),
   });

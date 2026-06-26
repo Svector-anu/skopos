@@ -2397,6 +2397,16 @@ function SmartMoneyPanel({ data }: { data: unknown }) {
   const shorten = (a: string) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
   const rows = smRows(data);
 
+  if (rows.length === 0) {
+    return (
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+          No wallet trades found for this token in the last 30 days.
+        </p>
+      </div>
+    );
+  }
+
   const parsed = rows.map((r) => {
     const bought = pickNum(r, SM_FIELDS.bought);
     const sold = pickNum(r, SM_FIELDS.sold);
@@ -2409,7 +2419,7 @@ function SmartMoneyPanel({ data }: { data: unknown }) {
     return (
       <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
         <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 6px" }}>
-          Read complete — {rows.length} record(s).
+          Read complete — {rows.length} record(s), unrecognized shape.
         </p>
         <pre style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 160, overflow: "auto" }}>
           {JSON.stringify(data, null, 2).slice(0, 600)}
@@ -2426,7 +2436,7 @@ function SmartMoneyPanel({ data }: { data: unknown }) {
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
         <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>
-          SMART MONEY · 7D · {parsed.length} WALLET{parsed.length === 1 ? "" : "S"}
+          TOP WALLETS · 30D · {parsed.length} TRADER{parsed.length === 1 ? "" : "S"}
         </span>
         <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: accumulating ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
           {accumulating ? "▲ accumulating" : "▼ exiting"} {fmtUsdShort(totalNet)}
@@ -2520,7 +2530,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
             {token!.symbol ? `$${token!.symbol}` : (token!.address ? shorten(token!.address) : "Token")}
           </p>
           <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
-            See whether smart-money wallets are accumulating or exiting this token.
+            See which wallets are accumulating or exiting this token (top traders by net flow).
           </p>
         </div>
       ) : (
