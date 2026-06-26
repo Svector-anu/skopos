@@ -2392,9 +2392,18 @@ function fmtUsdShort(n: number): string {
   return `${n < 0 ? "-" : ""}$${s}`;
 }
 
-function SmartMoneyPanel({ data }: { data: unknown }) {
+const SM_EXPLORER: Record<string, string> = {
+  ethereum: "https://etherscan.io/address/",
+  base:     "https://basescan.org/address/",
+  arbitrum: "https://arbiscan.io/address/",
+  polygon:  "https://polygonscan.com/address/",
+  solana:   "https://solscan.io/account/",
+};
+
+function SmartMoneyPanel({ data, chain }: { data: unknown; chain: string | null }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const shorten = (a: string) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+  const explorerBase = chain ? SM_EXPLORER[chain] : undefined;
   const rows = smRows(data);
 
   if (rows.length === 0) {
@@ -2444,11 +2453,21 @@ function SmartMoneyPanel({ data }: { data: unknown }) {
       </div>
       {sorted.map((p, i) => {
         const positive = (p.net ?? 0) >= 0;
+        const display = p.label ?? (p.id ? shorten(p.id) : "Unknown");
+        const href = p.id && explorerBase ? `${explorerBase}${p.id}` : null;
         return (
           <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {p.label ?? (p.id ? shorten(p.id) : "Unknown")}
-            </span>
+            {href ? (
+              <a href={href} target="_blank" rel="noopener noreferrer"
+                title={p.id ?? undefined}
+                style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", textDecoration: "none", borderBottom: "1px dotted var(--card-text-faint, rgba(255,255,255,0.3))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {display}
+              </a>
+            ) : (
+              <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {display}
+              </span>
+            )}
             {p.net !== null && (
               <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: positive ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
                 {positive ? "▲" : "▼"} {fmtUsdShort(p.net)}
@@ -2573,7 +2592,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
         </div>
       )}
 
-      {smState === "done" && smData != null && <SmartMoneyPanel data={smData} />}
+      {smState === "done" && smData != null && <SmartMoneyPanel data={smData} chain={token?.chain ?? null} />}
     </div>
   );
 }
