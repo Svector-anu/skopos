@@ -2347,12 +2347,15 @@ function Sparkline({ prices, positive, width = 280, height = 64 }: { prices: num
 
 type SmRow = Record<string, unknown>;
 
+// Field names from Nansen's TGMWhoBoughtSold OpenAPI schema, with looser
+// fallbacks first in case the wrapper shape shifts. trade_volume_usd is the net
+// USD (buy − sell) — the accumulating(+)/exiting(−) signal.
 const SM_FIELDS = {
   address: ["address", "wallet_address", "wallet", "walletAddress", "owner"],
-  label:   ["label", "entity", "name", "smart_money_label", "entity_name"],
-  bought:  ["volume_bought_usd", "bought_usd", "buy_volume_usd", "total_bought_usd", "boughtVolumeUsd"],
-  sold:    ["volume_sold_usd", "sold_usd", "sell_volume_usd", "total_sold_usd", "soldVolumeUsd"],
-  net:     ["net_flow_usd", "net_volume_usd", "net_usd", "netVolumeUsd", "net"],
+  label:   ["address_label", "label", "entity", "name", "smart_money_label"],
+  bought:  ["bought_volume_usd", "volume_bought_usd", "buy_volume_usd"],
+  sold:    ["sold_volume_usd", "volume_sold_usd", "sell_volume_usd"],
+  net:     ["trade_volume_usd", "net_flow_usd", "net_volume_usd", "net_usd"],
 };
 
 function smRows(data: unknown): SmRow[] {
@@ -2416,12 +2419,19 @@ function SmartMoneyPanel({ data }: { data: unknown }) {
   }
 
   const sorted = [...parsed].sort((a, b) => (b.net ?? 0) - (a.net ?? 0)).slice(0, 6);
+  const totalNet = parsed.reduce((s, p) => s + (p.net ?? 0), 0);
+  const accumulating = totalNet >= 0;
 
   return (
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
-      <p style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))", margin: "0 0 2px" }}>
-        SMART MONEY · 7D NET FLOW
-      </p>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>
+          SMART MONEY · 7D · {parsed.length} WALLET{parsed.length === 1 ? "" : "S"}
+        </span>
+        <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: accumulating ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
+          {accumulating ? "▲ accumulating" : "▼ exiting"} {fmtUsdShort(totalNet)}
+        </span>
+      </div>
       {sorted.map((p, i) => {
         const positive = (p.net ?? 0) >= 0;
         return (
