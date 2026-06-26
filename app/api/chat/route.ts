@@ -13,7 +13,9 @@ import {
   parseLaunchIntent,
   ParsedIntent,
   type LlmTier,
+  type LlmMeta,
 } from "@/lib/parseIntent";
+import { checkSmartQuota, incrSmart } from "@/lib/usage";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
@@ -376,7 +378,7 @@ export async function POST(req: NextRequest) {
     return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429, headers: corsHeaders });
   }
 
-  const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage, llmTier } = await req.json();
+  const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage, llmTier, anonId } = await req.json();
 
   // Fast (Groq) vs Smart (Bankr gateway). Default fast → behaviour unchanged.
   const tier: LlmTier = llmTier === "smart" ? "smart" : "fast";
@@ -391,6 +393,27 @@ export async function POST(req: NextRequest) {
   if (trimmed.length > 2000) {
     return json({ type: "error", text: "Message too long." }, { status: 400, headers: corsHeaders });
   }
+
+  // ── Smart-tier metering gate (Fast is always free + anonymous, never gated) ──
+  // Wallet users get the free daily cap; anon users get a small teaser keyed by a
+  // client-generated id, then a connect paywall. Read-only here: the counter only
+  // increments after a Smart reply genuinely serves (recordSmart, below), so a
+  // structural card or a gateway fallback to Fast never burns a count.
+  let smartKey: string | null = null;
+  if (tier === "smart") {
+    const quota = await checkSmartQuota({ wallet: senderAddress, anonId });
+    if (!quota.allowed) {
+      return json({ type: "paywall", reason: quota.reason, used: quota.used, cap: quota.cap }, { headers: corsHeaders });
+    }
+    smartKey = quota.key;
+  }
+  const meterMeta: LlmMeta = {};
+  const recordSmart = async () => {
+    if (smartKey && meterMeta.servedBy === "smart") {
+      await incrSmart(smartKey);
+      meterMeta.servedBy = undefined;
+    }
+  };
 
   // If Phantom isn't connected, the user can paste their Solana address inline.
   // Extract it so EVM→Solana bridges can proceed without Phantom.
@@ -1009,14 +1032,16 @@ export async function POST(req: NextRequest) {
           const query = unknownMatch[1].replace(/^\$/, "");
           const risk  = await scanToken(query);
           if (risk) {
-            const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier);
+            const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta);
+            await recordSmart();
             return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
           }
         }
       }
     }
 
-    const text = await getGroqInformationalReply(message, history, tier);
+    const text = await getGroqInformationalReply(message, history, tier, meterMeta);
+    await recordSmart();
     return json({ type: "text", text });
   }
 
@@ -1027,7 +1052,8 @@ export async function POST(req: NextRequest) {
     const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress);
     if (!result.ok) return json({ type: "error", text: result.text });
     const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;
-    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(intent, route), tier);
+    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(intent, route), tier, meterMeta);
+    await recordSmart();
     return json({ type: "quote", mode: "preview", quotedAt: Date.now(), intent: legIntent, route, approval, calldata, raw, ...(bridgeAnalysis && { analysis: bridgeAnalysis }) });
   }
 
@@ -1044,7 +1070,8 @@ export async function POST(req: NextRequest) {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
     if (risk) {
-      const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier);
+      const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta);
+      await recordSmart();
       return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
     }
     return json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
@@ -1063,7 +1090,8 @@ export async function POST(req: NextRequest) {
     if (pools.length === 0) {
       return json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
     }
-    const analysis = await generateDecisionAnalysis(buildYieldAnalysisPrompt(symbol, pools), tier);
+    const analysis = await generateDecisionAnalysis(buildYieldAnalysisPrompt(symbol, pools), tier, meterMeta);
+    await recordSmart();
     return json({ type: "yield_pools", symbol, pools, ...(analysis && { analysis }) });
   }
 
@@ -1073,6 +1101,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── constrained informational fallback — no live data, no transaction suggestions ──
-  const text = await getGroqInformationalReply(message, history, tier);
+  const text = await getGroqInformationalReply(message, history, tier, meterMeta);
+  await recordSmart();
   return json({ type: "text", text });
 }

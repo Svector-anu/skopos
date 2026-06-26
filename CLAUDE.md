@@ -139,6 +139,11 @@ NEXT_PUBLIC_PRIVY_APP_ID
 NEXT_PUBLIC_PRIVY_CLIENT_ID
 NEXT_PUBLIC_SOLANA_RPC   # optional
 BANKR_PARTNER_KEY        # optional — enables in-chat token launch via Bankr Partner Deploy API
+BANKR_LLM_KEY            # optional — enables the ✦ Smart tier (Bankr LLM Gateway)
+UPSTASH_REDIS_REST_URL   # optional — Smart-tier metering store; absent → metering fails open (uncapped)
+UPSTASH_REDIS_REST_TOKEN # optional — pairs with UPSTASH_REDIS_REST_URL
+SMART_FREE_DAILY_CAP     # optional — free Smart messages/day per wallet (default 20)
+SMART_ANON_TEASER_CAP    # optional — free Smart messages for anonymous (no-wallet) users before connect paywall (default 2)
 ```
 
 ---

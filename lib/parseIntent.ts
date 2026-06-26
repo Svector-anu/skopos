@@ -298,7 +298,11 @@ function modelFor(tier: LlmTier = "fast"): string {
 }
 
 type LlmMessage = { role: "system" | "user" | "assistant"; content: string };
-interface ChatResult { content: string | null; finishReason?: string }
+interface ChatResult { content: string | null; finishReason?: string; servedBy: LlmTier }
+
+// Mutable out-param so callers can learn which tier actually served a reply
+// (the gateway can degrade to Fast). Used to meter only genuine Smart replies.
+export type LlmMeta = { servedBy?: LlmTier };
 
 // groq-sdk hard-codes the /openai/v1 path, so it cannot reach the Bankr gateway
 // (which serves /v1/chat/completions). Drive Smart with a direct fetch to the
@@ -319,7 +323,7 @@ async function chatComplete(
         const data = await res.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[] };
         const choice = data.choices?.[0];
         console.log(`[llm] path=smart-gateway model=${SMART_MODEL} finish=${choice?.finish_reason}`);
-        return { content: choice?.message?.content ?? null, finishReason: choice?.finish_reason };
+        return { content: choice?.message?.content ?? null, finishReason: choice?.finish_reason, servedBy: "smart" };
       }
       console.error(`[llm] Bankr gateway ${res.status} — degrading to Fast`);
     } catch (err) {
@@ -334,7 +338,7 @@ async function chatComplete(
   const completion = await groq.chat.completions.create({ model: FAST_MODEL, ...params });
   const choice = completion.choices[0];
   console.log(`[llm] path=fast model=${FAST_MODEL} finish=${choice?.finish_reason}`);
-  return { content: choice?.message?.content ?? null, finishReason: choice?.finish_reason };
+  return { content: choice?.message?.content ?? null, finishReason: choice?.finish_reason, servedBy: "fast" };
 }
 
 const GROQ_INTENT_SYSTEM = `You are a DeFi intent parser. Extract swap/bridge intent from user messages into JSON.
@@ -648,7 +652,7 @@ Rules — no exceptions:
 4. 3–4 sentences max. Lead with the strongest signal in the data.
 5. Your final sentence must be exactly: "Not financial advice."`;
 
-export async function generateDecisionAnalysis(prompt: string, tier: LlmTier = "fast"): Promise<string> {
+export async function generateDecisionAnalysis(prompt: string, tier: LlmTier = "fast", meta?: LlmMeta): Promise<string> {
   try {
     const completion = await chatComplete(tier, {
       max_tokens:  200,
@@ -658,6 +662,7 @@ export async function generateDecisionAnalysis(prompt: string, tier: LlmTier = "
         { role: "user",   content: prompt },
       ],
     });
+    if (meta) meta.servedBy = completion?.servedBy;
     return completion?.content?.trim() ?? "";
   } catch {
     return "";
@@ -719,6 +724,7 @@ export async function getGroqInformationalReply(
   input: string,
   history?: { role: "user" | "assistant"; content: string }[],
   tier: LlmTier = "fast",
+  meta?: LlmMeta,
 ): Promise<string> {
   const FALLBACK = "I don't have reliable information on that right now.";
   // Only "breathe" when Smart is actually going to the gateway. If Smart was
@@ -734,6 +740,7 @@ export async function getGroqInformationalReply(
         { role: "user", content: input },
       ],
     });
+    if (meta) meta.servedBy = completion?.servedBy;
     const raw = completion?.content?.trim();
     if (!raw) return FALLBACK;
     return redactLiveNumbers(raw);

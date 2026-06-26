@@ -85,7 +85,9 @@ type IntelResult = {
   premium?: { available: boolean; label: string; price: string; note: string };
 };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult;
+type PaywallResult = { type: "paywall"; reason: "connect" | "daily_cap"; used: number; cap: number };
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -256,6 +258,15 @@ export default function AppPage() {
   const [llmTier, setLlmTier]          = useState<"fast" | "smart">(() => {
     if (typeof window === "undefined") return "fast";
     return localStorage.getItem("skopos-llm-tier") === "smart" ? "smart" : "fast";
+  });
+  const [anonId] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    let id = localStorage.getItem("skopos-anon-id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("skopos-anon-id", id);
+    }
+    return id;
   });
   const [horizonToast, setHorizonToast] = useState<string | null>(null);
   const [theme, setTheme]              = useState<"dark" | "light">(() => {
@@ -501,7 +512,7 @@ export default function AppPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, senderAddress: connectedAddress, solanaAddress, history, slippage, llmTier }),
+        body: JSON.stringify({ message: text, senderAddress: connectedAddress, solanaAddress, history, slippage, llmTier, anonId }),
         signal: abort.signal,
       });
 
@@ -979,7 +990,7 @@ export default function AppPage() {
                                 const res = await fetch("/api/chat", {
                                   method: "POST",
                                   headers: { "Content-Type": "application/json" },
-                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage, llmTier }),                                });
+                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage, llmTier, anonId }),                                });
                                 const data: AssistantResult = await res.json();
                                 if (data.type === "quote") data.originMessage = origin;
                                 setMessages(prev => prev.map((m, j) =>
@@ -1037,6 +1048,15 @@ export default function AppPage() {
                     {msg.result.type === "intel" && (
                       <ErrorBoundary label="Intel card failed to render.">
                         <IntelDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "paywall" && (
+                      <ErrorBoundary label="Paywall card failed to render.">
+                        <PaywallDisplay
+                          result={msg.result}
+                          onConnect={handleWalletAction}
+                          onSwitchToFast={() => setLlmTier("fast")}
+                        />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "price" && (
@@ -2483,6 +2503,68 @@ function SmartMoneyPanel({ data, chain }: { data: unknown; chain: string | null 
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
+  result: PaywallResult;
+  onConnect: () => void;
+  onSwitchToFast: () => void;
+}) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const ACCENT = "#F5B800";
+  const isConnect = result.reason === "connect";
+
+  const title = isConnect ? "Connect wallet for more Smart" : "Daily Smart limit reached";
+  const body = isConnect
+    ? `You've used your ${result.cap} free Smart ${result.cap === 1 ? "message" : "messages"}. Connect a wallet to keep going with Smart, or switch to Fast — always free.`
+    : `You've used all ${result.cap} free Smart messages today. Resets at UTC midnight. Switch to Fast to keep going.`;
+
+  const btnBase: React.CSSProperties = {
+    ...MONO, fontSize: "0.7rem", fontWeight: 600, padding: "9px 14px", borderRadius: 10,
+    cursor: "pointer", border: "1px solid", textAlign: "center", flex: 1,
+  };
+
+  return (
+    <div style={{ border: "1px solid rgba(245,184,0,0.22)", borderRadius: 16, overflow: "hidden", maxWidth: 380, background: "var(--card-container-bg, #0D0D0D)" }}>
+      <div style={{ padding: "14px 18px 4px", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: "0.78rem", color: ACCENT }}>✦</span>
+        <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>
+          SMART TIER
+        </span>
+      </div>
+      <div style={{ padding: "0 18px 16px" }}>
+        <p style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 6px", lineHeight: 1.3 }}>
+          {title}
+        </p>
+        <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 14px" }}>
+          {body}
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          {isConnect && (
+            <button
+              type="button"
+              onClick={onConnect}
+              style={{ ...btnBase, borderColor: "rgba(245,184,0,0.4)", background: "rgba(245,184,0,0.1)", color: ACCENT }}
+            >
+              Connect wallet
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onSwitchToFast}
+            style={{ ...btnBase, borderColor: "var(--card-border, rgba(255,255,255,0.12))", background: "transparent", color: "var(--card-text-dim, rgba(255,255,255,0.6))" }}
+          >
+            ⚡ Switch to Fast
+          </button>
+        </div>
+        {!isConnect && (
+          <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: "12px 0 0", textAlign: "center" }}>
+            Subscriptions coming soon ✦
+          </p>
+        )}
+      </div>
     </div>
   );
 }
