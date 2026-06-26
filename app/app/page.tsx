@@ -10,6 +10,7 @@ useAccount, useBalance, useChainId, useSwitchChain,
   useWaitForTransactionReceipt, useWalletClient,
 } from "wagmi";
 import { fetchSmartMoney } from "@/lib/smartMoneyClient";
+import { subscribe } from "@/lib/subscribeClient";
 import {
   useWallet as useSolanaWallet,
   useConnection as useSolanaConnection,
@@ -2516,10 +2517,47 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
   const ACCENT = "#F5B800";
   const isConnect = result.reason === "connect";
 
+  const { data: walletClient } = useWalletClient();
+  const { login, logout, authenticated } = usePrivy();
+  const { fundWallet } = useFundWallet();
+  const [subState, setSubState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [subMessage, setSubMessage] = useState<string | null>(null);
+
+  // Untested at live settlement — first real run needs a connected, funded wallet.
+  async function handleSubscribe() {
+    if (!walletClient) {
+      setSubMessage("Connect your wallet, then tap Subscribe again.");
+      if (authenticated) await logout().catch(() => {});
+      login();
+      return;
+    }
+    setSubState("loading");
+    setSubMessage(null);
+    try {
+      const res = await subscribe(walletClient);
+      if (res.ok) {
+        setSubState("done");
+        setSubMessage("Smart unlocked — resend your message.");
+      } else {
+        setSubState("error");
+        setSubMessage(res.error ?? "Subscription failed.");
+      }
+    } catch (err) {
+      setSubState("error");
+      setSubMessage(err instanceof Error ? err.message : "Payment failed.");
+    }
+  }
+
   const title = isConnect ? "Connect wallet for more Smart" : "Daily Smart limit reached";
   const body = isConnect
     ? `You've used your ${result.cap} free Smart ${result.cap === 1 ? "message" : "messages"}. Connect a wallet to keep going with Smart, or switch to Fast — always free.`
-    : `You've used all ${result.cap} free Smart messages today. Resets at UTC midnight. Switch to Fast to keep going.`;
+    : `You've used all ${result.cap} free Smart messages today. Subscribe for unlimited Smart, or switch to Fast — always free.`;
+
+  const note = subState === "done" || subState === "error" ? subMessage : body;
+  const noteColor =
+    subState === "error" ? "#ef4444"
+    : subState === "done" ? ACCENT
+    : "var(--card-text-dim, rgba(255,255,255,0.55))";
 
   const btnBase: React.CSSProperties = {
     ...MONO, fontSize: "0.7rem", fontWeight: 600, padding: "9px 14px", borderRadius: 10,
@@ -2538,17 +2576,26 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
         <p style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 6px", lineHeight: 1.3 }}>
           {title}
         </p>
-        <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 14px" }}>
-          {body}
+        <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: noteColor, margin: "0 0 14px" }}>
+          {note}
         </p>
         <div style={{ display: "flex", gap: 8 }}>
-          {isConnect && (
+          {isConnect ? (
             <button
               type="button"
               onClick={onConnect}
               style={{ ...btnBase, borderColor: "rgba(245,184,0,0.4)", background: "rgba(245,184,0,0.1)", color: ACCENT }}
             >
               Connect wallet
+            </button>
+          ) : subState !== "done" && (
+            <button
+              type="button"
+              onClick={handleSubscribe}
+              disabled={subState === "loading"}
+              style={{ ...btnBase, borderColor: "rgba(245,184,0,0.4)", background: "rgba(245,184,0,0.1)", color: ACCENT, opacity: subState === "loading" ? 0.6 : 1 }}
+            >
+              {subState === "loading" ? "Confirming…" : "✦ Subscribe"}
             </button>
           )}
           <button
@@ -2559,10 +2606,14 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
             ⚡ Switch to Fast
           </button>
         </div>
-        {!isConnect && (
-          <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: "12px 0 0", textAlign: "center" }}>
-            Subscriptions coming soon ✦
-          </p>
+        {!isConnect && subState === "error" && walletClient?.account && (
+          <button
+            type="button"
+            onClick={() => fundWallet({ address: walletClient.account!.address })}
+            style={{ ...MONO, fontSize: "0.6rem", fontWeight: 600, color: ACCENT, background: "transparent", border: "none", cursor: "pointer", margin: "12px 0 0", padding: 0, width: "100%", textAlign: "center" }}
+          >
+            Need USDC? Fund wallet →
+          </button>
         )}
       </div>
     </div>
