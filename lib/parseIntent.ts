@@ -264,7 +264,12 @@ let smartClient: Groq | null = null;
 // groq-sdk client drives it — only base URL + key + model differ). Models are
 // env-overridable. Default tier is "fast" everywhere → behaviour unchanged.
 const FAST_MODEL  = process.env.FAST_LLM_MODEL  ?? "llama-3.1-8b-instant";
-const SMART_MODEL = process.env.SMART_LLM_MODEL ?? "gemini-3-flash";
+// NOT a reasoning model: gemini-3-flash (and other "thinking" models) spend the
+// max_tokens budget on hidden reasoning and return empty content with
+// finish_reason "length" under our tight 200-token cap. claude-haiku-4.5 emits
+// visible content directly, is cheap (~$0.0025/msg), and clearly beats the Fast
+// llama-3.1-8b. Override per-deployment with SMART_LLM_MODEL.
+const SMART_MODEL = process.env.SMART_LLM_MODEL ?? "claude-haiku-4.5";
 
 // Smart silently falls back to the Fast client when no gateway key is set, so a
 // disabled/misconfigured Smart never breaks a reply — it just isn't premium.
@@ -290,6 +295,41 @@ function getGroq(tier: LlmTier = "fast"): Groq | null {
 
 function modelFor(tier: LlmTier = "fast"): string {
   return smartEnabled(tier) ? SMART_MODEL : FAST_MODEL;
+}
+
+type LlmMessage = { role: "system" | "user" | "assistant"; content: string };
+interface ChatResult { content: string | null; finishReason?: string }
+
+// groq-sdk hard-codes the /openai/v1 path, so it cannot reach the Bankr gateway
+// (which serves /v1/chat/completions). Drive Smart with a direct fetch to the
+// OpenAI-format gateway; keep groq-sdk for Fast. On ANY gateway failure, degrade
+// to Fast so a flaky or misconfigured gateway never breaks a reply.
+async function chatComplete(
+  tier: LlmTier,
+  params: { messages: LlmMessage[]; max_tokens: number; temperature?: number },
+): Promise<ChatResult | null> {
+  if (smartEnabled(tier)) {
+    try {
+      const res = await fetch("https://llm.bankr.bot/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.BANKR_LLM_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: SMART_MODEL, ...params }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[] };
+        const choice = data.choices?.[0];
+        return { content: choice?.message?.content ?? null, finishReason: choice?.finish_reason };
+      }
+      console.error(`[llm] Bankr gateway ${res.status} — degrading to Fast`);
+    } catch (err) {
+      console.error("[llm] Bankr gateway error — degrading to Fast:", err instanceof Error ? err.message : err);
+    }
+  }
+  const groq = getGroq("fast");
+  if (!groq) return null;
+  const completion = await groq.chat.completions.create({ model: FAST_MODEL, ...params });
+  const choice = completion.choices[0];
+  return { content: choice?.message?.content ?? null, finishReason: choice?.finish_reason };
 }
 
 const GROQ_INTENT_SYSTEM = `You are a DeFi intent parser. Extract swap/bridge intent from user messages into JSON.
@@ -604,11 +644,8 @@ Rules — no exceptions:
 5. Your final sentence must be exactly: "Not financial advice."`;
 
 export async function generateDecisionAnalysis(prompt: string, tier: LlmTier = "fast"): Promise<string> {
-  const groq = getGroq(tier);
-  if (!groq) return "";
   try {
-    const completion = await groq.chat.completions.create({
-      model: modelFor(tier),
+    const completion = await chatComplete(tier, {
       max_tokens:  200,
       temperature: 0.4,
       messages: [
@@ -616,7 +653,7 @@ export async function generateDecisionAnalysis(prompt: string, tier: LlmTier = "
         { role: "user",   content: prompt },
       ],
     });
-    return completion.choices[0]?.message?.content?.trim() ?? "";
+    return completion?.content?.trim() ?? "";
   } catch {
     return "";
   }
@@ -663,11 +700,9 @@ export async function getGroqInformationalReply(
   history?: { role: "user" | "assistant"; content: string }[],
   tier: LlmTier = "fast",
 ): Promise<string> {
-  const groq = getGroq(tier);
-  if (!groq) return "I don't have reliable information on that right now.";
+  const FALLBACK = "I don't have reliable information on that right now.";
   try {
-    const completion = await groq.chat.completions.create({
-      model: modelFor(tier),
+    const completion = await chatComplete(tier, {
       max_tokens: 200,
       temperature: 0,
       messages: [
@@ -676,10 +711,11 @@ export async function getGroqInformationalReply(
         { role: "user", content: input },
       ],
     });
-    const raw = completion.choices[0]?.message?.content?.trim() ?? "I don't have reliable information on that right now.";
+    const raw = completion?.content?.trim();
+    if (!raw) return FALLBACK;
     return redactLiveNumbers(raw);
   } catch {
-    return "I don't have reliable information on that right now.";
+    return FALLBACK;
   }
 }
 
