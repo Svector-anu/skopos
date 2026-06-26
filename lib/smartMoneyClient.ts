@@ -34,22 +34,43 @@ function walletToSigner(walletClient: WalletClient) {
   });
 }
 
+const LOOKBACK_DAYS = 7;
+
+function isoNoMillis(date: Date): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
 export async function fetchSmartMoney(
   walletClient: WalletClient,
-  token: { symbol: string | null; address: string | null },
+  token: { symbol: string | null; address: string | null; chain?: string | null },
 ): Promise<SmartMoneyResponse> {
+  if (!token.address || !token.chain) {
+    return { ok: false, error: "Couldn't locate this token on a supported chain." };
+  }
+
   const client = new x402Client().register(BASE_NETWORK, new ExactEvmScheme(walletToSigner(walletClient)));
   const payFetch = wrapFetchWithPayment(globalThis.fetch, client);
 
-  // Routed through the same-origin proxy (avoids CORS; proxy relays to Nansen).
-  // TODO(live): confirm the smart-money endpoint + filter shape that scopes the
-  // result to `token` — holdings is a starting point pending live verification.
+  const now = new Date();
+  const from = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
+
+  // Token God Mode "who-bought-sold" scoped to this token + chain, filtered to
+  // smart-money labels. Routed through the same-origin proxy (avoids CORS; the
+  // proxy relays to Nansen and the user's wallet signs the x402 payment).
   const res = await payFetch("/api/intel/nansen", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      endpoint: "holdings",
-      body: { chains: ["ethereum", "base"], token },
+      endpoint: "tgm/who-bought-sold",
+      body: {
+        chain: token.chain,
+        token_address: token.address,
+        date: { from: isoNoMillis(from), to: isoNoMillis(now) },
+        filters: {
+          include_smart_money_labels: ["Whale", "Smart Trader"],
+          trade_volume_usd: { min: 1 },
+        },
+      },
     }),
   });
 

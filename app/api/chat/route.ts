@@ -16,7 +16,8 @@ import {
 } from "@/lib/parseIntent";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
-import { scanToken, type TokenRisk } from "@/lib/dexscreener";
+import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
+import { toNansenChain } from "@/lib/nansen";
 import { getTopYields, type YieldPool } from "@/lib/defillama";
 import { getTopMarkets, PolymarketEvent } from "@/lib/polymarket";
 import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "@/lib/polymarket-bridge";
@@ -431,10 +432,23 @@ export async function POST(req: NextRequest) {
       if (bareword && !STOP.has(bareword)) symbol = bareword;
     }
     if (address || symbol) {
+      // Resolve the bare symbol/address into a concrete chain + contract so the
+      // paid Token God Mode read has a valid target. Only offer the paid button
+      // when the token resolves to a Nansen-supported chain — otherwise the user
+      // would pay and Nansen would reject the chain with a 422.
+      const target = await resolveTokenTarget(address ?? symbol!);
+      const nansenChain = target ? toNansenChain(target.chainId) : null;
+      const canPay = !!(target && nansenChain);
       return json({
         type: "intel",
-        token: { symbol, address },
-        premium: { available: true, label: "Smart-money read", price: "$0.05", note: "Pays $0.05 USDC on Base from your wallet · Nansen" },
+        token: {
+          symbol: target?.symbol ?? symbol,
+          address: target?.address ?? address,
+          chain: nansenChain,
+        },
+        premium: canPay
+          ? { available: true, label: "Smart-money read", price: "$0.01", note: "Pays $0.01 USDC on Base from your wallet · Nansen" }
+          : { available: false, label: "Smart-money read", price: "$0.01", note: "Smart-money read isn't available for this token yet." },
       });
     }
   }

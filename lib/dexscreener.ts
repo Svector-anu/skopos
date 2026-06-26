@@ -79,6 +79,87 @@ function scoreRisk(liquidityUsd: number, flags: string[]): 1 | 2 | 3 | 4 {
   return 1;
 }
 
+export interface TokenTarget {
+  chainId: string;   // DexScreener chain slug (e.g. "ethereum", "base", "solana")
+  address: string;   // base-token contract address
+  symbol: string;
+  name: string;
+}
+
+// Verified canonical addresses for famous, frequently-impersonated symbols.
+// DexScreener's symbol search can rank wash-traded impostors (fake liquidity +
+// fake market cap, ~$0 volume) above — or entirely omit — the real token, so a
+// bare-symbol lookup for these can't be trusted. Only addresses verified by hand
+// belong here: a wrong entry would send a user to pay for the wrong token.
+const CANONICAL_TOKENS: Record<string, { chainId: string; address: string; name: string }> = {
+  PEPE: { chainId: "ethereum", address: "0x6982508145454ce325ddbe47a25d4ec3d2311933", name: "Pepe" },
+  SHIB: { chainId: "ethereum", address: "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce", name: "Shiba Inu" },
+  WIF:  { chainId: "solana",   address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", name: "dogwifhat" },
+  BONK: { chainId: "solana",   address: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", name: "Bonk" },
+};
+
+// A token with a billion in "liquidity" but a dollar of daily volume is a faked
+// pool — exclude it before ranking so impostors can't win on size alone.
+function isWashPool(p: DexPair): boolean {
+  const liq = p.liquidity?.usd ?? 0;
+  const vol = p.volume?.h24 ?? 0;
+  return liq > 1_000_000 && vol / liq < 0.0005;
+}
+
+// Resolve a user-typed symbol ($PEPE) or contract address into a concrete
+// on-chain target (chain + address). Token-scoped providers (e.g. Nansen Token
+// God Mode) need both a chain and a contract address — a bare symbol is not
+// enough. Resolution order: verified canonical map → DexScreener (wash-filtered,
+// market-cap ranked). Callers should surface the resolved chain+address so the
+// user can confirm the right token before paying.
+export async function resolveTokenTarget(query: string): Promise<TokenTarget | null> {
+  const q = query.trim();
+  const isAddress = /^0x[0-9a-fA-F]{40}$/.test(q);
+
+  if (!isAddress) {
+    const canonical = CANONICAL_TOKENS[q.toUpperCase()];
+    if (canonical) {
+      return { chainId: canonical.chainId, address: canonical.address, symbol: q.toUpperCase(), name: canonical.name };
+    }
+  }
+
+  const url = isAddress
+    ? `${BASE}/latest/dex/tokens/${q}`
+    : `${BASE}/latest/dex/search?q=${encodeURIComponent(q)}`;
+
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url);
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  let pairs: DexPair[] = data.pairs ?? [];
+  if (pairs.length === 0) return null;
+
+  if (!isAddress) {
+    const exact = pairs.filter(p => p.baseToken?.symbol?.toUpperCase() === q.toUpperCase());
+    if (exact.length > 0) pairs = exact;
+  }
+  const cleaned = pairs.filter(p => !isWashPool(p));
+  if (cleaned.length > 0) pairs = cleaned;
+
+  const mcap = (p: DexPair) => p.marketCap ?? p.fdv ?? 0;
+  const top = [...pairs].sort(
+    (a, b) => mcap(b) - mcap(a) || (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0),
+  )[0];
+  if (!top?.baseToken?.address || !top.chainId) return null;
+
+  return {
+    chainId: top.chainId,
+    address: top.baseToken.address,
+    symbol: top.baseToken.symbol,
+    name: top.baseToken.name,
+  };
+}
+
 export async function scanToken(query: string): Promise<TokenRisk | null> {
   const isAddress = /^0x[0-9a-fA-F]{40}$/.test(query.trim());
   const url = isAddress

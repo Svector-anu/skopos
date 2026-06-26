@@ -81,7 +81,7 @@ type SuggestionsResult = { type: "suggestions"; prompts: { label: string; comman
 type IntelResult = {
   type: "intel";
   context?: { url: string; sourceHost: string; title: string; excerpt: string };
-  token?: { symbol: string | null; address: string | null };
+  token?: { symbol: string | null; address: string | null; chain?: string | null };
   premium?: { available: boolean; label: string; price: string; note: string };
 };
 
@@ -2365,7 +2365,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
       // Reuse the app's existing Privy connect (mirrors handleWalletAction):
       // reconnect a ghost session, otherwise open login.
       setSmState("idle");
-      setSmMessage("Connect your wallet, then tap again to pay $0.05.");
+      setSmMessage("Connect your wallet, then tap again to pay $0.01.");
       if (authenticated) await logout().catch(() => {});
       login();
       return;
@@ -2399,7 +2399,9 @@ function IntelDisplay({ result }: { result: IntelResult }) {
           {isToken ? "TOKEN INTEL" : "WEB INTEL"}
         </span>
         <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>
-          {isToken ? (token!.address ? shorten(token!.address) : "on-chain") : context!.sourceHost}
+          {isToken
+            ? [token!.chain, token!.address ? shorten(token!.address) : null].filter(Boolean).join(" · ") || "on-chain"
+            : context!.sourceHost}
         </span>
       </div>
 
