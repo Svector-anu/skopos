@@ -56,9 +56,8 @@ async function main(): Promise<void> {
 
   await startSubscription(api);
 
-  if (config.groqApiKey && config.voucherId) {
+  if (config.voucherId) {
     const agentConfig = {
-      groqApiKey: config.groqApiKey,
       varaAccount: config.varaAccount,
       operatorHex: config.operatorHex,
       voucherId: config.voucherId,
@@ -75,7 +74,7 @@ async function main(): Promise<void> {
     if (heraldAccount) startHerald(agentConfig, heraldAccount);
     else console.log("[herald] disabled — set HERALD_ACCOUNT to enable");
   } else {
-    console.warn("[relay] chat-agent disabled — set GROQ_API_KEY, VOUCHER_ID, VAN_IDL to enable");
+    console.warn("[relay] chat-agent disabled — set VOUCHER_ID, VAN_IDL to enable");
   }
 }
 

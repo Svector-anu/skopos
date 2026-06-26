@@ -720,22 +720,31 @@ function redactLiveNumbers(text: string): string {
   return text.replace(LIVE_NUMBER_RE, m => (/^\$/.test(m) ? "[live price]" : "[live rate]%"));
 }
 
+// Brevity rider for the agent/VAN surface: replies are posted to an on-chain
+// chat that hard-caps length, so a 900-token "breathe" answer gets guillotined
+// mid-sentence. Keep Smart's quality, cap its sprawl.
+const AGENT_CONCISE_RULE =
+  "\n\nThis reply is posted to an on-chain agent chat with a hard length cap. Answer in at most 2 short sentences, well under 400 characters. No bullets, no headers.";
+
 export async function getGroqInformationalReply(
   input: string,
   history?: { role: "user" | "assistant"; content: string }[],
   tier: LlmTier = "fast",
   meta?: LlmMeta,
+  opts?: { concise?: boolean },
 ): Promise<string> {
   const FALLBACK = "I don't have reliable information on that right now.";
   // Only "breathe" when Smart is actually going to the gateway. If Smart was
   // requested but degrades to Fast (no key), keep the terse Fast shape.
   const useSmart = smartEnabled(tier);
+  const concise = opts?.concise ?? false;
+  const baseSystem = useSmart ? GROQ_INFORMATIONAL_SYSTEM_SMART : GROQ_INFORMATIONAL_SYSTEM;
   try {
     const completion = await chatComplete(tier, {
-      max_tokens: useSmart ? 900 : 200,
+      max_tokens: concise ? 220 : useSmart ? 900 : 200,
       temperature: 0,
       messages: [
-        { role: "system", content: useSmart ? GROQ_INFORMATIONAL_SYSTEM_SMART : GROQ_INFORMATIONAL_SYSTEM },
+        { role: "system", content: concise ? baseSystem + AGENT_CONCISE_RULE : baseSystem },
         ...safeHistory(history, 4),
         { role: "user", content: input },
       ],

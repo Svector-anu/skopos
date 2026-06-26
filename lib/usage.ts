@@ -16,6 +16,14 @@ function envCap(name: string, fallback: number): number {
 const FREE_DAILY_CAP  = envCap("SMART_FREE_DAILY_CAP", 20);
 const ANON_TEASER_CAP = envCap("SMART_ANON_TEASER_CAP", 2);
 
+// Agent-path budget. Agents reach Smart through the Vara relay but cannot pay,
+// so spend has to be capped against Skopos's prepaid Bankr credits rather than
+// metered per wallet. A global ceiling protects the credit pool; a per-handle
+// ceiling stops one chatty VAN sender from eating the whole day's budget. Over
+// budget → caller degrades to Fast (never refuses), so these are soft caps.
+const AGENT_DAILY_CAP        = envCap("SMART_AGENT_DAILY_CAP", 500);
+const AGENT_HANDLE_DAILY_CAP = envCap("SMART_AGENT_HANDLE_DAILY_CAP", 50);
+
 let client: Redis | null = null;
 function getRedis(): Redis | null {
   const url   = process.env.UPSTASH_REDIS_REST_URL;
@@ -82,5 +90,57 @@ export async function incrSmart(key: string): Promise<void> {
     if (count === 1) await redis.expire(key, TTL_SECONDS);
   } catch (err) {
     console.error("[usage] incr failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+function agentGlobalKey(day: string): string {
+  return `smart:agent:${day}`;
+}
+
+function agentHandleKey(handle: string, day: string): string {
+  return `smart:agent:${handle.toLowerCase().slice(0, 64)}:${day}`;
+}
+
+// Read-only: never increments. Mirrors checkSmartQuota's fail-open contract —
+// agents must never be refused, so any Redis trouble lets Smart through and the
+// budget simply isn't enforced rather than the request breaking.
+export async function checkAgentSmartBudget(handle?: string | null): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) {
+    console.warn("[usage] Upstash not configured — agent Smart budget disabled (fail-open)");
+    return true;
+  }
+
+  const day = utcDay();
+  try {
+    const global = Number((await redis.get<number>(agentGlobalKey(day))) ?? 0);
+    if (global >= AGENT_DAILY_CAP) return false;
+
+    if (handle) {
+      const perHandle = Number((await redis.get<number>(agentHandleKey(handle, day))) ?? 0);
+      if (perHandle >= AGENT_HANDLE_DAILY_CAP) return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[usage] agent budget check failed — fail-open:", err instanceof Error ? err.message : err);
+    return true;
+  }
+}
+
+export async function incrAgentSmart(handle?: string | null): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  const day = utcDay();
+  try {
+    const global = await redis.incr(agentGlobalKey(day));
+    if (global === 1) await redis.expire(agentGlobalKey(day), TTL_SECONDS);
+
+    if (handle) {
+      const perHandle = await redis.incr(agentHandleKey(handle, day));
+      if (perHandle === 1) await redis.expire(agentHandleKey(handle, day), TTL_SECONDS);
+    }
+  } catch (err) {
+    console.error("[usage] agent incr failed:", err instanceof Error ? err.message : err);
   }
 }

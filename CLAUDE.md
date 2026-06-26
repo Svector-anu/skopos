@@ -144,6 +144,8 @@ UPSTASH_REDIS_REST_URL   # optional — Smart-tier metering store; absent → me
 UPSTASH_REDIS_REST_TOKEN # optional — pairs with UPSTASH_REDIS_REST_URL
 SMART_FREE_DAILY_CAP     # optional — free Smart messages/day per wallet (default 20)
 SMART_ANON_TEASER_CAP    # optional — free Smart messages for anonymous (no-wallet) users before connect paywall (default 2)
+SMART_AGENT_DAILY_CAP    # optional — global daily cap on agent Smart messages before degrading to Fast (default 500)
+SMART_AGENT_HANDLE_DAILY_CAP # optional — per-VAN-handle daily cap on agent Smart messages before degrading to Fast (default 50)
 NEXT_PUBLIC_SUBSCRIBE_URL # optional — Bankr x402 Cloud subscribe endpoint URL; absent → paywall Subscribe inert. Price set in bankr.x402.json
 ```
 

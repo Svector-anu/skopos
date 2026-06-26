@@ -7,7 +7,8 @@ import { getTopMarkets } from "@/lib/polymarket";
 import { getQuote, getToken } from "@/lib/delora";
 import { lookupAddress } from "@/lib/alchemy";
 import { CHAIN_IDS } from "@/lib/chains";
-import { classifyIntent } from "@/lib/parseIntent";
+import { classifyIntent, getGroqInformationalReply, type LlmMeta } from "@/lib/parseIntent";
+import { checkAgentSmartBudget, incrAgentSmart } from "@/lib/usage";
 
 const RELAY_SECRET = process.env.RELAY_SECRET;
 if (!RELAY_SECRET) {
@@ -265,8 +266,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           return respond({ markets });
         }
 
-        // informational, execution, analysis, fx, metal, equity, unknown — no live data
-        return respond({ intent, noLiveData: true });
+        // No structured branch matched (informational, execution, analysis, fx,
+        // metal, equity, unknown). Hand the caller the Smart Bankr plan: a
+        // frontier-model reply via the same redacted, server-owned path the web
+        // chat uses. Smart silently degrades to Groq when BANKR_LLM_KEY is unset,
+        // so the agent path never breaks. Sanitise the attacker-controlled body
+        // (strip newlines/quotes) so it can't escape the prompt framing.
+        const sanitized = cleanBody.replace(/[\r\n]+/g, " ").replace(/"/g, "'").slice(0, 500);
+        const handle = params.handle ? String(params.handle) : null;
+        const smartAllowed = await checkAgentSmartBudget(handle);
+        const tier = smartAllowed ? "smart" : "fast";
+        const meterMeta: LlmMeta = {};
+        const reply = await getGroqInformationalReply(sanitized, undefined, tier, meterMeta, { concise: true });
+        // Only burn budget when Smart genuinely served — a gateway degrade to Fast
+        // (BANKR_LLM_KEY unset/over-budget upstream) must not drain prepaid credits.
+        if (meterMeta.servedBy === "smart") await incrAgentSmart(handle);
+        return respond({ intent, reply });
       }
 
       default:
