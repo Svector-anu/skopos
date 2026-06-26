@@ -2345,6 +2345,102 @@ function Sparkline({ prices, positive, width = 280, height = 64 }: { prices: num
 
 // ─── TokenRiskDisplay ─────────────────────────────────────────────────────────
 
+type SmRow = Record<string, unknown>;
+
+const SM_FIELDS = {
+  address: ["address", "wallet_address", "wallet", "walletAddress", "owner"],
+  label:   ["label", "entity", "name", "smart_money_label", "entity_name"],
+  bought:  ["volume_bought_usd", "bought_usd", "buy_volume_usd", "total_bought_usd", "boughtVolumeUsd"],
+  sold:    ["volume_sold_usd", "sold_usd", "sell_volume_usd", "total_sold_usd", "soldVolumeUsd"],
+  net:     ["net_flow_usd", "net_volume_usd", "net_usd", "netVolumeUsd", "net"],
+};
+
+function smRows(data: unknown): SmRow[] {
+  if (Array.isArray(data)) return data as SmRow[];
+  if (data && typeof data === "object") {
+    for (const k of ["data", "result", "rows", "items", "holders", "traders"]) {
+      const v = (data as SmRow)[k];
+      if (Array.isArray(v)) return v as SmRow[];
+    }
+  }
+  return [];
+}
+
+function pickStr(row: SmRow, keys: string[]): string | null {
+  for (const k of keys) { const v = row[k]; if (typeof v === "string" && v) return v; }
+  return null;
+}
+
+function pickNum(row: SmRow, keys: string[]): number | null {
+  for (const k of keys) {
+    const v = row[k];
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function fmtUsdShort(n: number): string {
+  const abs = Math.abs(n);
+  const s = abs >= 1e9 ? `${(abs / 1e9).toFixed(1)}B`
+    : abs >= 1e6 ? `${(abs / 1e6).toFixed(1)}M`
+    : abs >= 1e3 ? `${(abs / 1e3).toFixed(1)}K`
+    : abs.toFixed(0);
+  return `${n < 0 ? "-" : ""}$${s}`;
+}
+
+function SmartMoneyPanel({ data }: { data: unknown }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const shorten = (a: string) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+  const rows = smRows(data);
+
+  const parsed = rows.map((r) => {
+    const bought = pickNum(r, SM_FIELDS.bought);
+    const sold = pickNum(r, SM_FIELDS.sold);
+    let net = pickNum(r, SM_FIELDS.net);
+    if (net === null && bought !== null && sold !== null) net = bought - sold;
+    return { id: pickStr(r, SM_FIELDS.address), label: pickStr(r, SM_FIELDS.label), net };
+  }).filter((p) => p.id || p.label || p.net !== null);
+
+  if (parsed.length === 0) {
+    return (
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 6px" }}>
+          Read complete — {rows.length} record(s).
+        </p>
+        <pre style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 160, overflow: "auto" }}>
+          {JSON.stringify(data, null, 2).slice(0, 600)}
+        </pre>
+      </div>
+    );
+  }
+
+  const sorted = [...parsed].sort((a, b) => (b.net ?? 0) - (a.net ?? 0)).slice(0, 6);
+
+  return (
+    <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
+      <p style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))", margin: "0 0 2px" }}>
+        SMART MONEY · 7D NET FLOW
+      </p>
+      {sorted.map((p, i) => {
+        const positive = (p.net ?? 0) >= 0;
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {p.label ?? (p.id ? shorten(p.id) : "Unknown")}
+            </span>
+            {p.net !== null && (
+              <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: positive ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
+                {positive ? "▲" : "▼"} {fmtUsdShort(p.net)}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function IntelDisplay({ result }: { result: IntelResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const ACCENT = "#38bdf8";
@@ -2357,6 +2453,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
   const { login, logout, authenticated } = usePrivy();
   const [smState, setSmState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [smMessage, setSmMessage] = useState<string | null>(null);
+  const [smData, setSmData] = useState<unknown>(null);
 
   // Untested at live settlement — first real run needs a connected, funded wallet.
   async function handleSmartMoney() {
@@ -2375,8 +2472,9 @@ function IntelDisplay({ result }: { result: IntelResult }) {
     try {
       const res = await fetchSmartMoney(walletClient, token);
       if (res.ok) {
+        setSmData(res.data);
         setSmState("done");
-        setSmMessage("Smart-money data received.");
+        setSmMessage(null);
       } else {
         setSmState("error");
         setSmMessage(res.error ?? "Request failed.");
@@ -2454,6 +2552,8 @@ function IntelDisplay({ result }: { result: IntelResult }) {
           </button>
         </div>
       )}
+
+      {smState === "done" && smData != null && <SmartMoneyPanel data={smData} />}
     </div>
   );
 }
