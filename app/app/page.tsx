@@ -157,6 +157,11 @@ const SLIPPAGE_OPTIONS = [
   { value: 0.01,  label: "1%" },
 ];
 
+const TIER_OPTIONS = [
+  { id: "fast"  as const, label: "⚡ Fast",  desc: "quick & free" },
+  { id: "smart" as const, label: "✦ Smart", desc: "frontier models · depth" },
+];
+
 const EXAMPLE_PROMPTS = [
   "bridge 0.1 ETH from ethereum to base",
   "swap 100 USDC to ETH on arbitrum",
@@ -260,6 +265,7 @@ export default function AppPage() {
     if (typeof window === "undefined") return "fast";
     return localStorage.getItem("skopos-llm-tier") === "smart" ? "smart" : "fast";
   });
+  const [tierMenuOpen, setTierMenuOpen] = useState(false);
   const [anonId] = useState<string>(() => {
     if (typeof window === "undefined") return "";
     let id = localStorage.getItem("skopos-anon-id");
@@ -1248,23 +1254,70 @@ export default function AppPage() {
                       soon ✦
                     </span>
                   )}
-                  {(["fast", "smart"] as const).map(t => (
+                  <div style={{ position: "relative" }}>
                     <button
-                      key={t}
                       type="button"
-                      onClick={() => setLlmTier(t)}
-                      title={t === "smart" ? "Smart — frontier models" : "Fast — quick & free"}
+                      onClick={() => setTierMenuOpen(o => !o)}
+                      title="Choose response tier"
                       style={{
-                        ...MONO, fontSize: "0.6rem", padding: "2px 7px", borderRadius: 4, whiteSpace: "nowrap",
-                        border: `1px solid ${llmTier === t ? "rgba(245,184,0,0.35)" : "var(--drawer-label)"}`,
-                        background: llmTier === t ? "rgba(245,184,0,0.06)" : "transparent",
-                        color: llmTier === t ? "rgba(245,184,0,0.85)" : "var(--drawer-action)",
+                        ...MONO, fontSize: "0.6rem", padding: "3px 8px", borderRadius: 4, whiteSpace: "nowrap",
+                        display: "flex", alignItems: "center", gap: 4,
+                        border: "1px solid rgba(245,184,0,0.35)",
+                        background: "rgba(245,184,0,0.06)",
+                        color: "rgba(245,184,0,0.85)",
                         cursor: "pointer",
                       }}
                     >
-                      {t === "smart" ? "✦ Smart" : "⚡ Fast"}
+                      {llmTier === "smart" ? "✦ Smart" : "⚡ Fast"}
+                      <span style={{ fontSize: "0.5rem", opacity: 0.7, transform: tierMenuOpen ? "rotate(180deg)" : "none" }}>▾</span>
                     </button>
-                  ))}
+                    {tierMenuOpen && (
+                      <>
+                        <div
+                          onClick={() => setTierMenuOpen(false)}
+                          style={{ position: "fixed", inset: 0, zIndex: 40 }}
+                        />
+                        <div
+                          role="listbox"
+                          style={{
+                            position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 41,
+                            minWidth: 188, padding: 4, borderRadius: 8,
+                            background: T.bg, border: `1px solid ${T.borderStrong}`,
+                            boxShadow: "0 8px 28px rgba(0,0,0,0.45)",
+                          }}
+                        >
+                          {TIER_OPTIONS.map(opt => {
+                            const active = llmTier === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                role="option"
+                                aria-selected={active}
+                                onClick={() => { setLlmTier(opt.id); setTierMenuOpen(false); }}
+                                style={{
+                                  ...MONO, display: "flex", alignItems: "flex-start", gap: 8, width: "100%",
+                                  textAlign: "left", padding: "7px 9px", borderRadius: 5, border: "none",
+                                  background: active ? "rgba(245,184,0,0.08)" : "transparent",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <span style={{ flex: 1 }}>
+                                  <span style={{ display: "block", fontSize: "0.66rem", color: active ? "rgba(245,184,0,0.9)" : T.textDim }}>
+                                    {opt.label}
+                                  </span>
+                                  <span style={{ display: "block", fontSize: "0.55rem", color: T.textFaint, marginTop: 2 }}>
+                                    {opt.desc}
+                                  </span>
+                                </span>
+                                {active && <span style={{ fontSize: "0.66rem", color: "rgba(245,184,0,0.9)", lineHeight: "0.66rem" }}>✓</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <span style={{ ...MONO, fontSize: "0.58rem", color: T.textFaint }}>slip</span>
                   {SLIPPAGE_OPTIONS.map(({ value, label }) => (
                     <button
