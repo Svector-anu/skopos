@@ -127,9 +127,10 @@ function buildBridgeAnalysisPrompt(
   // real dollar value, not the token-count ratio. The model is forbidden below
   // from supplying any price itself — without these figures it would guess one
   // from training data and report a phantom loss.
-  const valueRetainedPct = route.inputUSD && route.outputUSD && route.inputUSD > 0
-    ? ((route.outputUSD / route.inputUSD) * 100).toFixed(1)
+  const valueKeptPct = route.inputUSD && route.outputUSD && route.inputUSD > 0
+    ? (route.outputUSD / route.inputUSD) * 100
     : null;
+  const lostPct = valueKeptPct != null ? 100 - valueKeptPct : null;
 
   return [
     `Swap: ${intent.amount} ${intent.token} from ${intent.originChain} → ${intent.destinationChain}, receiving ${intent.destinationToken}`,
@@ -137,10 +138,12 @@ function buildBridgeAnalysisPrompt(
     `Output: ${route.outputAmount} ${intent.destinationToken}`,
     route.inputUSD  != null ? `Input value: $${route.inputUSD.toFixed(2)}` : null,
     route.outputUSD != null ? `Output value: $${route.outputUSD.toFixed(2)}` : null,
-    valueRetainedPct ? `Value retained: ${valueRetainedPct}% (${(100 - parseFloat(valueRetainedPct)).toFixed(1)}% lost to spread/fees)` : null,
+    lostPct != null ? `Cost of this route: ${lostPct.toFixed(1)}% of value lost to spread + fees (you keep ${valueKeptPct!.toFixed(1)}%)` : null,
     route.feesUSD ? `Total fees: $${route.feesUSD}` : null,
     route.gasUSD  ? `Gas: $${route.gasUSD}` : null,
-    `\nUse ONLY the figures above. Never state or assume any token's USD price beyond what is given — if a value is not listed, do not invent it. Give a directional take: is this route worth executing at these costs, or should the user reconsider? Flag anything worth knowing about the adapter or route.`,
+    `\nUse ONLY the figures above. Never state or assume any token's USD price beyond what is given — if a value is not listed, do not invent it.`,
+    `Interpreting the cost: losing under ~1% to spread + fees is excellent and completely normal for a swap — call it efficient and worth executing. 1–3% is acceptable. Only suggest reconsidering if more than ~3% of value is lost, or fees are a large share of a small trade. Never describe a sub-1% loss as significant.`,
+    `Give a one-paragraph directional take: is this route worth executing, or should the user reconsider? Flag anything worth knowing about the adapter or route.`,
   ].filter(Boolean).join("\n");
 }
 
