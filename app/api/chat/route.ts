@@ -132,6 +132,14 @@ function buildBridgeAnalysisPrompt(
     : null;
   const lostPct = valueKeptPct != null ? 100 - valueKeptPct : null;
 
+  // Whether a given spread is good is deterministic — don't delegate it to the
+  // 8B Fast model, which treats any non-zero loss as "bad" even with a rubric.
+  // Compute the verdict here and have the model only narrate it.
+  const verdict = lostPct == null ? null
+    : lostPct < 1   ? "This route is efficient. A spread under 1% is normal and good for a swap — recommend executing."
+    : lostPct <= 3  ? "This route is reasonable. The cost is acceptable — fine to execute."
+    : `This route is expensive: over 3% of value is lost. Suggest the user reconsider or try a smaller or alternative route.`;
+
   return [
     `Swap: ${intent.amount} ${intent.token} from ${intent.originChain} → ${intent.destinationChain}, receiving ${intent.destinationToken}`,
     `Adapter: ${route.tool}`,
@@ -142,8 +150,9 @@ function buildBridgeAnalysisPrompt(
     route.feesUSD ? `Total fees: $${route.feesUSD}` : null,
     route.gasUSD  ? `Gas: $${route.gasUSD}` : null,
     `\nUse ONLY the figures above. Never state or assume any token's USD price beyond what is given — if a value is not listed, do not invent it.`,
-    `Interpreting the cost: losing under ~1% to spread + fees is excellent and completely normal for a swap — call it efficient and worth executing. 1–3% is acceptable. Only suggest reconsidering if more than ~3% of value is lost, or fees are a large share of a small trade. Never describe a sub-1% loss as significant.`,
-    `Give a one-paragraph directional take: is this route worth executing, or should the user reconsider? Flag anything worth knowing about the adapter or route.`,
+    verdict
+      ? `Your conclusion is FIXED — restate it and briefly explain it in one short paragraph. Do NOT contradict it, reverse it, or call its cost a reason to avoid the route: "${verdict}" Flag anything genuinely worth knowing about the adapter, but the verdict above stands.`
+      : `Give a one-paragraph directional take: is this route worth executing at these costs? Flag anything worth knowing about the adapter or route.`,
   ].filter(Boolean).join("\n");
 }
 
