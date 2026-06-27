@@ -101,7 +101,8 @@ function buildTokenAnalysisPrompt(risk: TokenRisk): string {
     `Risk score: ${risk.label} (${risk.score}/4)`,
     risk.flags.length > 0 ? `Flags: ${risk.flags.join(", ")}` : null,
     pairAgeDays != null ? `Pair age: ${pairAgeDays} days` : null,
-    `\nGive a directional take: who does this setup favor — buyers, sellers, or neither? What is the key risk?`,
+    `\nUse ONLY the figures above — never state a price, market cap, volume, or percentage not listed here.`,
+    `Give a directional take: who does this setup favor — buyers, sellers, or neither? What is the key risk?`,
   ].filter(Boolean).join("\n");
 }
 
@@ -116,7 +117,7 @@ function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
     return `${p.project} on ${p.chain}: ${p.apy.toFixed(1)}% APY (${base.toFixed(1)}% fees + ${reward.toFixed(1)}% emissions = ${emPct}% emission-funded) · TVL ${tvl}`;
   }).join("\n");
 
-  return `${symbol} yield opportunities:\n${lines}\n\nClassify each as sustainable real yield or an emission-funded coordination game. Give a directional take on which pool structurally favors LPs vs. which extracts from them.`;
+  return `${symbol} yield opportunities:\n${lines}\n\nUse ONLY the APY and TVL figures above — never state a rate or amount not listed here. Classify each as sustainable real yield or an emission-funded coordination game. Give a directional take on which pool structurally favors LPs vs. which extracts from them.`;
 }
 
 function buildBridgeAnalysisPrompt(
