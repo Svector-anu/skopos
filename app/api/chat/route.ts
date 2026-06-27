@@ -400,6 +400,11 @@ function json(data: unknown, init?: ResponseInit): NextResponse {
   return NextResponse.json(data, { ...init, headers: { ...NO_CACHE, ...(init?.headers ?? {}) } });
 }
 
+// ENS name (*.eth) — character class must NOT include "." or the greedy * eats ".eth".
+// An exact ENS format is unambiguous and must beat the fuzzy price classifier, which
+// otherwise reads the "eth" in "vitalik.eth" as a token and hijacks it to the price path.
+const ENS_RE = /\b([a-z0-9][a-z0-9-]*)\.eth\b/i;
+
 export async function POST(req: NextRequest) {
   // CORS — only allow requests from the production origin and localhost dev
   const origin = req.headers.get("origin") ?? "";
@@ -569,7 +574,7 @@ export async function POST(req: NextRequest) {
   // through to address/ENS lookups. Structural layer assumes input is unclassified.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  if (queryType === "price") {
+  if (queryType === "price" && !ENS_RE.test(trimmed)) {
     const tokenMatch = trimmed.match(PRICE_TOKEN_RE);
     const rawSymbol  = tokenMatch?.[1] ?? "";
     const symbol     = (TOKEN_NAME_TO_SYMBOL[rawSymbol.toLowerCase()] ?? rawSymbol).toUpperCase();
@@ -701,8 +706,8 @@ export async function POST(req: NextRequest) {
   // No intent classification. No wallet required.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // ENS name (*.eth) — character class must NOT include "." or the greedy * eats ".eth"
-  const ensMatch = trimmed.match(/\b([a-z0-9][a-z0-9-]*)\.eth\b/i);
+  // ENS name (*.eth) — see ENS_RE definition above the POST handler
+  const ensMatch = trimmed.match(ENS_RE);
   if (ensMatch) {
     const ensName = (ensMatch[1] + ".eth").toLowerCase();
     const resolved = await resolveENS(ensName);
