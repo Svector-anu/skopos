@@ -1023,6 +1023,29 @@ export default function AppPage() {
                                 ));
                               } catch { /* silent — QuoteDisplay will reset isRefreshing */ }
                             }}
+                            onRevalidate={async () => {
+                              const origin = (msg.result as QuoteResult).originMessage;
+                              if (!origin) return msg.result as QuoteResult;
+                              try {
+                                const res = await fetch("/api/chat", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage, llmTier, anonId }),
+                                });
+                                const data: AssistantResult = await res.json();
+                                if (data.type === "quote") {
+                                  data.originMessage = origin;
+                                  setMessages(prev => prev.map((m, j) => j === i ? { role: "assistant", result: data } : m));
+                                  return data as QuoteResult;
+                                }
+                                // Guard fired (REVERTED) or any non-quote → swap the card for it, signal abort.
+                                setMessages(prev => prev.map((m, j) => j === i ? { role: "assistant", result: data } : m));
+                                return null;
+                              } catch {
+                                // Network error re-checking — don't block a quote the user already holds.
+                                return msg.result as QuoteResult;
+                              }
+                            }}
                           />
                         </ErrorBoundary>
                       </div>
@@ -1509,11 +1532,12 @@ function ChainLogo({ chainId, size = 48 }: { chainId: number; size?: number }) {
 
 const QUOTE_TTL = 30;
 
-function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onSlippageChange, slippage = 0.005 }: {
+function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRevalidate, onSlippageChange, slippage = 0.005 }: {
   result: QuoteResult;
   connectedAddress: string | null;
   onTxSubmitted?: (r: TxRecord) => void;
   onRefresh?: (slippageOverride?: number) => Promise<void>;
+  onRevalidate?: () => Promise<QuoteResult | null>;
   onSlippageChange?: (v: number) => void;
   slippage?: number;
 }) {
@@ -1552,12 +1576,18 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onSl
 
   const { mutateAsync: writeContract, isPending: isApproving } = useWriteContract();
   const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>();
-  const { isSuccess: approvalConfirmed } = useWaitForTransactionReceipt({ hash: approvalHash });
+  const { isSuccess: approvalConfirmed } = useWaitForTransactionReceipt({ hash: approvalHash, chainId: originChainId });
   useEffect(() => { if (approvalConfirmed) refetchAllowance(); }, [approvalConfirmed, refetchAllowance]);
 
   const { mutateAsync: sendTransaction, isPending: isSending } = useSendTransaction();
   const [txHash, setTxHash]   = useState<`0x${string}` | undefined>();
-  const { isLoading: isConfirming, isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
+  // chainId pins the receipt poll to the route's chain — without it the poll runs
+  // on the wallet's active chain (often the embedded wallet's chain 1) and hangs
+  // forever. Read the receipt's status, not just isSuccess: a reverted tx still
+  // produces a receipt, so isSuccess alone can't tell failure from success.
+  const { isLoading: isConfirming, data: txReceipt, isError: txReceiptError } = useWaitForTransactionReceipt({ hash: txHash, chainId: originChainId });
+  const txConfirmed = txReceipt?.status === "success";
+  const txFailed    = txReceipt?.status === "reverted" || txReceiptError;
 
   const [switchErr, setSwitchErr]       = useState<string | null>(null);
   const [isSwitching, setIsSwitching]   = useState(false);
@@ -1611,12 +1641,29 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onSl
     }
   }
 
+  const [isRevalidating, setIsRevalidating] = useState(false);
+
   async function execute() {
     if (!calldata) return;
     setSwitchErr(null);
     try {
+      // Re-simulate right before signing. Delora has no re-validate-by-id, so we
+      // re-quote (which re-runs the REVERTED guard) and sign the FRESH calldata.
+      // null = the route now reverts → the card has been replaced with the error,
+      // so abort rather than burn gas on a tx the chain just rejected.
+      let cd = calldata;
+      if (onRevalidate) {
+        setIsRevalidating(true);
+        let fresh: QuoteResult | null;
+        try { fresh = await onRevalidate(); } finally { setIsRevalidating(false); }
+        if (!fresh) {
+          setSwitchErr("This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.");
+          return;
+        }
+        if (fresh.calldata) cd = fresh.calldata;
+      }
       if (!onCorrectChain) await switchChain({ chainId: originChainId });
-      const hash = await sendTransaction({ to: calldata.to as `0x${string}`, value: BigInt(calldata.value || "0x0"), data: calldata.data as `0x${string}`, chainId: originChainId });
+      const hash = await sendTransaction({ to: cd.to as `0x${string}`, value: BigInt(cd.value || "0x0"), data: cd.data as `0x${string}`, chainId: originChainId });
       setTxHash(hash);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1775,6 +1822,19 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onSl
               style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80", textDecoration: "none" }}>
               confirmed ✓ · view on explorer →
             </a>
+          ) : txFailed ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <a href={explorerUrl ?? "#"} target="_blank" rel="noopener noreferrer"
+                style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(255,107,107,0.07)", border: "1px solid rgba(255,107,107,0.35)", borderRadius: 10, color: "#ff6b6b", textDecoration: "none" }}>
+                transaction failed ✗ · view on explorer →
+              </a>
+              {onRefresh && (
+                <button onClick={() => { setTxHash(undefined); void handleRefresh(); }}
+                  style={{ ...MONO, width: "100%", padding: "10px 0", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.03em", background: "none", border: "1px solid var(--card-border)", borderRadius: 10, color: "var(--card-text-dim)", cursor: "pointer" }}>
+                  get a fresh quote &amp; retry
+                </button>
+              )}
+            </div>
           ) : (
             <div style={{ ...MONO, width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(245,184,0,0.04)", border: "1px solid rgba(245,184,0,0.15)", borderRadius: 10, color: "rgba(245,184,0,0.5)" }}
               className={isConfirming ? "animate-pulse" : ""}>
@@ -1815,9 +1875,9 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onSl
                 {isApproving ? "Approving…" : approvalHash && !approvalConfirmed ? "Confirming…" : `Approve ${intent.from.token}`}
               </button>
             ) : (
-              <button onClick={execute} disabled={!calldata || isSending || isExpired}
-                style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: calldata && !isExpired ? "#F5B800" : "var(--card-surface)", border: calldata && !isExpired ? "none" : "1px solid var(--card-border)", borderRadius: 10, color: calldata && !isExpired ? "#000" : "var(--card-text-faint)", cursor: calldata && !isSending && !isExpired ? "pointer" : "not-allowed" }}>
-                {isSending ? "Confirm in wallet…" : isExpired ? "Quote expired — refresh" : "Execute →"}
+              <button onClick={execute} disabled={!calldata || isSending || isRevalidating || isExpired}
+                style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: calldata && !isExpired ? "#F5B800" : "var(--card-surface)", border: calldata && !isExpired ? "none" : "1px solid var(--card-border)", borderRadius: 10, color: calldata && !isExpired ? "#000" : "var(--card-text-faint)", cursor: calldata && !isSending && !isRevalidating && !isExpired ? "pointer" : "not-allowed" }}>
+                {isRevalidating ? "re-checking route…" : isSending ? "Confirm in wallet…" : isExpired ? "Quote expired — refresh" : "Execute →"}
               </button>
             )}
           </div>
