@@ -225,10 +225,15 @@ Replaces with: `[live price]` or `[live rate]%`
 ### P4 — MegaETH half-wired ✅ RESOLVED 2026-05-05
 - All 4 maps updated: CHAIN_IDS, SUPPORTED_CHAINS, EXPLORER_URLS (megaeth.blockscout.com/tx/), transport
 
-### P5 — Delora token/chain cache never invalidates
+### P5 — Delora token/chain cache never invalidates ✅ RESOLVED 2026-06-27
 - File: `lib/delora.ts` → `chainsCache`, `tokensCache`
-- Risk: new tokens on Delora are invisible until cold restart
-- Fix needed: add TTL (e.g., 10 min) to the module-level cache
+- Fix shipped (commit `ce9084a`): `CACHE_TTL_MS = 10 * 60 * 1000` — both caches now carry a 10-min TTL, so new Delora tokens appear within 10 minutes without a cold restart.
+
+### P6 — Integrator swap fee silently not collected
+- File: `lib/delora.ts` → `getQuote()` sends `integrator=skopos` + `fee=0.0005`, but Delora skips it
+- Symptom (verified via prod quote probe 2026-06-27): every quote returns `warning INTEGRATOR_WALLET_NOT_CONFIGURED_FEE_SKIPPED` and `fees.breakdown[].type==="app"` is `0`. The 0.05% revenue fee added in `1d7fd0d` collects **nothing**.
+- Cause: Delora tracks fees by integrator string. The fee wallets were linked under the original `ANU` slug, but prod sends `skopos` (`DELORA_INTEGRATOR` in Vercel) → no wallet for `skopos` → fee skipped. Not a code bug.
+- Fix (Delora Partner Portal `portal.delora.build` only — no API): link the fee wallets to the integration whose integrator string = `skopos`, OR set Vercel `DELORA_INTEGRATOR` to the string already holding the wallets. No redeploy needed for the portal path; the code already passes the fee. NB: EVM fees accrue in a Fee Pool and must be claimed by the designated wallet (not auto-sent); Solana fees arrive immediately. See `docs.delora.build/protocol/fee-configuration`.
 
 ---
 
