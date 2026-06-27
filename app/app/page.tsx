@@ -860,6 +860,23 @@ export default function AppPage() {
             </button>
           )}
 
+          {/* Connect a different wallet — opt-in escape hatch from the embedded-first default */}
+          {ready && connectedAddress && sidebarExpanded && (
+            <button
+              onClick={() => connectWallet()}
+              title="Connect a different wallet"
+              style={{
+                ...MONO, width: "100%", height: 28, marginBottom: 2, borderRadius: 8,
+                display: "flex", alignItems: "center", paddingLeft: 10, gap: 8,
+                background: "none", border: "none", cursor: "pointer", color: T.textFaint,
+                fontSize: "0.64rem", whiteSpace: "nowrap",
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M6 1v10M1 6h10"/></svg>
+              connect another wallet
+            </button>
+          )}
+
           {/* GitHub */}
           <a href="https://github.com/Svector-anu/skopos" target="_blank" rel="noopener noreferrer"
             style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, color: T.textDim, textDecoration: "none", whiteSpace: "nowrap" }}>
