@@ -1,6 +1,6 @@
 const BASE       = "https://api.delora.build";
 const API_KEY    = process.env.DELORA_API_KEY ?? "";
-const INTEGRATOR = process.env.DELORA_INTEGRATOR ?? "ANU";
+const INTEGRATOR = process.env.DELORA_INTEGRATOR ?? "anu";
 const FEE        = 0.0005; // 0.05% integrator fee
 
 
