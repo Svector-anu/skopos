@@ -7,7 +7,7 @@ import { getTopMarkets } from "@/lib/polymarket";
 import { getQuote, getToken } from "@/lib/delora";
 import { lookupAddress } from "@/lib/alchemy";
 import { CHAIN_IDS } from "@/lib/chains";
-import { classifyIntent, getGroqInformationalReply, type LlmMeta } from "@/lib/parseIntent";
+import { classifyIntent, getInformationalReply, type LlmMeta } from "@/lib/parseIntent";
 import { checkAgentSmartBudget, incrAgentSmart } from "@/lib/usage";
 
 const RELAY_SECRET = process.env.RELAY_SECRET;
@@ -277,7 +277,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const smartAllowed = await checkAgentSmartBudget(handle);
         const tier = smartAllowed ? "smart" : "fast";
         const meterMeta: LlmMeta = {};
-        const reply = await getGroqInformationalReply(sanitized, undefined, tier, meterMeta, { concise: true });
+        const reply = await getInformationalReply(sanitized, undefined, tier, meterMeta, { concise: true });
         // Only burn budget when Smart genuinely served — a gateway degrade to Fast
         // (BANKR_LLM_KEY unset/over-budget upstream) must not drain prepaid credits.
         if (meterMeta.servedBy === "smart") await incrAgentSmart(handle);

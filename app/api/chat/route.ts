@@ -5,7 +5,7 @@ import {
   parseIntent,
   parseRebalanceIntent,
   looksLikeRebalance,
-  getGroqInformationalReply,
+  getInformationalReply,
   generateDecisionAnalysis,
   generateTxSummary,
   generateAddressSummary,
@@ -24,7 +24,7 @@ import { toNansenChain } from "@/lib/nansen";
 import { getTopYields, type YieldPool } from "@/lib/defillama";
 import { getTopMarkets, PolymarketEvent } from "@/lib/polymarket";
 import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "@/lib/polymarket-bridge";
-import { getPrice, getPriceChart } from "@/lib/priceCache";
+import { getPrice, getPriceChart, type PriceResult } from "@/lib/priceCache";
 import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 
@@ -49,6 +49,27 @@ const TOKEN_NAME_TO_SYMBOL: Record<string, string> = {
   maker: "MKR",     curve: "CRV",      lido: "LDO",
   synthetix: "SNX", megeth: "MEGA",    megaeth: "MEGA",
 };
+
+// Live-data grounding for the Smart informational path. Pulls the current price
+// for the primary recognized token in a free-form question so Smart can reason
+// over real numbers instead of refusing. Returns null when no token is named or
+// the fetch fails — caller then falls back to the ungrounded (redacted) reply.
+function formatLiveData(symbol: string, p: PriceResult): string {
+  const px = p.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const chg = p.change24h !== null
+    ? `${p.change24h >= 0 ? "+" : ""}${p.change24h.toFixed(2)}% (24h)`
+    : "24h change unavailable";
+  return `${symbol}: $${px}, ${chg} — source ${p.source}`;
+}
+
+async function gatherLiveData(text: string): Promise<string | null> {
+  const match = text.match(PRICE_TOKEN_RE);
+  if (!match) return null;
+  const raw = match[1].toLowerCase();
+  const symbol = TOKEN_NAME_TO_SYMBOL[raw] ?? raw.toUpperCase();
+  const price = await getPrice(symbol);
+  return price ? formatLiveData(symbol, price) : null;
+}
 
 // ── decision analysis prompt builders ────────────────────────────────────────
 
@@ -1014,11 +1035,20 @@ export async function POST(req: NextRequest) {
 
     if (OPINION_RE.test(trimmed)) {
       if (tokenMatch) {
-        // Known token (ETH, BTC…) — live price inline, no Groq needed
+        // Known token (ETH, BTC…) — fetch the live price up front.
         const rawToken    = tokenMatch[1].toLowerCase();
         const symbol      = TOKEN_NAME_TO_SYMBOL[rawToken] ?? rawToken.toUpperCase();
         const priceResult = await getPrice(symbol);
         if (priceResult) {
+          // Smart reasons over the real number (grounded analysis); Fast keeps
+          // the cheap canned line.
+          if (tier === "smart") {
+            const text = await getInformationalReply(message, history, tier, meterMeta, {
+              liveData: formatLiveData(symbol, priceResult),
+            });
+            await recordSmart();
+            return json({ type: "text", text });
+          }
           const fmt    = priceResult.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           const change = priceResult.change24h !== null
             ? ` (${priceResult.change24h >= 0 ? "+" : ""}${priceResult.change24h.toFixed(2)}% 24h)`
@@ -1044,7 +1074,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const text = await getGroqInformationalReply(message, history, tier, meterMeta);
+    const liveData = tier === "smart" ? await gatherLiveData(trimmed) : null;
+    const text = await getInformationalReply(message, history, tier, meterMeta, {
+      ...(liveData ? { liveData } : {}),
+    });
     await recordSmart();
     return json({ type: "text", text });
   }
@@ -1104,8 +1137,12 @@ export async function POST(req: NextRequest) {
     return json({ type: "text", text: "Which token do you want yield for? Try: 'find highest yield for USDC' or 'best ETH APY'." });
   }
 
-  // ── constrained informational fallback — no live data, no transaction suggestions ──
-  const text = await getGroqInformationalReply(message, history, tier, meterMeta);
+  // ── informational fallback — Smart grounds on live price when a token is named;
+  //    Fast stays constrained (no live data, number-redacted) ──
+  const liveData = tier === "smart" ? await gatherLiveData(trimmed) : null;
+  const text = await getInformationalReply(message, history, tier, meterMeta, {
+    ...(liveData ? { liveData } : {}),
+  });
   await recordSmart();
   return json({ type: "text", text });
 }
