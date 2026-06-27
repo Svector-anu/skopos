@@ -158,8 +158,8 @@ const SLIPPAGE_OPTIONS = [
 ];
 
 const TIER_OPTIONS = [
-  { id: "fast"  as const, label: "⚡ Fast",  desc: "quick & free" },
   { id: "smart" as const, label: "✦ Smart", desc: "frontier models · depth" },
+  { id: "fast"  as const, label: "⚡ Fast",  desc: "quick & free" },
 ];
 
 const EXAMPLE_PROMPTS = [
@@ -990,14 +990,15 @@ export default function AppPage() {
                         <ErrorBoundary label="Quote failed to render.">
                           <QuoteDisplay
                             result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} slippage={slippage}
-                            onRefresh={async () => {
+                            onSlippageChange={setSlippage}
+                            onRefresh={async (slippageOverride?: number) => {
                               const origin = (msg.result as QuoteResult).originMessage;
                               if (!origin) return;
                               try {
                                 const res = await fetch("/api/chat", {
                                   method: "POST",
                                   headers: { "Content-Type": "application/json" },
-                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage, llmTier, anonId }),                                });
+                                 body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage: slippageOverride ?? slippage, llmTier, anonId }),                                });
                                 const data: AssistantResult = await res.json();
                                 if (data.type === "quote") data.originMessage = origin;
                                 setMessages(prev => prev.map((m, j) =>
@@ -1318,23 +1319,6 @@ export default function AppPage() {
                       </>
                     )}
                   </div>
-                  <span style={{ ...MONO, fontSize: "0.58rem", color: T.textFaint }}>slip</span>
-                  {SLIPPAGE_OPTIONS.map(({ value, label }) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setSlippage(value)}
-                      style={{
-                        ...MONO, fontSize: "0.6rem", padding: "2px 6px", borderRadius: 4,
-                        border: `1px solid ${slippage === value ? "rgba(245,184,0,0.35)" : "var(--drawer-label)"}`,
-                        background: slippage === value ? "rgba(245,184,0,0.06)" : "transparent",
-                        color: slippage === value ? "rgba(245,184,0,0.85)" : "var(--drawer-action)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
                   <button
                     type="submit"
                     disabled={!value.trim() || loading || !isOnline}
@@ -1508,11 +1492,12 @@ function ChainLogo({ chainId, size = 48 }: { chainId: number; size?: number }) {
 
 const QUOTE_TTL = 30;
 
-function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slippage = 0.005 }: {
+function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onSlippageChange, slippage = 0.005 }: {
   result: QuoteResult;
   connectedAddress: string | null;
   onTxSubmitted?: (r: TxRecord) => void;
-  onRefresh?: () => Promise<void>;
+  onRefresh?: (slippageOverride?: number) => Promise<void>;
+  onSlippageChange?: (v: number) => void;
   slippage?: number;
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
@@ -1580,10 +1565,10 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
 
   const isExpired = secondsLeft <= 0 && !txHash;
 
-  async function handleRefresh() {
+  async function handleRefresh(slippageOverride?: number) {
     if (!onRefresh) return;
     setIsRefreshing(true);
-    try { await onRefresh(); } catch { setIsRefreshing(false); }
+    try { await onRefresh(slippageOverride); } catch { setIsRefreshing(false); }
   }
 
   useEffect(() => {
@@ -1656,7 +1641,6 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
 
   const summaryRows: { label: string; value: string }[] = [
     { label: "Via",           value: route.tool },
-    { label: "Slippage",      value: `${(slippage * 100).toFixed(1)}%` },
     { label: "Min. received", value: `~${minReceived} ${intent.to.token}` },
     ...(route.feesUSD ? [{ label: "Network fee", value: `~$${Number(route.feesUSD).toFixed(2)}` }] : []),
     ...(connectedAddress ? [{ label: "Recipient",   value: shortAddr(connectedAddress) }] : []),
@@ -1725,6 +1709,36 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{value}</span>
           </div>
         ))}
+        {/* Slippage — adjustable before execution (re-quotes on change), read-only after */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: "1px solid var(--card-bg)" }}>
+          <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>Slippage</span>
+          {!executionMode && onSlippageChange ? (
+            <div style={{ display: "flex", gap: 4 }}>
+              {SLIPPAGE_OPTIONS.map(({ value, label }) => {
+                const active = Math.abs(slippage - value) < 1e-9;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={isRefreshing}
+                    onClick={() => { onSlippageChange(value); void handleRefresh(value); }}
+                    style={{
+                      ...MONO, fontSize: "0.62rem", padding: "2px 7px", borderRadius: 4,
+                      border: `1px solid ${active ? "rgba(245,184,0,0.45)" : "var(--card-border, rgba(255,255,255,0.12))"}`,
+                      background: active ? "rgba(245,184,0,0.1)" : "transparent",
+                      color: active ? "rgba(245,184,0,0.9)" : "var(--card-text-dim, rgba(255,255,255,0.45))",
+                      cursor: isRefreshing ? "wait" : "pointer",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{(slippage * 100).toFixed(1)}%</span>
+          )}
+        </div>
       </div>
 
       {/* Action area */}
@@ -1754,7 +1768,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, slip
           <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} />
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleRefresh} disabled={isRefreshing || !onRefresh}
+            <button onClick={() => handleRefresh()} disabled={isRefreshing || !onRefresh}
               style={{
                 ...MONO, padding: "11px 14px", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.03em",
                 background: "none",
