@@ -188,7 +188,7 @@ type LegOk = {
   ok: true;
   intent: {
     from: { chain: string; chainId: number; token: string; amount: string };
-    to:   { chain: string; chainId: number; token: string };
+    to:   { chain: string; chainId: number; token: string; receiver: string };
   };
   route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null; inputUSD: number | null; outputUSD: number | null };
   approval: { tokenAddress: string; spender: string; amount: string } | null;
@@ -392,7 +392,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
     ok: true,
     intent: {
       from: { chain: originChain?.name ?? String(originChainId), chainId: originChainId, token: intent.token, amount: intent.amount },
-      to:   { chain: destChain?.name   ?? String(destChainId),   chainId: destChainId,   token: destToken },
+      to:   { chain: destChain?.name   ?? String(destChainId),   chainId: destChainId,   token: destToken, receiver: effectiveReceiver },
     },
     route:    { tool, outputAmount: outputFormatted, feesUSD: totalFeesUSD, gasUSD, inputUSD, outputUSD },
     approval: isOriginNative ? null : {

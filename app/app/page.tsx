@@ -30,7 +30,7 @@ type QuoteResult = {
   quotedAt?: number;
   intent: {
     from: { chain: string; chainId: number; token: string; amount: string };
-    to: { chain: string; chainId: number; token: string };
+    to: { chain: string; chainId: number; token: string; receiver?: string };
   };
   route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null };
   approval: ApprovalInfo;
@@ -1548,7 +1548,10 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   const { intent, route, calldata, approval } = result;
   const originChainId = intent.from.chainId;
   const destChainId   = intent.to.chainId;
-  const isSolanaRoute = originChainId === SOLANA_CHAIN_ID || destChainId === SOLANA_CHAIN_ID;
+  // Only when the ORIGIN is Solana does Phantom sign the source tx. EVM→Solana is
+  // signed on the EVM side (the Solana address is just the destination), so it must
+  // use the normal EVM execute path, not the Phantom-signing button.
+  const isSolanaOrigin = originChainId === SOLANA_CHAIN_ID;
   const isSwap        = originChainId === destChainId;
 
   // Track the real MetaMask chain via window.ethereum — wagmi's useChainId() reads
@@ -1703,11 +1706,12 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     return isFinite(out) ? (out * (1 - slippage)).toFixed(6) : route.outputAmount;
   })();
 
+  const recipient = intent.to.receiver ?? connectedAddress;
   const summaryRows: { label: string; value: string }[] = [
     { label: "Via",           value: route.tool },
     { label: "Min. received", value: `~${minReceived} ${intent.to.token}` },
     ...(route.feesUSD ? [{ label: "Network fee", value: `~$${Number(route.feesUSD).toFixed(2)}` }] : []),
-    ...(connectedAddress ? [{ label: "Recipient",   value: shortAddr(connectedAddress) }] : []),
+    ...(recipient ? [{ label: "Recipient", value: shortAddr(recipient) }] : []),
   ];
 
   return (
@@ -1841,7 +1845,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
               {isConfirming ? "confirming on-chain…" : "submitted · waiting…"}
             </div>
           )
-        ) : isSolanaRoute ? (
+        ) : isSolanaOrigin ? (
           <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} />
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
@@ -1864,7 +1868,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
                 style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: "pointer" }}>
                 Connect Wallet
               </button>
-            ) : !onCorrectChain && !isSolanaRoute ? (
+            ) : !onCorrectChain && !isSolanaOrigin ? (
               <button onClick={handleSwitchChain} disabled={isSwitching}
                 style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
                 {isSwitching ? "Switching…" : `Switch to ${intent.from.chain.charAt(0).toUpperCase() + intent.from.chain.slice(1)}`}
