@@ -95,6 +95,10 @@ export interface DeloraQuote {
     maxFeePerGas?: string;
     maxPriorityFeePerGas?: string;
   };
+  usd?: {
+    originCurrency?: { priceUSD?: string };
+    destinationCurrency?: { priceUSD?: string };
+  };
   [key: string]: unknown;
 }
 

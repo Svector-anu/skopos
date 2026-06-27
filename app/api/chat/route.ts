@@ -121,23 +121,26 @@ function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
 
 function buildBridgeAnalysisPrompt(
   intent: ParsedIntent,
-  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null },
+  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null; inputUSD: number | null; outputUSD: number | null },
 ): string {
-  const inputAmt  = parseFloat(intent.amount);
-  const outputAmt = parseFloat(route.outputAmount);
-  const sameToken = intent.token.toUpperCase() === intent.destinationToken.toUpperCase();
-  const efficiencyPct = sameToken && inputAmt > 0
-    ? ((outputAmt / inputAmt) * 100).toFixed(2)
+  // Judge value retention in USD so cross-token swaps (ETH→USDC) are assessed on
+  // real dollar value, not the token-count ratio. The model is forbidden below
+  // from supplying any price itself — without these figures it would guess one
+  // from training data and report a phantom loss.
+  const valueRetainedPct = route.inputUSD && route.outputUSD && route.inputUSD > 0
+    ? ((route.outputUSD / route.inputUSD) * 100).toFixed(1)
     : null;
 
   return [
-    `Bridge: ${intent.amount} ${intent.token} from ${intent.originChain} → ${intent.destinationChain}, receiving ${intent.destinationToken}`,
+    `Swap: ${intent.amount} ${intent.token} from ${intent.originChain} → ${intent.destinationChain}, receiving ${intent.destinationToken}`,
     `Adapter: ${route.tool}`,
     `Output: ${route.outputAmount} ${intent.destinationToken}`,
-    efficiencyPct ? `Route efficiency: ${efficiencyPct}% (${(100 - parseFloat(efficiencyPct)).toFixed(2)}% lost)` : null,
+    route.inputUSD  != null ? `Input value: $${route.inputUSD.toFixed(2)}` : null,
+    route.outputUSD != null ? `Output value: $${route.outputUSD.toFixed(2)}` : null,
+    valueRetainedPct ? `Value retained: ${valueRetainedPct}% (${(100 - parseFloat(valueRetainedPct)).toFixed(1)}% lost to spread/fees)` : null,
     route.feesUSD ? `Total fees: $${route.feesUSD}` : null,
     route.gasUSD  ? `Gas: $${route.gasUSD}` : null,
-    `\nGive a directional take: is this route worth executing at these costs, or should the user reconsider? Flag anything worth knowing about the adapter or route.`,
+    `\nUse ONLY the figures above. Never state or assume any token's USD price beyond what is given — if a value is not listed, do not invent it. Give a directional take: is this route worth executing at these costs, or should the user reconsider? Flag anything worth knowing about the adapter or route.`,
   ].filter(Boolean).join("\n");
 }
 
@@ -174,7 +177,7 @@ type LegOk = {
     from: { chain: string; chainId: number; token: string; amount: string };
     to:   { chain: string; chainId: number; token: string };
   };
-  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null };
+  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null; inputUSD: number | null; outputUSD: number | null };
   approval: { tokenAddress: string; spender: string; amount: string } | null;
   calldata: { to: string; value: string; data: string } | null;
   raw: unknown;
@@ -352,13 +355,20 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   const totalFeesUSD = quote.fees?.totalUsd ?? null;
   const gasUSD       = gasFee?.amountUsd ?? null;
 
+  const originPriceUSD = parseFloat(quote.usd?.originCurrency?.priceUSD ?? "");
+  const destPriceUSD   = parseFloat(quote.usd?.destinationCurrency?.priceUSD ?? "");
+  const inputUSD  = Number.isFinite(originPriceUSD) ? parseFloat(intent.amount) * originPriceUSD : null;
+  const outputUSD = Number.isFinite(destPriceUSD) && outputFormatted !== "unknown"
+    ? parseFloat(outputFormatted) * destPriceUSD
+    : null;
+
   return {
     ok: true,
     intent: {
       from: { chain: originChain?.name ?? String(originChainId), chainId: originChainId, token: intent.token, amount: intent.amount },
       to:   { chain: destChain?.name   ?? String(destChainId),   chainId: destChainId,   token: destToken },
     },
-    route:    { tool, outputAmount: outputFormatted, feesUSD: totalFeesUSD, gasUSD },
+    route:    { tool, outputAmount: outputFormatted, feesUSD: totalFeesUSD, gasUSD, inputUSD, outputUSD },
     approval: isOriginNative ? null : {
       tokenAddress: originCurrency,
       spender:      quote.calldata?.to ?? "",
