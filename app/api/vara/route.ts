@@ -162,6 +162,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           slippage,
         });
 
+        // Same simulation guard as resolveLeg: never hand an on-chain agent a
+        // route Delora's simulation says will revert.
+        if (quote.simulation?.executionStatus === "REVERTED") {
+          return fail(`route via ${quote.adapter ?? "best route"} would revert on-chain — no executable quote`, 422);
+        }
+
         return respond({
           outputAmount: quote.outputAmount ?? "0",
           outputDecimals: destTok.decimals,

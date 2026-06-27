@@ -99,6 +99,12 @@ export interface DeloraQuote {
     originCurrency?: { priceUSD?: string };
     destinationCurrency?: { priceUSD?: string };
   };
+  simulation?: {
+    source?: string;
+    executionStatus?: string;
+    outputValidation?: string;
+    reason?: string;
+  };
   [key: string]: unknown;
 }
 

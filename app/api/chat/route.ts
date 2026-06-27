@@ -358,6 +358,19 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
     };
   }
 
+  // Simulation guard: Delora simulates the route before returning it. Only a
+  // definitive REVERTED means it will fail on-chain — don't hand the user a
+  // transaction that's guaranteed to burn gas. UNVERIFIABLE / SKIPPED (e.g. a
+  // sim provider disabled) are not failures, so they pass through.
+  if (quote.simulation?.executionStatus === "REVERTED") {
+    const adapter = quote.adapter ?? "the best available route";
+    console.warn(`[resolveLeg] route ${adapter} simulated REVERTED: ${quote.simulation.reason ?? "no reason given"}`);
+    return {
+      ok: false,
+      text: `This route (${adapter}) fails Delora's on-chain simulation and would revert — executing it would only burn gas, so Skopos won't hand it to you. Try a different amount or token pair, or check back as routing liquidity shifts.`,
+    };
+  }
+
   const outputFormatted = quote.outputAmount
     ? (Number(quote.outputAmount) / 10 ** destDecimals).toFixed(6)
     : "unknown";
