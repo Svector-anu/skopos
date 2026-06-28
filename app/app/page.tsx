@@ -169,15 +169,18 @@ const EXAMPLE_PROMPTS = [
   "what chains do you support?",
 ];
 
-const HORIZON_PILLS: { label: string; prompt: string }[] = [
-  { label: "agent mode",       prompt: "set up an agent to DCA $20 into ETH every week on base" },
-  { label: "limit orders",     prompt: "buy 0.05 ETH when price drops to $2800 on arbitrum" },
+// `soon` features aren't live yet — shown as roadmap, visually tagged, and the
+// backend answers them honestly if triggered. Live ones (no `soon`) fill the
+// composer with a working prompt the user can send.
+const HORIZON_PILLS: { label: string; prompt: string; soon?: boolean }[] = [
   { label: "polymarket",       prompt: "what are the current odds ETH hits $5k this year?" },
-  { label: "offramp to card",  prompt: "cash out 200 USDC to my debit card" },
-  { label: "yield scanner",    prompt: "find the highest yield for my USDC across all chains" },
-  { label: "deep research",    prompt: "compare gas costs across all supported bridges for 1 ETH" },
-  { label: "on-chain MCP",     prompt: "connect skopos to my claude desktop via MCP" },
-  { label: "whale signals",    prompt: "show me what top wallets are bridging this week" },
+  { label: "yield scanner",    prompt: "find the highest yield for USDC on base" },
+  { label: "agent mode",       prompt: "set up an agent to DCA $20 into ETH every week on base", soon: true },
+  { label: "limit orders",     prompt: "buy 0.05 ETH when price drops to $2800 on arbitrum",     soon: true },
+  { label: "offramp to card",  prompt: "cash out 200 USDC to my debit card",                     soon: true },
+  { label: "deep research",    prompt: "compare gas costs across all supported bridges for 1 ETH", soon: true },
+  { label: "on-chain MCP",     prompt: "connect skopos to my claude desktop via MCP",            soon: true },
+  { label: "whale signals",    prompt: "show me what top wallets are bridging this week",         soon: true },
 ];
 
 // ─── Feature carousel ─────────────────────────────────────────────────────────
@@ -1319,8 +1322,10 @@ export default function AppPage() {
                           type="button"
                           onClick={() => {
                             setValue(pill.prompt);
-                            setHorizonToast(pill.label);
-                            setTimeout(() => setHorizonToast(null), 2000);
+                            if (pill.soon) {
+                              setHorizonToast(pill.label);
+                              setTimeout(() => setHorizonToast(null), 2000);
+                            }
                             setTimeout(() => inputRef.current?.focus(), 50);
                           }}
                           style={{
@@ -1335,7 +1340,7 @@ export default function AppPage() {
                           onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
                           onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textFaint; }}
                         >
-                          ◆ {pill.label}
+                          ◆ {pill.label}{pill.soon && <span style={{ opacity: 0.55, marginLeft: 4 }}>· soon</span>}
                         </button>
                       ))}
                     </div>
