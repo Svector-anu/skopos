@@ -25,6 +25,7 @@ import {
   scroll,
   hyperEvm,
   megaeth,
+  baseSepolia,
 } from "wagmi/chains";
 import { http, fallback } from "viem";
 
@@ -54,6 +55,7 @@ export const SUPPORTED_CHAINS = [
   scroll,
   hyperEvm,
   megaeth,
+  baseSepolia,
 ] as const;
 
 // Explicit CORS-friendly public RPC URLs — the wagmi default fallbacks (e.g. eth.merkle.io)
@@ -79,6 +81,7 @@ export const wagmiConfig = createConfig({
     [soneium.id]:    http("https://rpc.soneium.org"),
     [mantle.id]:     http("https://rpc.mantle.xyz"),
     [base.id]:       http("https://mainnet.base.org"),
+    [baseSepolia.id]: http("https://sepolia.base.org"),
     [plasma.id]:     http("https://rpc.plasma.to"),
     [arbitrum.id]:   http("https://arb1.arbitrum.io/rpc"),
     [celo.id]:       http("https://forno.celo.org"),

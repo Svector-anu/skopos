@@ -18,6 +18,7 @@ import {
 import { checkSmartQuota, incrSmart } from "@/lib/usage";
 import { isEntitled } from "@/lib/subscription";
 import { resolveHolderCap } from "@/lib/tokenGate";
+import { looksLikePay, buildPayIntent } from "@/lib/pay";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
@@ -908,6 +909,18 @@ export async function POST(req: NextRequest) {
   ];
   for (const [re, text] of NOT_LIVE) {
     if (re.test(trimmed)) return json({ type: "text", text });
+  }
+
+  // B20 memo payment — "pay AMOUNT 0xTOKEN to 0xADDR for MEMO on CHAIN". Runs
+  // before swap/rebalance parsing; the "to 0xADDRESS" shape distinguishes a
+  // payment from a swap ("to TOKEN/CHAIN"). Non-custodial: the client signs the
+  // transferWithMemo. Base + Base Sepolia.
+  if (looksLikePay(trimmed)) {
+    const pay = await buildPayIntent(trimmed);
+    if (pay) {
+      if ("error" in pay) return json({ type: "error", text: pay.error }, { headers: corsHeaders });
+      return json({ type: "pay", ...pay }, { headers: corsHeaders });
+    }
   }
 
   // Token launch via Bankr Partner Deploy API. Two-step: a launch request previews,

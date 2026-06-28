@@ -88,7 +88,9 @@ type IntelResult = {
 
 type PaywallResult = { type: "paywall"; reason: "connect" | "daily_cap"; used: number; cap: number };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult;
+type PayResult = { type: "pay"; token: string; tokenSymbol: string; decimals: number; to: string; amountWei: string; amountDisplay: string; memo: string; memoText: string; memoHashed: boolean; chainId: number; chainName: string };
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -112,6 +114,12 @@ const ERC20_ABI = [
     outputs: [{ name: "", type: "uint256" }] },
 ] as const;
 
+const TRANSFER_WITH_MEMO_ABI = [
+  { name: "transferWithMemo", type: "function", stateMutability: "nonpayable",
+    inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }, { name: "memo", type: "bytes32" }],
+    outputs: [{ name: "", type: "bool" }] },
+] as const;
+
 const USDC_ADDRESSES: Partial<Record<number, `0x${string}`>> = {
   1:     "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
   10:    "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
@@ -130,7 +138,7 @@ const EXPLORER_URLS: Record<string, string> = {
   Sonic: "https://explorer.soniclabs.com/tx/", "World Chain": "https://worldscan.org/tx/",
   HyperEVM: "https://hyperevmscan.io/tx/", Metis: "https://andromeda-explorer.metis.io/tx/",
   Soneium: "https://soneium.blockscout.com/tx/", Mantle: "https://mantlescan.xyz/tx/",
-  Base: "https://basescan.org/tx/", Plasma: "https://plasmascan.to/tx/",
+  Base: "https://basescan.org/tx/", "Base Sepolia": "https://sepolia.basescan.org/tx/", Plasma: "https://plasmascan.to/tx/",
   Arbitrum: "https://arbiscan.io/tx/", Celo: "https://celoscan.io/tx/",
   Avalanche: "https://snowtrace.io/tx/", Ink: "https://explorer.inkonchain.com/tx/",
   Linea: "https://lineascan.build/tx/", Berachain: "https://berascan.com/tx/",
@@ -1124,6 +1132,11 @@ export default function AppPage() {
                     {msg.result.type === "tx" && (
                       <ErrorBoundary label="Transaction details failed to render.">
                         <TxDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "pay" && (
+                      <ErrorBoundary label="Payment failed to render.">
+                        <PayDisplay result={msg.result} onTxSubmitted={saveTx} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "address" && (
@@ -2125,6 +2138,88 @@ function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage, o
 }
 
 // ─── TxDisplay ────────────────────────────────────────────────────────────────
+
+function PayRow({ label, value, mono = true }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  const M: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+      <span style={{ ...M, fontSize: "0.6rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{label}</span>
+      <span style={{ ...(mono ? M : {}), fontSize: "0.74rem", color: "var(--card-text, #fff)", textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+
+function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitted?: (r: TxRecord) => void }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { mutateAsync: writeContract, isPending } = useWriteContract();
+  const { mutateAsync: switchChain } = useSwitchChain();
+  const activeChainId = useChainId();
+  const [hash, setHash] = useState<string | null>(null);
+  const [err, setErr]   = useState<string | null>(null);
+  const { data: receipt, isLoading: confirming, isError: receiptError } =
+    useWaitForTransactionReceipt({ hash: (hash ?? undefined) as `0x${string}` | undefined, chainId: result.chainId });
+  const confirmed = receipt?.status === "success";
+  const failed    = receipt?.status === "reverted" || receiptError;
+  const explorerBase = EXPLORER_URLS[result.chainName] ?? "https://basescan.org/tx/";
+  const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+  async function pay() {
+    setErr(null);
+    try {
+      if (activeChainId !== result.chainId) await switchChain({ chainId: result.chainId });
+      const h = await writeContract({
+        address: result.token as `0x${string}`,
+        abi: TRANSFER_WITH_MEMO_ABI,
+        functionName: "transferWithMemo",
+        args: [result.to as `0x${string}`, BigInt(result.amountWei), result.memo as `0x${string}`],
+        chainId: result.chainId,
+      });
+      setHash(h);
+      onTxSubmitted?.({ hash: h, chainId: result.chainId, chain: result.chainName,
+        label: `Pay ${result.amountDisplay} ${result.tokenSymbol}`, timestamp: Date.now(),
+        explorerUrl: `${explorerBase}${h}` });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? "Payment rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", borderRadius: 12, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-bg, rgba(255,255,255,0.02))" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>B20 PAYMENT</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{result.chainName}</span>
+      </div>
+      <div style={{ ...MONO, fontSize: "1.1rem", color: "var(--card-text, #fff)" }}>
+        {result.amountDisplay} <span style={{ color: "#F5B800" }}>{result.tokenSymbol}</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4, borderTop: "1px solid var(--card-border, rgba(255,255,255,0.06))" }}>
+        <PayRow label="To" value={short(result.to)} />
+        {result.memoText && <PayRow label={result.memoHashed ? "Memo (hashed)" : "Memo"} value={result.memoText} mono={false} />}
+        <PayRow label="Token" value={short(result.token)} />
+      </div>
+
+      {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
+
+      {confirmed ? (
+        <a href={`${explorerBase}${hash}`} target="_blank" rel="noopener noreferrer"
+          style={{ ...MONO, display: "block", width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", textAlign: "center", textDecoration: "none" }}>
+          paid ✓ · view on explorer ↗
+        </a>
+      ) : failed ? (
+        <a href={`${explorerBase}${hash}`} target="_blank" rel="noopener noreferrer"
+          style={{ ...MONO, display: "block", width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(255,85,85,0.06)", border: "1px solid rgba(255,85,85,0.3)", borderRadius: 10, color: "#ff5555", textAlign: "center", textDecoration: "none" }}>
+          payment failed ✗ · view on explorer ↗
+        </a>
+      ) : (
+        <button onClick={pay} disabled={isPending || confirming}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.08)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: isPending || confirming ? "wait" : "pointer" }}>
+          {isPending ? "confirm in wallet…" : confirming ? "confirming…" : "pay →"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function TxDisplay({ result }: { result: TxResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
