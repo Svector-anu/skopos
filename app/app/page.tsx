@@ -296,7 +296,12 @@ export default function AppPage() {
   const walletLoading                          = authenticated && !walletsReady && !connectedAddress;
   const prevConnectedAddressRef                = useRef<string | null>(connectedAddress);
   // Ghost session: authenticated but no wallet → clear stale session, re-open full login modal
-  const handleWalletAction                     = authenticated ? () => logout().catch(() => {}).then(() => login()) : login;
+  const handleWalletAction                     = authenticated
+    ? async () => {
+        try { await logout(); } catch (e) { console.error("[ghost session] logout failed:", e); }
+        login();
+      }
+    : login;
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
   const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
@@ -1894,7 +1899,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             </div>
           )
         ) : isSolanaOrigin ? (
-          <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} />
+          <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} onRevalidate={onRevalidate} />
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => handleRefresh()} disabled={isRefreshing || !onRefresh}
@@ -1941,9 +1946,10 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
 
 // ─── SolanaExecuteButton ─────────────────────────────────────────────────────
 
-function SolanaExecuteButton({ result, onTxSubmitted }: {
+function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
   result: QuoteResult;
   onTxSubmitted?: (r: TxRecord) => void;
+  onRevalidate?: () => Promise<QuoteResult | null>;
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { publicKey, connected, connect, select, wallets, signTransaction, wallet } = useSolanaWallet();
@@ -1957,8 +1963,20 @@ function SolanaExecuteButton({ result, onTxSubmitted }: {
     setSending(true);
     setErr(null);
     try {
+      // Re-simulate right before signing — re-quote (re-runs the REVERTED guard)
+      // and sign the FRESH transaction. null = the route now reverts, so abort.
+      let cd = result.calldata;
+      if (onRevalidate) {
+        const fresh = await onRevalidate();
+        if (!fresh) {
+          setErr("This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.");
+          return;
+        }
+        if (fresh.calldata) cd = fresh.calldata;
+      }
+
       // Delora returns base64-encoded VersionedTransaction
-      const txBuffer = Uint8Array.from(atob(result.calldata.data), c => c.charCodeAt(0));
+      const txBuffer = Uint8Array.from(atob(cd.data), c => c.charCodeAt(0));
       const tx = VersionedTransaction.deserialize(txBuffer);
 
       const requiredSigners = tx.message.staticAccountKeys
