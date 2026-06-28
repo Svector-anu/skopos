@@ -919,9 +919,14 @@ export async function POST(req: NextRequest) {
         type: "rebalance",
         mode: "preview",
         quotedAt,
-        legs: results.map(r => {
+        legs: results.map((r, idx) => {
           const { intent, route, approval, calldata, raw } = r as LegOk;
-          return { type: "quote", mode: "preview", quotedAt, intent, route, approval, calldata, raw };
+          const pl = legs[idx];
+          const sameToken = (pl.destinationToken || pl.token).toUpperCase() === pl.token.toUpperCase();
+          const originMessage = sameToken
+            ? `bridge ${pl.amount} ${pl.token} from ${pl.originChain} to ${pl.destinationChain}`
+            : `swap ${pl.amount} ${pl.token} from ${pl.originChain} to ${pl.destinationToken} on ${pl.destinationChain}`;
+          return { type: "quote", mode: "preview", quotedAt, intent, route, approval, calldata, raw, originMessage };
         }),
       });
     }

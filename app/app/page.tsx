@@ -1063,7 +1063,55 @@ export default function AppPage() {
                             </button>
                           </div>
                         )}
-                  <RebalanceDisplay result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} slippage={slippage} />                      </ErrorBoundary>
+                  <RebalanceDisplay
+                    result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} slippage={slippage}
+                    onSlippageChange={setSlippage}
+                    onLegRefresh={async (legIndex: number, slippageOverride?: number) => {
+                      const leg = (msg.result as RebalanceResult).legs[legIndex];
+                      if (leg.type !== "quote" || !leg.originMessage) return;
+                      const origin = leg.originMessage;
+                      try {
+                        const res = await fetch("/api/chat", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage: slippageOverride ?? slippage, llmTier, anonId }),
+                        });
+                        const data: AssistantResult = await res.json();
+                        if (data.type === "quote") data.originMessage = origin;
+                        setMessages(prev => prev.map((m, j) => {
+                          if (j !== i || m.role !== "assistant" || m.result.type !== "rebalance") return m;
+                          return { role: "assistant", result: { ...m.result, legs: m.result.legs.map((l, k) => k === legIndex ? (data as QuoteResult) : l) } };
+                        }));
+                      } catch { /* silent — QuoteDisplay resets isRefreshing */ }
+                    }}
+                    onLegRevalidate={async (legIndex: number) => {
+                      const leg = (msg.result as RebalanceResult).legs[legIndex];
+                      if (leg.type !== "quote" || !leg.originMessage) return leg.type === "quote" ? leg : null;
+                      const origin = leg.originMessage;
+                      try {
+                        const res = await fetch("/api/chat", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage, llmTier, anonId }),
+                        });
+                        const data: AssistantResult = await res.json();
+                        if (data.type === "quote") {
+                          data.originMessage = origin;
+                          setMessages(prev => prev.map((m, j) => {
+                            if (j !== i || m.role !== "assistant" || m.result.type !== "rebalance") return m;
+                            return { role: "assistant", result: { ...m.result, legs: m.result.legs.map((l, k) => k === legIndex ? (data as QuoteResult) : l) } };
+                          }));
+                          return data as QuoteResult;
+                        }
+                        // Guard fired (REVERTED) or any non-quote → abort this leg.
+                        return null;
+                      } catch {
+                        // Network error re-checking — don't block a quote the user already holds.
+                        return leg;
+                      }
+                    }}
+                  />
+                      </ErrorBoundary>
                     )}
                     {msg.result.type === "tx" && (
                       <ErrorBoundary label="Transaction details failed to render.">
@@ -1997,7 +2045,7 @@ function SolanaExecuteButton({ result, onTxSubmitted }: {
 
 // ─── RebalanceDisplay ─────────────────────────────────────────────────────────
 
-function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage }: { result: RebalanceResult; connectedAddress: string | null; onTxSubmitted?: (r: TxRecord) => void; slippage?: number }) {
+function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage, onLegRefresh, onLegRevalidate, onSlippageChange }: { result: RebalanceResult; connectedAddress: string | null; onTxSubmitted?: (r: TxRecord) => void; slippage?: number; onLegRefresh?: (legIndex: number, slippageOverride?: number) => Promise<void>; onLegRevalidate?: (legIndex: number) => Promise<QuoteResult | null>; onSlippageChange?: (v: number) => void }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const total     = result.legs.length;
   const okLegs    = result.legs.filter(l => l.type === "quote").length;
@@ -2035,7 +2083,12 @@ function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage }:
                   </span>
                 )}
               </p>
-              <QuoteDisplay result={leg} connectedAddress={connectedAddress} onTxSubmitted={onTxSubmitted} slippage={slippage} />
+              <QuoteDisplay
+                result={leg} connectedAddress={connectedAddress} onTxSubmitted={onTxSubmitted} slippage={slippage}
+                onSlippageChange={onSlippageChange}
+                onRefresh={onLegRefresh ? (slippageOverride?: number) => onLegRefresh(i, slippageOverride) : undefined}
+                onRevalidate={onLegRevalidate ? () => onLegRevalidate(i) : undefined}
+              />
             </div>
           ) : (
             <div style={{ ...MONO, fontSize: "0.78rem", color: "#ff6b6b", padding: "12px 16px", background: "rgba(255,107,107,0.05)", border: "1px solid rgba(255,107,107,0.12)", borderRadius: 12 }}>
