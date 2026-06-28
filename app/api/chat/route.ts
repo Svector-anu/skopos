@@ -125,7 +125,7 @@ const SKOPOS_HELP = `Skopos is a non-custodial cross-chain DeFi copilot — tell
 
 What you can do:
 • Swap or bridge across 25+ chains (EVM + Solana) — e.g. "bridge 0.1 ETH from ethereum to base"
-• Rebalance across chains — e.g. "split 1 ETH across base and arbitrum"
+• Rebalance across chains — e.g. "split 1 ETH from ethereum across base and arbitrum"
 • Live token price + 7-day chart — e.g. "ETH price"
 • Find the best DeFi yield — e.g. "find highest yield for USDC"
 • Scan a token's risk — e.g. "scan PEPE risk"
@@ -891,6 +891,25 @@ export async function POST(req: NextRequest) {
     return json({ type: "text", text: SKOPOS_HELP });
   }
 
+  // Not-live features — answer honestly instead of mis-parsing the request (a DCA
+  // ask used to become a nonsensical bridge prompt). Fires before execution and
+  // rebalance parsing, so "buy ETH when it hits $X" isn't run as a market order.
+  const NOT_LIVE: Array<[RegExp, string]> = [
+    [/\b(dca|dollar[-\s]?cost\s*averag\w*|recurring|every\s+(?:day|week|month|hour|other\s+day)|set\s+up\s+an?\s+agent|automate\s+(?:my|a|the)\s+(?:buy|swap|purchase|dca))\b/i,
+      `Recurring buys and DCA agents aren't live yet — that's on the roadmap. For now I can do one-off swaps and bridges, e.g. "swap $20 of USDC to ETH on base".`],
+    [/\b(limit\s+order|stop[-\s]?loss|take[-\s]?profit)\b|\bwhen\s+(?:the\s+)?(?:price|it|eth|btc|sol)\s+(?:drops?|hits?|reaches?|falls?|is)\b.*\$?\d/i,
+      `Limit and conditional orders aren't live yet — Skopos executes at the current market rate. You can swap or bridge now at live prices; price-triggered orders are coming.`],
+    [/\b(off[-\s]?ramp|cash\s*out|withdraw\s+to\s+(?:my\s+)?(?:bank|card|debit)|to\s+my\s+(?:debit|bank)\s+(?:card|account)?|fiat\s+out)\b/i,
+      `Cashing out to a bank or card isn't live yet. Skopos handles on-chain swaps and bridges; fiat off-ramp is on the roadmap.`],
+    [/\b(mcp|model\s+context\s+protocol|claude\s+desktop)\b/i,
+      `An MCP connector isn't live yet — Skopos works right here in chat for now.`],
+    [/\b(whale\s+(?:signals?|tracking|watch\w*|alerts?)|smart\s+money|top\s+wallets|what\s+(?:others|people|whales)\s+are\s+(?:bridging|buying|trading|doing))\b/i,
+      `Whale and smart-money tracking isn't live yet. You can scan a specific wallet (paste its address) or a token's risk ("scan PEPE risk") today.`],
+  ];
+  for (const [re, text] of NOT_LIVE) {
+    if (re.test(trimmed)) return json({ type: "text", text });
+  }
+
   // Token launch via Bankr Partner Deploy API. Two-step: a launch request previews,
   // an explicit "confirm" deploys — never a one-shot launch from a single message.
   if (queryType === "launch") {
@@ -933,7 +952,7 @@ export async function POST(req: NextRequest) {
       // Validate that legs are actually cross-chain — same-chain legs indicate the LLM couldn't infer origin
       const samechainLegs = legs.filter(l => resolveChainId(l.originChain) === resolveChainId(l.destinationChain));
       if (samechainLegs.length > 0) {
-        return json({ type: "error", text: `Please specify the source chain. For example: "send 0.5 ETH from ethereum to base and 0.5 ETH from ethereum to arbitrum"` });
+        return json({ type: "text", text: `Which chain are the funds coming from? Name the source and I'll split it — e.g. "split 1 ETH from ethereum across base and arbitrum".` });
       }
 
       const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, safeSlippage, solanaAddress)));
@@ -1198,9 +1217,12 @@ export async function POST(req: NextRequest) {
 
   if (yieldKeyword && (tokenInQuery ?? yieldSymbolMatch)) {
     const symbol = (tokenInQuery ?? yieldSymbolMatch![1]).toUpperCase();
-    const pools = await getTopYields(symbol);
+    const chainMatch = trimmed.match(/\b(ethereum|base|arbitrum|arb|optimism|op|polygon|avalanche|bsc)\b/i);
+    const yieldChain = chainMatch?.[1];
+    const pools = await getTopYields(symbol, 10, yieldChain);
     if (pools.length === 0) {
-      return json({ type: "error", text: `No yield opportunities found for ${symbol} in major protocols. Try USDC, ETH, WBTC, DAI, or USDT.` });
+      const where = yieldChain ? ` on ${yieldChain}` : "";
+      return json({ type: "error", text: `No yield opportunities found for ${symbol}${where} in major protocols. Try another chain, or USDC, ETH, WBTC, DAI, or USDT.` });
     }
     const analysis = await generateDecisionAnalysis(buildYieldAnalysisPrompt(symbol, pools), tier, meterMeta);
     await recordSmart();

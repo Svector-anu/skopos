@@ -393,7 +393,7 @@ WHAT SKOPOS CAN EXECUTE RIGHT NOW:
 - Token risk scanner → "scan PEPE risk" or "analyze 0x..." — DexScreener data
 - Wallet portfolio → "show my portfolio" — live balances across all chains
 - Tx / address lookup → paste any tx hash or wallet address
-- Multi-leg rebalance → "split 1 ETH across base and arbitrum"
+- Multi-leg rebalance → "split 1 ETH from ethereum across base and arbitrum"
 - Solana: bridge SOL or swap Solana tokens (connect Phantom)
 
 NOT YET LIVE — be honest:
@@ -677,7 +677,7 @@ const SKOPOS_CAPABILITIES = `Skopos is a non-custodial cross-chain DeFi copilot.
 
 What Skopos can do right now (when a user asks for any of these, point them to the exact phrasing that triggers it):
 - Swap / bridge across 25+ chains, EVM and Solana → "bridge 0.1 ETH from ethereum to base", "swap 100 USDC to ETH on arbitrum" (user signs)
-- Multi-leg rebalance / consolidation → "split 1 ETH across base and arbitrum", "move my funds to base"
+- Multi-leg rebalance / consolidation → "split 1 ETH from ethereum across base and arbitrum", "move my funds to base" (name the source chain when splitting)
 - Live token price + 7-day chart → "ETH price"
 - DeFi yield scanner, live APY → "find highest yield for USDC"
 - Token risk scan → "scan PEPE risk" or paste a token address
