@@ -13,8 +13,9 @@ function envCap(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-const FREE_DAILY_CAP  = envCap("SMART_FREE_DAILY_CAP", 20);
-const ANON_TEASER_CAP = envCap("SMART_ANON_TEASER_CAP", 2);
+const FREE_DAILY_CAP   = envCap("SMART_FREE_DAILY_CAP", 20);
+const HOLDER_DAILY_CAP = envCap("SMART_HOLDER_DAILY_CAP", 100);
+const ANON_TEASER_CAP  = envCap("SMART_ANON_TEASER_CAP", 2);
 
 // Agent-path budget. Agents reach Smart through the Vara relay but cannot pay,
 // so spend has to be capped against Skopos's prepaid Bankr credits rather than
@@ -40,10 +41,10 @@ function utcDay(): string {
 export type MeterIdentity = { wallet?: string | null; anonId?: string | null };
 type MeterKey = { key: string; cap: number; anonymous: boolean };
 
-function resolveMeterKey({ wallet, anonId }: MeterIdentity): MeterKey | null {
+function resolveMeterKey({ wallet, anonId }: MeterIdentity, holder = false): MeterKey | null {
   const day = utcDay();
   if (wallet && wallet.startsWith("0x")) {
-    return { key: `smart:${wallet.toLowerCase()}:${day}`, cap: FREE_DAILY_CAP, anonymous: false };
+    return { key: `smart:${wallet.toLowerCase()}:${day}`, cap: holder ? HOLDER_DAILY_CAP : FREE_DAILY_CAP, anonymous: false };
   }
   if (anonId) {
     return { key: `smart:anon:${anonId}:${day}`, cap: ANON_TEASER_CAP, anonymous: true };
@@ -58,8 +59,8 @@ export type QuotaCheck =
 // Read-only: never increments. The caller increments via incrSmart() only after
 // a Smart reply genuinely served, so structural cards and gateway fallbacks to
 // Fast don't burn a count.
-export async function checkSmartQuota(id: MeterIdentity): Promise<QuotaCheck> {
-  const meter = resolveMeterKey(id);
+export async function checkSmartQuota(id: MeterIdentity, holder = false): Promise<QuotaCheck> {
+  const meter = resolveMeterKey(id, holder);
   if (!meter) {
     return { allowed: false, reason: "connect", used: 0, cap: ANON_TEASER_CAP };
   }

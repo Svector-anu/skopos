@@ -143,6 +143,9 @@ BANKR_LLM_KEY            # optional — enables the ✦ Smart tier (Bankr LLM Ga
 UPSTASH_REDIS_REST_URL   # optional — Smart-tier metering store; absent → metering fails open (uncapped)
 UPSTASH_REDIS_REST_TOKEN # optional — pairs with UPSTASH_REDIS_REST_URL
 SMART_FREE_DAILY_CAP     # optional — free Smart messages/day per wallet (default 20)
+SMART_HOLDER_DAILY_CAP   # optional — Smart messages/day for $skopos holders over the gate threshold (default 100)
+SMART_TOKEN_GATE_MIN     # optional — min whole $skopos held to get the holder cap; unset/0 → token gate disabled (no behavior change)
+SKOPOS_TOKEN_ADDRESS     # optional — $skopos ERC-20 on Base for the holder balance read (default the launched CA)
 SMART_ANON_TEASER_CAP    # optional — free Smart messages for anonymous (no-wallet) users before connect paywall (default 2)
 SMART_AGENT_DAILY_CAP    # optional — global daily cap on agent Smart messages before degrading to Fast (default 500)
 SMART_AGENT_HANDLE_DAILY_CAP # optional — per-VAN-handle daily cap on agent Smart messages before degrading to Fast (default 50)
