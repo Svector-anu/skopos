@@ -121,6 +121,23 @@ function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
   return `${symbol} yield opportunities:\n${lines}\n\nUse ONLY the APY and TVL figures above — never state a rate or amount not listed here. Classify each as sustainable real yield or an emission-funded coordination game. Give a directional take on which pool structurally favors LPs vs. which extracts from them.`;
 }
 
+const SKOPOS_HELP = `Skopos is a non-custodial cross-chain DeFi copilot — tell it what you want in plain English, it builds the route, and you sign in your own wallet. It never holds or moves your funds.
+
+What you can do:
+• Swap or bridge across 25+ chains (EVM + Solana) — e.g. "bridge 0.1 ETH from ethereum to base"
+• Rebalance across chains — e.g. "split 1 ETH across base and arbitrum"
+• Live token price + 7-day chart — e.g. "ETH price"
+• Find the best DeFi yield — e.g. "find highest yield for USDC"
+• Scan a token's risk — e.g. "scan PEPE risk"
+• Check a wallet's portfolio — "show my portfolio" or paste an address
+• Prediction market odds — e.g. "odds on Bitcoin hitting $100k"
+• FX, gold, equities — e.g. "USD to EUR", "gold price"
+• Look up any tx, ENS name, or address — just paste it
+
+Not live yet: whale tracking, recurring/DCA, limit orders, off-ramp to bank/card.
+
+Just type what you want to do.`;
+
 function buildBridgeAnalysisPrompt(
   intent: ParsedIntent,
   route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null; inputUSD: number | null; outputUSD: number | null },
@@ -862,6 +879,16 @@ export async function POST(req: NextRequest) {
   const META_RE = /\b(system\s*prompt|your\s*instructions?|what\s*(?:model|llm|ai)\s*(?:are\s*you|is\s*this)|which\s*(?:model|api|llm)\s*(?:do\s*you|are\s*you)|openai|anthropic|are\s*you\s*(?:gpt|claude|chatgpt|llama)|gpt[-\s]?\d|how\s+old\s+are\s+you|when\s+(?:were|was)\s+you\s+(?:created|born|built|made|trained|launched)|(?:your|you\s+have\s+a?)\s*(?:age|birthday|birth\s*date)|knowledge\s+cutoff|training\s+(?:data|cutoff)|(?:do\s+you|you)\s+know\s+(?:about\s+)?\d{4}|what\s+year\s+(?:is\s+it|are\s+you|do\s+you\s+think)|who\s+(?:made|built|created|trained)\s+you)\b/i;
   if (META_RE.test(trimmed)) {
     return json({ type: "text", text: "I'm here to help with DeFi and on-chain tasks." });
+  }
+
+  // Identity / capabilities — answered deterministically so the product can never
+  // misdescribe itself (the LLM used to claim it "can't execute"). Scoped to
+  // identity/help phrasings + general "can you <verb>" questions; a real
+  // execution request carries an amount and classifies as "execution", so it's
+  // excluded here and still routes to a quote.
+  const HELP_RE = /^\s*(?:help|menu|start|gm|hi|hey|hello)\s*[!.?]*\s*$|what(?:'s| is| are)?\s+skopos\b|who\s+are\s+you\b|what\s+can\s+(?:you|skopos|i)\s+do\b|what\s+do\s+you\s+do\b|how\s+(?:do|can)\s+i\s+use\s+(?:you|this|skopos)\b|what\s+are\s+your\s+(?:features|capabilities|commands)\b|(?:can|do)\s+you\s+(?:execute|swap|bridge|rebalance|trade|sign|help)\b/i;
+  if (queryType !== "execution" && HELP_RE.test(trimmed)) {
+    return json({ type: "text", text: SKOPOS_HELP });
   }
 
   // Token launch via Bankr Partner Deploy API. Two-step: a launch request previews,
