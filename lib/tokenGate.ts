@@ -2,16 +2,18 @@ import { Redis } from "@upstash/redis";
 import { createPublicClient, http, getAddress } from "viem";
 import { base } from "viem/chains";
 
-// $skopos holder gate for the Smart tier. Holding at least SMART_TOKEN_GATE_MIN
-// $skopos (whole tokens) raises a wallet's daily Smart cap from the free cap to
-// the holder cap — bounded spend, not an uncapped bypass (paid subs get that).
+// $skopos holder tiers for the Smart tier. Holding more $skopos lifts a wallet's
+// daily Smart cap through ascending bands — bounded upgrades, not the uncapped
+// bypass paid subs get. Gives the token real, accumulating utility (hold more →
+// more Smart), which is the demand side of the fee→compute flywheel.
 //
-// Disabled by default: SMART_TOKEN_GATE_MIN unset or 0 → hasSmartTokenAccess()
-// always returns false, so the gate is inert and everyone uses the normal caps.
-// Flip it on by setting the env, no code change.
+// Tiers are env-configured. Tier 1 reuses the original gate vars; tiers 2-3 are
+// optional higher bands. A wallet gets the cap of the HIGHEST band its balance
+// meets. Disabled by default: SMART_TOKEN_GATE_MIN unset → no band is active →
+// resolveHolderCap() always returns null and everyone uses the free cap.
 //
-// Fails to "no access" on any RPC or Redis error: a holder simply falls back to
-// the free cap rather than the request breaking. Never grants access on failure.
+// Fails to "no holder cap" on any RPC or Redis error: a holder simply falls back
+// to the free cap rather than the request breaking. Never grants on failure.
 
 const SKOPOS_TOKEN = (process.env.SKOPOS_TOKEN_ADDRESS ?? "0xf6ff51998a5ca004ace94f0035e3b6507ce3aba3") as `0x${string}`;
 const TOKEN_DECIMALS = 18;
@@ -27,10 +29,32 @@ const BALANCE_OF_ABI = [
   },
 ] as const;
 
-function gateMinWei(): bigint | null {
-  const whole = Number(process.env.SMART_TOKEN_GATE_MIN);
-  if (!Number.isFinite(whole) || whole <= 0) return null;
-  return BigInt(Math.floor(whole)) * BigInt(10) ** BigInt(TOKEN_DECIMALS);
+type Tier = { min: bigint; cap: number };
+
+const TIER_BANDS: Array<{ minVar: string; capVar: string; defaultCap: number }> = [
+  { minVar: "SMART_TOKEN_GATE_MIN",    capVar: "SMART_HOLDER_DAILY_CAP", defaultCap: 100 },
+  { minVar: "SMART_TOKEN_GATE_T2_MIN", capVar: "SMART_HOLDER_T2_CAP",    defaultCap: 250 },
+  { minVar: "SMART_TOKEN_GATE_T3_MIN", capVar: "SMART_HOLDER_T3_CAP",    defaultCap: 1000 },
+];
+
+function envNum(name: string): number | null {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function toWei(wholeTokens: number): bigint {
+  return BigInt(Math.floor(wholeTokens)) * BigInt(10) ** BigInt(TOKEN_DECIMALS);
+}
+
+// Active bands, ascending by min. An unset min disables that band.
+function tiers(): Tier[] {
+  const out: Tier[] = [];
+  for (const band of TIER_BANDS) {
+    const min = envNum(band.minVar);
+    if (min === null) continue;
+    out.push({ min: toWei(min), cap: envNum(band.capVar) ?? band.defaultCap });
+  }
+  return out.sort((a, b) => (a.min < b.min ? -1 : a.min > b.min ? 1 : 0));
 }
 
 let redis: Redis | null = null;
@@ -51,10 +75,13 @@ function getClient() {
   return client;
 }
 
-export async function hasSmartTokenAccess(wallet: string | null | undefined): Promise<boolean> {
-  const min = gateMinWei();
-  if (!min) return false;
-  if (!wallet || !wallet.startsWith("0x")) return false;
+// Returns the wallet's holder daily-cap, or null when the gate is disabled, the
+// wallet holds below tier 1, or the lookup fails. The caller treats null as
+// "use the free cap".
+export async function resolveHolderCap(wallet: string | null | undefined): Promise<number | null> {
+  const bands = tiers();
+  if (bands.length === 0) return null;
+  if (!wallet || !wallet.startsWith("0x")) return null;
 
   const cacheKey = `tokengate:${wallet.toLowerCase()}`;
   const store = getRedis();
@@ -62,8 +89,10 @@ export async function hasSmartTokenAccess(wallet: string | null | undefined): Pr
   if (store) {
     try {
       const cached = await store.get<string>(cacheKey);
-      if (cached === "1") return true;
-      if (cached === "0") return false;
+      if (cached !== null && cached !== undefined) {
+        const n = Number(cached);
+        return n > 0 ? n : null;
+      }
     } catch { /* cache miss path — fall through to RPC */ }
   }
 
@@ -74,13 +103,16 @@ export async function hasSmartTokenAccess(wallet: string | null | undefined): Pr
       functionName: "balanceOf",
       args: [getAddress(wallet)],
     });
-    const access = balance >= min;
-    if (store) {
-      try { await store.set(cacheKey, access ? "1" : "0", { ex: CACHE_TTL_SECONDS }); } catch { /* non-fatal */ }
+    let cap = 0;
+    for (const tier of bands) {
+      if (balance >= tier.min) cap = tier.cap;
     }
-    return access;
+    if (store) {
+      try { await store.set(cacheKey, String(cap), { ex: CACHE_TTL_SECONDS }); } catch { /* non-fatal */ }
+    }
+    return cap > 0 ? cap : null;
   } catch (err) {
-    console.error("[tokengate] balance read failed — denying holder access:", err instanceof Error ? err.message : err);
-    return false;
+    console.error("[tokengate] balance read failed — denying holder cap:", err instanceof Error ? err.message : err);
+    return null;
   }
 }

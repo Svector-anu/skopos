@@ -17,7 +17,7 @@ import {
 } from "@/lib/parseIntent";
 import { checkSmartQuota, incrSmart } from "@/lib/usage";
 import { isEntitled } from "@/lib/subscription";
-import { hasSmartTokenAccess } from "@/lib/tokenGate";
+import { resolveHolderCap } from "@/lib/tokenGate";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
@@ -468,8 +468,8 @@ export async function POST(req: NextRequest) {
   // non-subscribed wallets (and anon teaser users) hit the daily-cap path.
   let smartKey: string | null = null;
   if (tier === "smart" && !(await isEntitled(senderAddress))) {
-    const holder = await hasSmartTokenAccess(senderAddress);
-    const quota = await checkSmartQuota({ wallet: senderAddress, anonId }, holder);
+    const holderCap = await resolveHolderCap(senderAddress);
+    const quota = await checkSmartQuota({ wallet: senderAddress, anonId }, holderCap);
     if (!quota.allowed) {
       return json({ type: "paywall", reason: quota.reason, used: quota.used, cap: quota.cap }, { headers: corsHeaders });
     }
