@@ -483,6 +483,7 @@ Users describe assets they hold on various chains and a destination, like:
 - "I have 1 ETH on ethereum and 200 USDC on arbitrum, consolidate to base"
 - "move 0.5 ETH from optimism and 100 USDC from polygon both to base"
 - "rebalance: 1 ETH mainnet + 50 USDC arbitrum → base"
+- "split 1 ETH from ethereum across base and arbitrum" (divide 1 ETH evenly: 0.5 to base, 0.5 to arbitrum)
 
 Return ONLY a raw JSON array (no markdown, no wrapper object):
 [
@@ -493,12 +494,13 @@ Return ONLY a raw JSON array (no markdown, no wrapper object):
 Rules:
 - One object per asset/leg
 - If a destination is stated once ("consolidate to base"), apply it to ALL legs
+- SPLIT: if the user says "split/spread/divide AMOUNT [from SOURCE] across/between CHAIN_A and CHAIN_B [and ...]", produce one leg per destination chain, each with amount = AMOUNT ÷ (number of destination chains), all sharing the same SOURCE chain. "split 1 ETH from ethereum across base and arbitrum" → two legs of 0.5 ETH each (ethereum→base, ethereum→arbitrum). Divide evenly; rounding a couple of decimals is fine.
 - destinationToken equals token unless user explicitly says "swap X to Y"
 - Aliases: ether→ETH, mainnet→ethereum, arb→arbitrum, poly/matic→polygon, op→optimism, avax→avalanche
 - Return {"legs":null} if fewer than 2 clear legs or intent is ambiguous
 
 CRITICAL — data integrity:
-- Extract ONLY what is explicitly stated in the message. NEVER infer, assume, or fabricate chain names, token symbols, or amounts that are not literally present.
+- Extract ONLY what is explicitly stated in the message. NEVER infer, assume, or fabricate chain names, token symbols, or amounts that are not literally present. (Exception: the word "split"/"spread"/"divide" explicitly authorizes dividing the one stated amount evenly across the named destination chains — that division is requested, not fabricated.)
 - If a chain name is ambiguous or not mentioned for a leg, omit that leg entirely.
 - If an amount is missing or unclear for a leg, omit that leg entirely.
 - Every field must be traceable to a word or number in the user's message.`;
