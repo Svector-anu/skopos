@@ -1913,6 +1913,13 @@ function SolanaExecuteButton({ result, onTxSubmitted }: {
       const txBuffer = Uint8Array.from(atob(result.calldata.data), c => c.charCodeAt(0));
       const tx = VersionedTransaction.deserialize(txBuffer);
 
+      const requiredSigners = tx.message.staticAccountKeys
+        .slice(0, tx.message.header.numRequiredSignatures)
+        .map(k => k.toBase58());
+      if (!requiredSigners.includes(publicKey.toBase58())) {
+        throw new Error("This quote was built for a different Solana account. Reconnect with the wallet you started with, or refresh for a new quote.");
+      }
+
       const signed = await signTransaction(tx);
       const signature = await connection.sendRawTransaction(signed.serialize(), {
         skipPreflight: false,
