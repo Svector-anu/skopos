@@ -19,6 +19,7 @@ import { checkSmartQuota, incrSmart } from "@/lib/usage";
 import { isEntitled } from "@/lib/subscription";
 import { resolveHolderCap } from "@/lib/tokenGate";
 import { looksLikePay, buildPayIntent } from "@/lib/pay";
+import { getMemoPayments } from "@/lib/payments";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
@@ -923,6 +924,20 @@ export async function POST(req: NextRequest) {
       if ("error" in pay) return json({ type: "error", text: pay.error }, { headers: corsHeaders });
       return json({ type: "pay", ...pay }, { headers: corsHeaders });
     }
+  }
+
+  // Payments inbox — incoming B20 memo payments to the connected wallet, with the
+  // memo decoded ("order-1024 paid"). The reconcile half of the payment rail.
+  const PAYMENTS_RE = /\b(payments?\s+(?:received|inbox|to\s+me)|who\s+(?:paid|has\s+paid)\s+me|did\s+i\s+get\s+paid|my\s+payments|memo\s+payments|payment\s+inbox|incoming\s+payments|reconcile\s+payments)\b/i;
+  if (PAYMENTS_RE.test(trimmed)) {
+    if (!senderAddress || !senderAddress.startsWith("0x")) {
+      return json({ type: "error", text: "Connect a wallet to see payments tagged to you." }, { headers: corsHeaders });
+    }
+    const [sepolia, mainnet] = await Promise.all([
+      getMemoPayments(84532, senderAddress),
+      getMemoPayments(8453, senderAddress),
+    ]);
+    return json({ type: "payments", address: senderAddress, payments: [...mainnet, ...sepolia] }, { headers: corsHeaders });
   }
 
   // Token launch via Bankr Partner Deploy API. Two-step: a launch request previews,

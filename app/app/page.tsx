@@ -90,7 +90,10 @@ type PaywallResult = { type: "paywall"; reason: "connect" | "daily_cap"; used: n
 
 type PayResult = { type: "pay"; token: string; tokenSymbol: string; decimals: number; to: string; amountWei: string; amountDisplay: string; memo: string; memoText: string; memoHashed: boolean; method: "transferWithMemo" | "transfer"; isB20: boolean; memoApplied: boolean; chainId: number; chainName: string };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult;
+type MemoPaymentItem = { chainId: number; chainName: string; token: string; tokenSymbol: string; amount: string; from: string; memo: string; memoText: string; txHash: string; timestamp: number | null };
+type PaymentsResult = { type: "payments"; address: string; payments: MemoPaymentItem[] };
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1142,6 +1145,11 @@ export default function AppPage() {
                         <PayDisplay result={msg.result} onTxSubmitted={saveTx} />
                       </ErrorBoundary>
                     )}
+                    {msg.result.type === "payments" && (
+                      <ErrorBoundary label="Payments failed to render.">
+                        <PaymentsDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
                     {msg.result.type === "address" && (
                       <ErrorBoundary label="Address details failed to render.">
                         <AddressDisplay result={msg.result} onSwap={prompt => submit(prompt)} />
@@ -2136,6 +2144,56 @@ function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage, o
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── PaymentsDisplay ──────────────────────────────────────────────────────────
+
+function timeAgo(ts: number | null): string {
+  if (!ts) return "";
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function PaymentsDisplay({ result }: { result: PaymentsResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+  const explorer = (chainName: string, hash: string) => `${EXPLORER_URLS[chainName] ?? "https://basescan.org/tx/"}${hash}`;
+  const { payments } = result;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", borderRadius: 12, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-bg, rgba(255,255,255,0.02))" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>PAYMENTS RECEIVED</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          {payments.length} tagged
+        </span>
+      </div>
+      {payments.length === 0 ? (
+        <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: 0 }}>
+          No tagged B20 payments to {short(result.address)} yet. When someone pays you with a memo, it lands here — matched to its reference.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {payments.map(p => (
+            <a key={p.txHash} href={explorer(p.chainName, p.txHash)} target="_blank" rel="noopener noreferrer"
+              style={{ display: "flex", flexDirection: "column", gap: 5, padding: "11px 13px", borderRadius: 10, border: "1px solid var(--card-border, rgba(255,255,255,0.07))", background: "rgba(245,184,0,0.03)", textDecoration: "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <span style={{ ...MONO, fontSize: "0.82rem", color: "#F5B800", fontWeight: 600 }}>{p.memoText || "(no memo)"}</span>
+                <span style={{ ...MONO, fontSize: "0.78rem", color: "var(--card-text, #fff)" }}>{p.amount} {p.tokenSymbol}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>from {short(p.from)} · {p.chainName}</span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{timeAgo(p.timestamp)} ↗</span>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
