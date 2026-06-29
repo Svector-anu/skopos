@@ -3024,7 +3024,9 @@ function IntelDisplay({ result }: { result: IntelResult }) {
 
   const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-  const { data: walletClient } = useWalletClient();
+  const { data: walletClient } = useWalletClient({ chainId: 8453 });
+  const activeChainId = useChainId();
+  const { mutateAsync: switchToBase } = useSwitchChain();
   const { login, logout, authenticated } = usePrivy();
   const [smState, setSmState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [smMessage, setSmMessage] = useState<string | null>(null);
@@ -3045,6 +3047,9 @@ function IntelDisplay({ result }: { result: IntelResult }) {
     setSmState("loading");
     setSmMessage(null);
     try {
+      // The x402 read settles in USDC on Base (8453). Switch the wallet there
+      // first, otherwise the payment payload fails on a chainId mismatch.
+      if (activeChainId !== 8453) await switchToBase({ chainId: 8453 });
       const res = await fetchSmartMoney(walletClient, token);
       if (res.ok) {
         setSmData(res.data);
