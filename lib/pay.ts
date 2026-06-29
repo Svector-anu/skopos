@@ -124,7 +124,10 @@ async function resolveToken(chainId: PayChainId, ref: string): Promise<{ token: 
   return null;
 }
 
-const PAY_RE = /^(?:pay|send|transfer)\s+([\d.]+)\s+(0x[a-fA-F0-9]{40}|[a-zA-Z][a-zA-Z0-9]*)\s+to\s+(0x[a-fA-F0-9]{40})(?:\s+(?:for|memo|tag|ref|note|re)\s+(.+?))?(?:\s+on\s+([a-z][a-z\s-]*?))?\s*$/i;
+// Recipient is captured loosely (0x + any hex) so a malformed/typo address still
+// classifies as a payment and gets a clear "invalid recipient" error in
+// buildPayIntent, instead of falling through to a confusing swap-parse error.
+const PAY_RE = /^(?:pay|send|transfer)\s+([\d.]+)\s+(0x[a-fA-F0-9]{40}|[a-zA-Z][a-zA-Z0-9]*)\s+to\s+(0x[a-fA-F0-9]{4,})(?:\s+(?:for|memo|tag|ref|note|re)\s+(.+?))?(?:\s+on\s+([a-z][a-z\s-]*?))?\s*$/i;
 
 export function looksLikePay(input: string): boolean {
   return PAY_RE.test(input.trim());
