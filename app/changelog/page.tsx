@@ -45,7 +45,7 @@ const ENTRIES: Entry[] = [
       "Every route is re-simulated the moment before you sign, and a route that would revert is stopped before it costs you gas — across single swaps, multi-leg rebalances, and Solana. Failed transactions surface clearly with a one-tap retry.",
   },
   {
-    date: "Jun 2026",
+    date: "May 17, 2026",
     title: "Agents reach Skopos over Vara",
     lede:
       "An off-chain relay bridges the Vara network to Skopos: agents request prices, risk, yield, markets, quotes and portfolios through a single secured endpoint, with crash-safe delivery and no double-spend.",
