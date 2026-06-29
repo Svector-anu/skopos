@@ -752,9 +752,11 @@ export async function POST(req: NextRequest) {
     return json({ type: "address", data, summary, ensName });
   }
 
-  // Address embedded in a sentence ("analyze wallet 0x…", "check 0x…")
+  // Address embedded in a sentence ("analyze wallet 0x…", "check 0x…").
+  // Skip pay commands — their recipient is a 0x address but the intent is a
+  // payment, not a wallet lookup (handled in the intent layer below).
   const embeddedAddrMatch = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/);
-  if (embeddedAddrMatch && !/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+  if (embeddedAddrMatch && !/^0x[0-9a-fA-F]{40}$/.test(trimmed) && !looksLikePay(trimmed)) {
     const data = await lookupAddress(embeddedAddrMatch[1]);
     const summary = await generateAddressSummary(data);
     return json({ type: "address", data, summary });
