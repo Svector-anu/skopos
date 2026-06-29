@@ -25,9 +25,10 @@ const ENTRIES: Entry[] = [
     date: "Jun 29, 2026",
     title: "B20 payments on Base",
     lede:
-      "Pay anyone on Base in plain English, with a memo that lands on-chain. \"pay 10 USDC to 0x… for invoice-42\" — Skopos builds the payment, you sign it, and the memo gives every payment a reconcilable reference. Non-custodial: Skopos never holds your funds.",
+      "Pay anyone on Base in plain English, with a memo that lands on-chain — then watch it reconcile itself. \"pay 10 USDC to 0x… for order-1024\" → the memo is the reference; the receiver's inbox matches it automatically. Non-custodial: Skopos builds the payment, you sign, it never holds your funds.",
     highlights: [
       "Tagged, on-chain memos via Base's native B20 standard — the agentic-commerce primitive.",
+      "Self-reconciling: \"show my payments\" surfaces incoming tagged payments matched to their reference (order-1024 → paid). No middleman, no database.",
       "Pay by token symbol or address. B20 tokens carry the memo; plain ERC-20s send a normal transfer.",
       "Live on Base Sepolia to test today, and activates on Base mainnet with the Beryl upgrade.",
     ],
