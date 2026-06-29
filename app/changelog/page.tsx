@@ -33,6 +33,12 @@ const ENTRIES: Entry[] = [
     ],
   },
   {
+    date: "Jun 29, 2026",
+    title: "A verifiable financial identity",
+    lede:
+      "Skopos now declares its treasury on-chain through the Zetta agent wallet manifest — a public, verifiable financial identity in the autonomous-agent registry. Transparency for an agent that earns and settles on-chain.",
+  },
+  {
     date: "Jun 28, 2026",
     title: "Hold $skopos, unlock more Smart",
     lede:
@@ -43,6 +49,18 @@ const ENTRIES: Entry[] = [
     title: "Safer execution, end to end",
     lede:
       "Every route is re-simulated the moment before you sign, and a route that would revert is stopped before it costs you gas — across single swaps, multi-leg rebalances, and Solana. Failed transactions surface clearly with a one-tap retry.",
+  },
+  {
+    date: "Jun 26, 2026",
+    title: "Skopos got a sharper brain",
+    lede:
+      "A new ✨ Smart tier brings a frontier model for deeper, genuinely useful answers — grounded analysis on real market data instead of generic takes. Toggle Fast or Smart right in the composer.",
+  },
+  {
+    date: "Jun 25, 2026",
+    title: "Smart-money intel, paid per call",
+    lede:
+      "Ask what the smart money is doing and Skopos settles a tiny x402 micropayment to pull live institutional flow data — you sign the payment, Skopos reads the intel. The same HTTP-native payment rail that underpins agent-to-agent settlement.",
   },
   {
     date: "May 17, 2026",
