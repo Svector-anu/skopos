@@ -28,6 +28,23 @@ export function HeaderIcons() {
           <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
         </svg>
       </Link>
+
+      {/* Changelog */}
+      <Link
+        href="/changelog"
+        className="group relative opacity-40 hover:opacity-100 transition-opacity duration-200"
+        aria-label="Changelog"
+      >
+        <div className="p-1 border border-transparent group-hover:border-yellow transition-colors duration-200">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+        </div>
+        <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+          changelog
+        </span>
+      </Link>
     </div>
   );
 }
