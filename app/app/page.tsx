@@ -441,10 +441,9 @@ export default function AppPage() {
     if (confirmDisconnect) {
       if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
       setConfirmDisconnect(false);
-      // Disconnect external wallets first so Privy doesn't need MetaMask to sign
-      // the SIWE session revocation — avoids the "User denied transaction signature" loop.
-      await Promise.allSettled(wallets.filter(w => w.walletClientType !== "privy").map(w => w.disconnect()));
-      logout().catch(() => {});
+      // Per Privy: injected wallets (MetaMask/Phantom) can't be programmatically
+      // disconnected. logout() ends the Privy session — that's "disconnect" here.
+      logout().catch(e => console.error("[disconnect] logout failed:", e));
     } else {
       setConfirmDisconnect(true);
       disconnectTimerRef.current = setTimeout(() => setConfirmDisconnect(false), 3000);
@@ -3026,7 +3025,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
 
   const { data: walletClient } = useWalletClient();
   const activeChainId = useChainId();
-  const { mutateAsync: switchToBase } = useSwitchChain();
+  const { wallets } = useWallets();
   const { login, logout, authenticated } = usePrivy();
   const [smState, setSmState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [smMessage, setSmMessage] = useState<string | null>(null);
@@ -3049,15 +3048,14 @@ function IntelDisplay({ result }: { result: IntelResult }) {
     // connector), then ask the user to tap again — the re-render hands us a Base
     // wallet client to build the payment with. Avoids the chainId-mismatch error.
     if (activeChainId !== 8453) {
+      const evm = wallets.find(w => w.address?.startsWith("0x"));
+      if (!evm) { setSmMessage("Connect an EVM wallet first."); return; }
       setSmState("loading");
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const eth = (window as any).ethereum;
-        if (eth) await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${(8453).toString(16)}` }] });
-        else await switchToBase({ chainId: 8453 });
+        await evm.switchChain(8453); // Privy: switches embedded silently, prompts external
       } catch (e) {
         setSmState("error");
-        setSmMessage(e instanceof Error && /reject/i.test(e.message) ? "Network switch rejected." : "Couldn't switch to Base.");
+        setSmMessage(e instanceof Error ? `Couldn't switch to Base: ${e.message.slice(0, 90)}` : "Couldn't switch to Base.");
         return;
       }
       setSmState("idle");
