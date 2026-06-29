@@ -3024,7 +3024,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
 
   const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-  const { data: walletClient } = useWalletClient({ chainId: 8453 });
+  const { data: walletClient } = useWalletClient();
   const activeChainId = useChainId();
   const { mutateAsync: switchToBase } = useSwitchChain();
   const { login, logout, authenticated } = usePrivy();
@@ -3044,12 +3044,29 @@ function IntelDisplay({ result }: { result: IntelResult }) {
       login();
       return;
     }
+    // The x402 read settles in USDC on Base (8453). If the wallet is on another
+    // chain, switch first (direct call hits MetaMask, not Privy's embedded
+    // connector), then ask the user to tap again — the re-render hands us a Base
+    // wallet client to build the payment with. Avoids the chainId-mismatch error.
+    if (activeChainId !== 8453) {
+      setSmState("loading");
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const eth = (window as any).ethereum;
+        if (eth) await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${(8453).toString(16)}` }] });
+        else await switchToBase({ chainId: 8453 });
+      } catch (e) {
+        setSmState("error");
+        setSmMessage(e instanceof Error && /reject/i.test(e.message) ? "Network switch rejected." : "Couldn't switch to Base.");
+        return;
+      }
+      setSmState("idle");
+      setSmMessage("Switched to Base. Tap again to pay $0.01.");
+      return;
+    }
     setSmState("loading");
     setSmMessage(null);
     try {
-      // The x402 read settles in USDC on Base (8453). Switch the wallet there
-      // first, otherwise the payment payload fails on a chainId mismatch.
-      if (activeChainId !== 8453) await switchToBase({ chainId: 8453 });
       const res = await fetchSmartMoney(walletClient, token);
       if (res.ok) {
         setSmData(res.data);
