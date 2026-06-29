@@ -88,7 +88,7 @@ type IntelResult = {
 
 type PaywallResult = { type: "paywall"; reason: "connect" | "daily_cap"; used: number; cap: number };
 
-type PayResult = { type: "pay"; token: string; tokenSymbol: string; decimals: number; to: string; amountWei: string; amountDisplay: string; memo: string; memoText: string; memoHashed: boolean; chainId: number; chainName: string };
+type PayResult = { type: "pay"; token: string; tokenSymbol: string; decimals: number; to: string; amountWei: string; amountDisplay: string; memo: string; memoText: string; memoHashed: boolean; method: "transferWithMemo" | "transfer"; isB20: boolean; memoApplied: boolean; chainId: number; chainName: string };
 
 type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
@@ -114,7 +114,10 @@ const ERC20_ABI = [
     outputs: [{ name: "", type: "uint256" }] },
 ] as const;
 
-const TRANSFER_WITH_MEMO_ABI = [
+const PAY_ABI = [
+  { name: "transfer", type: "function", stateMutability: "nonpayable",
+    inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }] },
   { name: "transferWithMemo", type: "function", stateMutability: "nonpayable",
     inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }, { name: "memo", type: "bytes32" }],
     outputs: [{ name: "", type: "bool" }] },
@@ -2167,13 +2170,21 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
     setErr(null);
     try {
       if (activeChainId !== result.chainId) await switchChain({ chainId: result.chainId });
-      const h = await writeContract({
-        address: result.token as `0x${string}`,
-        abi: TRANSFER_WITH_MEMO_ABI,
-        functionName: "transferWithMemo",
-        args: [result.to as `0x${string}`, BigInt(result.amountWei), result.memo as `0x${string}`],
-        chainId: result.chainId,
-      });
+      const h = result.method === "transferWithMemo"
+        ? await writeContract({
+            address: result.token as `0x${string}`,
+            abi: PAY_ABI,
+            functionName: "transferWithMemo",
+            args: [result.to as `0x${string}`, BigInt(result.amountWei), result.memo as `0x${string}`],
+            chainId: result.chainId,
+          })
+        : await writeContract({
+            address: result.token as `0x${string}`,
+            abi: PAY_ABI,
+            functionName: "transfer",
+            args: [result.to as `0x${string}`, BigInt(result.amountWei)],
+            chainId: result.chainId,
+          });
       setHash(h);
       onTxSubmitted?.({ hash: h, chainId: result.chainId, chain: result.chainName,
         label: `Pay ${result.amountDisplay} ${result.tokenSymbol}`, timestamp: Date.now(),
@@ -2187,7 +2198,7 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", borderRadius: 12, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-bg, rgba(255,255,255,0.02))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>B20 PAYMENT</span>
+        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>{result.isB20 ? "B20 PAYMENT" : "PAYMENT"}</span>
         <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{result.chainName}</span>
       </div>
       <div style={{ ...MONO, fontSize: "1.1rem", color: "var(--card-text, #fff)" }}>
@@ -2195,8 +2206,9 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4, borderTop: "1px solid var(--card-border, rgba(255,255,255,0.06))" }}>
         <PayRow label="To" value={short(result.to)} />
-        {result.memoText && <PayRow label={result.memoHashed ? "Memo (hashed)" : "Memo"} value={result.memoText} mono={false} />}
-        <PayRow label="Token" value={short(result.token)} />
+        {result.memoApplied && <PayRow label={result.memoHashed ? "Memo (hashed)" : "Memo"} value={result.memoText} mono={false} />}
+        {result.memoText && !result.isB20 && <PayRow label="Memo" value={`skipped — ${result.tokenSymbol} isn't a B20`} mono={false} />}
+        <PayRow label="Token" value={`${result.tokenSymbol} · ${short(result.token)}${result.isB20 ? " · B20" : ""}`} />
       </div>
 
       {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
