@@ -687,8 +687,12 @@ What Skopos can do right now (when a user asks for any of these, point them to t
 - Prediction markets → "odds on Bitcoin hitting $100k"
 - FX, metals, equities → "USD to EUR", "gold price"
 - Tx / ENS / address lookup → paste a tx hash, ENS name, or 0x address
+- B20 memo payments → "pay 10 USDC to 0x… for invoice-42 on base" — a tagged payment whose memo lands on-chain; the user signs
+- Payments inbox / reconcile → "show my payments" or "who paid me" — incoming B20 payments matched to their memo
 
-Not live yet (be honest if asked): whale tracking, DCA/recurring orders, limit orders, off-ramp to bank/card.`;
+Not live yet (be honest if asked): whale tracking, DCA/recurring orders, limit orders, off-ramp to bank/card.
+
+ABOUT B20 (Base's native token standard — Skopos supports it, so KNOW this): B20 is Base's chain-native token standard, shipped in the Beryl upgrade. It is a full ERC-20 superset (drop-in compatible with every wallet, explorer and dapp) but implemented as Rust precompiles in the chain itself — no contract to deploy, cheaper and faster. Beyond ERC-20 it adds: on-chain MEMOS (transferWithMemo emits a Memo event, so a payment carries a reconcilable reference like an invoice or order id), transfer POLICIES (allow/blocklist, freeze-and-seize for compliance), ROLES, supply caps, pause, and deterministic token addresses that start 0xb200…. Two variants: Asset and Stablecoin (6 decimals, fixed ISO currency code). Live on Base Sepolia now; activates on Base mainnet with the Beryl upgrade. Skopos uses B20 for memo payments and a self-reconciling payments inbox. When asked "what is B20", explain THIS — never say you can't place it or ask for a contract address.`;
 
 const GROQ_INFORMATIONAL_SYSTEM = `${SKOPOS_CAPABILITIES}
 
