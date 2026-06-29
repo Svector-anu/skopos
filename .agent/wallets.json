@@ -1,0 +1,14 @@
+{
+  "agent": "Skopos",
+  "ecosystem": "BANKR",
+  "x": "@tryskopos",
+  "website": "https://www.tryskopos.xyz",
+  "wallets": [
+    {
+      "address": "0xFbFBDf4E84e691cAE80cb4424cc6d39734da2800",
+      "role": "treasury",
+      "chain": "base",
+      "notes": "Primary treasury (svector.eth) — $skopos creator fees and subscription revenue settle here"
+    }
+  ]
+}
