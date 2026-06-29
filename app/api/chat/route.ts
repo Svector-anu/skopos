@@ -531,14 +531,15 @@ export async function POST(req: NextRequest) {
   // ── Token intel — explicit "smart money" / "intel on" a $ticker or contract.
   // Gated on the intel keyword so it never swallows normal price or risk-scan
   // queries. Gives the smart-money read (paid, user-signed x402) a token target.
-  if (/\b(smart[\s-]?money|intel)\b/i.test(trimmed)) {
-    const STOP = new Set(["ON", "FOR", "READ", "ABOUT", "THE", "OF", "IS", "A", "AN", "DOING", "WITH"]);
+  if (/\b(smart[\s-]?money|intel)\b|\bwho(?:'s|s| is| has| have)?\s+(?:been\s+)?(?:buying|bought|selling|sold|accumulating|accumulated|dumping|dumped|aping|loading)\b/i.test(trimmed)) {
+    const STOP = new Set(["ON", "FOR", "READ", "ABOUT", "THE", "OF", "IS", "A", "AN", "DOING", "WITH", "INTO", "UP", "MORE", "MY", "THIS", "THAT", "IT", "NOW", "TODAY", "BEEN"]);
     const address = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1] ?? null;
     let symbol = trimmed.match(/\$([a-zA-Z][a-zA-Z0-9]{1,14})\b/)?.[1]?.toUpperCase() ?? null;
     if (!symbol && !address) {
-      const bareword = trimmed
-        .match(/\b(?:smart[\s-]?money|intel)(?:\s+(?:on|for|read|about))?\s+([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
-        ?.toUpperCase();
+      const bareword = (
+        trimmed.match(/\b(?:smart[\s-]?money|intel)(?:\s+(?:on|for|read|about))?\s+([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
+        ?? trimmed.match(/\b(?:buying|bought|selling|sold|accumulating|accumulated|dumping|dumped|aping|loading(?:\s+up)?(?:\s+on)?)\s+(?:into\s+|on\s+)?([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
+      )?.toUpperCase();
       if (bareword && !STOP.has(bareword)) symbol = bareword;
     }
     if (address || symbol) {
@@ -557,8 +558,8 @@ export async function POST(req: NextRequest) {
           chain: nansenChain,
         },
         premium: canPay
-          ? { available: true, label: "Smart-money read", price: "$0.01", note: "Pays $0.01 USDC on Base from your wallet · Nansen" }
-          : { available: false, label: "Smart-money read", price: "$0.01", note: "Smart-money read isn't available for this token yet." },
+          ? { available: true, label: "See who's buying & selling", price: "$0.01", note: "$0.01 from your wallet pulls live smart-money flows · Nansen" }
+          : { available: false, label: "See who's buying & selling", price: "$0.01", note: "Not available for this token yet." },
       });
     }
   }
