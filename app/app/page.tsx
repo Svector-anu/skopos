@@ -83,6 +83,7 @@ type IntelResult = {
   type: "intel";
   read?: "smart-money" | "holders" | "flows" | "flow-intel" | "screener";
   direction?: "BUY" | "SELL";
+  timeframe?: string | null;
   screenChain?: string | null;
   context?: { url: string; sourceHost: string; title: string; excerpt: string };
   token?: { symbol: string | null; address: string | null; chain?: string | null };
@@ -2826,7 +2827,7 @@ const SM_EXPLORER: Record<string, string> = {
   solana:   "https://solscan.io/account/",
 };
 
-function SmartMoneyPanel({ data, chain }: { data: unknown; chain: string | null }) {
+function SmartMoneyPanel({ data, chain, tf }: { data: unknown; chain: string | null; tf?: string }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const shorten = (a: string) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
   const explorerBase = chain ? SM_EXPLORER[chain] : undefined;
@@ -2871,7 +2872,7 @@ function SmartMoneyPanel({ data, chain }: { data: unknown; chain: string | null 
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
         <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>
-          TOP WALLETS · 30D · {parsed.length} TRADER{parsed.length === 1 ? "" : "S"}
+          TOP WALLETS · {(tf ?? "30d").toUpperCase()} · {parsed.length} TRADER{parsed.length === 1 ? "" : "S"}
         </span>
         <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: accumulating ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
           {accumulating ? "▲ accumulating" : "▼ exiting"} {fmtUsdShort(totalNet)}
@@ -3021,7 +3022,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
 function IntelDisplay({ result }: { result: IntelResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const ACCENT = "#38bdf8";
-  const { context, token, premium, direction, read, screenChain } = result;
+  const { context, token, premium, direction, read, screenChain, timeframe } = result;
   const isToken = !!token;
   const isWeb = !!context;
   const isScreener = read === "screener";
@@ -3069,7 +3070,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(isScreener ? { chain: screenChain ?? null } : { token, direction }),
+          body: JSON.stringify(isScreener ? { chain: screenChain ?? null, timeframe } : { token, direction, timeframe }),
         });
         const payload = await res.json();
         if (res.ok && payload.ok) {
@@ -3219,9 +3220,9 @@ function IntelDisplay({ result }: { result: IntelResult }) {
       {smState === "done" && smData != null && (
         read === "holders" ? <HoldersPanel data={smData} chain={token?.chain ?? null} />
         : read === "flows" ? <FlowsPanel data={smData} />
-        : read === "flow-intel" ? <FlowIntelPanel data={smData} />
-        : read === "screener" ? <ScreenerPanel data={smData} />
-        : <SmartMoneyPanel data={smData} chain={token?.chain ?? null} />
+        : read === "flow-intel" ? <FlowIntelPanel data={smData} tf={timeframe ?? undefined} />
+        : read === "screener" ? <ScreenerPanel data={smData} tf={timeframe ?? undefined} />
+        : <SmartMoneyPanel data={smData} chain={token?.chain ?? null} tf={timeframe ?? undefined} />
       )}
     </div>
   );
@@ -3383,7 +3384,7 @@ const FLOW_SEGMENTS: { key: string; label: string; invert: boolean }[] = [
   { key: "exchange", label: "Exchanges", invert: true },
 ];
 
-function FlowIntelPanel({ data }: { data: unknown }) {
+function FlowIntelPanel({ data, tf }: { data: unknown; tf?: string }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const rows = smRows(data);
   const obj = (rows[0] ?? (data && typeof data === "object" ? data : {})) as Record<string, unknown>;
@@ -3406,7 +3407,7 @@ function FlowIntelPanel({ data }: { data: unknown }) {
   return (
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
       <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))", marginBottom: 2 }}>
-        NET FLOW · 7D
+        NET FLOW · {tf ? ((["30m", "1h", "4h", "24h"].includes(tf) ? "1D" : "7D")) : "7D"}
       </span>
       {segs.map((s, i) => {
         const net = s.net ?? 0;
@@ -3428,7 +3429,7 @@ function FlowIntelPanel({ data }: { data: unknown }) {
   );
 }
 
-function ScreenerPanel({ data }: { data: unknown }) {
+function ScreenerPanel({ data, tf }: { data: unknown; tf?: string }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const rows = smRows(data)
     .map((r) => ({
@@ -3452,7 +3453,7 @@ function ScreenerPanel({ data }: { data: unknown }) {
   return (
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 7 }}>
       <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))", marginBottom: 2 }}>
-        TOP NET INFLOW · 24H
+        TOP NET INFLOW · {(tf ?? "24h").toUpperCase()}
       </span>
       {rows.map((p, i) => {
         const explorerBase = p.chain ? SM_EXPLORER[p.chain] : undefined;

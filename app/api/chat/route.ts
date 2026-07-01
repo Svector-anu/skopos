@@ -31,6 +31,7 @@ import { getPrice, getPriceChart, type PriceResult } from "@/lib/priceCache";
 import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
+import { parseTimeframe } from "@/lib/timeframe";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -547,6 +548,7 @@ export async function POST(req: NextRequest) {
     return json({
       type: "intel",
       read: "screener",
+      timeframe: parseTimeframe(trimmed),
       screenChain: chainWord ? CHAIN_ALIAS[chainWord] : null,
       premium: agentPaid
         ? { available: true, mode: "agent", label, price: "Reveal", note: "Free — Skopos covers the data fee · smart-money screener via Nansen" }
@@ -574,6 +576,7 @@ export async function POST(req: NextRequest) {
       return json({
         type: "intel",
         read: "flow-intel",
+        timeframe: parseTimeframe(trimmed),
         token: { symbol: target?.symbol ?? symbol, address: target?.address ?? address, chain: nansenChain },
         premium:
           canPay && agentPaid
@@ -603,6 +606,7 @@ export async function POST(req: NextRequest) {
       return json({
         type: "intel",
         read: "flows",
+        timeframe: parseTimeframe(trimmed),
         token: { symbol: target?.symbol ?? symbol, address: target?.address ?? address, chain: nansenChain },
         premium:
           canPay && agentPaid
@@ -700,6 +704,7 @@ export async function POST(req: NextRequest) {
         type: "intel",
         read: "smart-money",
         direction,
+        timeframe: parseTimeframe(trimmed),
         token: {
           symbol: target?.symbol ?? symbol,
           address: target?.address ?? address,

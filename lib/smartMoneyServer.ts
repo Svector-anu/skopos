@@ -1,6 +1,7 @@
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 import { privateKeyToAccount } from "viem/accounts";
+import { type Timeframe, timeframeMs, toScreenerTimeframe, toFlowIntelTimeframe } from "./timeframe";
 
 // Server-signed x402 settlement for Nansen Token God Mode reads. Skopos's own Base
 // wallet fronts the ~$0.01 USDC micropayment, so the browser needs no wallet, no
@@ -84,20 +85,26 @@ async function paidTgmFetch(endpoint: string, body: Record<string, unknown>): Pr
 
 type Token = { symbol: string | null; address: string | null; chain?: string | null };
 
+// from/to window for the date-range endpoints. No timeframe → the default 30d.
+function rangeFor(tf?: Timeframe): { from: string; to: string } {
+  const now = new Date();
+  const ms = tf ? timeframeMs(tf) : LOOKBACK_DAYS * 86_400_000;
+  return { from: isoNoMillis(new Date(now.getTime() - ms)), to: isoNoMillis(now) };
+}
+
 export async function fetchSmartMoneyServer(
   token: Token,
   direction: "BUY" | "SELL" = "BUY",
+  timeframe?: Timeframe,
 ): Promise<SmartMoneyResponse> {
   if (!token.address || !token.chain) {
     return { ok: false, error: "Couldn't locate this token on a supported chain." };
   }
-  const now = new Date();
-  const from = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
   return paidTgmFetch("tgm/who-bought-sold", {
     chain: token.chain,
     token_address: token.address,
     buy_or_sell: direction,
-    date: { from: isoNoMillis(from), to: isoNoMillis(now) },
+    date: rangeFor(timeframe),
   });
 }
 
@@ -114,39 +121,37 @@ export async function fetchHoldersServer(token: Token): Promise<SmartMoneyRespon
 }
 
 // Accumulation trend over time by wallet label (smart money by default).
-export async function fetchFlowsServer(token: Token): Promise<SmartMoneyResponse> {
+export async function fetchFlowsServer(token: Token, timeframe?: Timeframe): Promise<SmartMoneyResponse> {
   if (!token.address || !token.chain) {
     return { ok: false, error: "Couldn't locate this token on a supported chain." };
   }
-  const now = new Date();
-  const from = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
   return paidTgmFetch("tgm/flows", {
     chain: token.chain,
     token_address: token.address,
     label: "smart_money",
-    date: { from: isoNoMillis(from), to: isoNoMillis(now) },
+    date: rangeFor(timeframe),
     pagination: { page: 1, per_page: 60 },
   });
 }
 
 // Net flow per wallet segment (smart traders, whales, exchanges, fresh wallets):
 // where the token is moving right now.
-export async function fetchFlowIntelServer(token: Token): Promise<SmartMoneyResponse> {
+export async function fetchFlowIntelServer(token: Token, timeframe?: Timeframe): Promise<SmartMoneyResponse> {
   if (!token.address || !token.chain) {
     return { ok: false, error: "Couldn't locate this token on a supported chain." };
   }
   return paidTgmFetch("tgm/flow-intelligence", {
     chain: token.chain,
     token_address: token.address,
-    timeframe: "7d",
+    timeframe: timeframe ? toFlowIntelTimeframe(timeframe) : "7d",
   });
 }
 
 // Discovery — tokens smart money is buying right now. Not token-scoped; lives at
 // /token-screener (no tgm/ prefix). Optional chain narrows the screen.
-export async function fetchScreenerServer(opts: { chain?: string | null } = {}): Promise<SmartMoneyResponse> {
+export async function fetchScreenerServer(opts: { chain?: string | null; timeframe?: Timeframe } = {}): Promise<SmartMoneyResponse> {
   return paidTgmFetch("token-screener", {
-    timeframe: "24h",
+    timeframe: opts.timeframe ? toScreenerTimeframe(opts.timeframe) : "24h",
     chains: opts.chain ? [opts.chain] : ["ethereum", "base", "solana", "arbitrum"],
     filters: { only_smart_money: true },
     order_by: [{ field: "netflow", direction: "DESC" }],

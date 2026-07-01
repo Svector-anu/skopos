@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchFlowIntelServer, agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { checkIntelBudget, incrIntel } from "@/lib/usage";
+import { isTimeframe, type Timeframe } from "@/lib/timeframe";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ export async function POST(req: NextRequest) {
   }
 
   let token: { symbol: string | null; address: string | null; chain: string | null };
+  let timeframe: Timeframe | undefined;
   try {
     const body = await req.json();
     token = {
@@ -18,6 +20,7 @@ export async function POST(req: NextRequest) {
       address: typeof body?.token?.address === "string" ? body.token.address : null,
       chain: typeof body?.token?.chain === "string" ? body.token.chain : null,
     };
+    timeframe = isTimeframe(body?.timeframe) ? body.timeframe : undefined;
   } catch {
     return Response.json({ ok: false, error: "Invalid request body." }, { status: 400 });
   }
@@ -30,7 +33,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: false, error: "Intel reads are at today's free limit. Try again tomorrow." }, { status: 429 });
   }
 
-  const result = await fetchFlowIntelServer(token);
+  const result = await fetchFlowIntelServer(token, timeframe);
   if (result.ok) await incrIntel();
   return Response.json(result, { status: result.ok ? 200 : 502 });
 }

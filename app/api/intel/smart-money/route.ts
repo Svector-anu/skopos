@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchSmartMoneyServer, agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { checkIntelBudget, incrIntel } from "@/lib/usage";
+import { isTimeframe, type Timeframe } from "@/lib/timeframe";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export async function POST(req: NextRequest) {
 
   let token: { symbol: string | null; address: string | null; chain: string | null };
   let direction: "BUY" | "SELL";
+  let timeframe: Timeframe | undefined;
   try {
     const body = await req.json();
     token = {
@@ -23,6 +25,7 @@ export async function POST(req: NextRequest) {
       chain: typeof body?.token?.chain === "string" ? body.token.chain : null,
     };
     direction = body?.direction === "SELL" ? "SELL" : "BUY";
+    timeframe = isTimeframe(body?.timeframe) ? body.timeframe : undefined;
   } catch {
     return Response.json({ ok: false, error: "Invalid request body." }, { status: 400 });
   }
@@ -38,7 +41,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const result = await fetchSmartMoneyServer(token, direction);
+  const result = await fetchSmartMoneyServer(token, direction, timeframe);
   if (result.ok) await incrIntel();
 
   return Response.json(result, { status: result.ok ? 200 : 502 });

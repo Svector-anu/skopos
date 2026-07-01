@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchScreenerServer, agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { checkIntelBudget, incrIntel } from "@/lib/usage";
+import { isTimeframe, type Timeframe } from "@/lib/timeframe";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +12,11 @@ export async function POST(req: NextRequest) {
   }
 
   let chain: string | null = null;
+  let timeframe: Timeframe | undefined;
   try {
     const body = await req.json();
     chain = typeof body?.chain === "string" ? body.chain : null;
+    timeframe = isTimeframe(body?.timeframe) ? body.timeframe : undefined;
   } catch {
     // empty body is fine — the screen is cross-chain by default
   }
@@ -22,7 +25,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: false, error: "Intel reads are at today's free limit. Try again tomorrow." }, { status: 429 });
   }
 
-  const result = await fetchScreenerServer({ chain });
+  const result = await fetchScreenerServer({ chain, timeframe });
   if (result.ok) await incrIntel();
   return Response.json(result, { status: result.ok ? 200 : 502 });
 }
