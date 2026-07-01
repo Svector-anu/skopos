@@ -529,6 +529,56 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── Token holders — "who holds / top holders of" a $ticker or contract.
+  // Agent-paid tgm/holders read: top holders, % supply, recent balance change.
+  if (/\bholders?\b|\bwho\s+owns\b|\bholder\s+concentration\b/i.test(trimmed)) {
+    const HSTOP = new Set(["OF", "THE", "IS", "A", "AN", "MY", "THIS", "THAT", "IT", "ARE", "IN", "ON", "TOP", "BIGGEST", "MOST"]);
+    const address = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1] ?? null;
+    let symbol = trimmed.match(/\$([a-zA-Z][a-zA-Z0-9]{1,14})\b/)?.[1]?.toUpperCase() ?? null;
+    if (!symbol && !address) {
+      const bareword = (
+        trimmed.match(/\bholders?\s+(?:of|for)\s+([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
+        ?? trimmed.match(/\bwho\s+(?:holds|owns)\s+([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
+        ?? trimmed.match(/\b([a-zA-Z][a-zA-Z0-9]{1,14})\s+holders?\b/i)?.[1]
+      )?.toUpperCase();
+      if (bareword && !HSTOP.has(bareword)) symbol = bareword;
+    }
+    if (address || symbol) {
+      const target = await resolveTokenTarget(address ?? symbol!);
+      const nansenChain = target ? toNansenChain(target.chainId) : null;
+      const canPay = !!(target && nansenChain);
+      // Holders runs only on the agent-paid rail for now (no user-signed fallback
+      // wired), so offer the button only when Skopos can front the fee.
+      const agentPaid = agentPaidEnabled();
+      const label = "Show top holders";
+      return json({
+        type: "intel",
+        read: "holders",
+        token: {
+          symbol: target?.symbol ?? symbol,
+          address: target?.address ?? address,
+          chain: nansenChain,
+        },
+        premium:
+          canPay && agentPaid
+            ? {
+                available: true,
+                mode: "agent",
+                label,
+                price: "Reveal",
+                note: "Free — Skopos covers the data fee · holder distribution via Nansen",
+              }
+            : {
+                available: false,
+                mode: "agent",
+                label,
+                price: "Reveal",
+                note: canPay ? "Live holder data is rolling out — check back soon." : "Not available for this token yet.",
+              },
+      });
+    }
+  }
+
   // ── Token intel — explicit "smart money" / "intel on" a $ticker or contract.
   // Gated on the intel keyword so it never swallows normal price or risk-scan
   // queries. Gives the smart-money read (paid, user-signed x402) a token target.
@@ -565,6 +615,7 @@ export async function POST(req: NextRequest) {
           : "BUY";
       return json({
         type: "intel",
+        read: "smart-money",
         direction,
         token: {
           symbol: target?.symbol ?? symbol,

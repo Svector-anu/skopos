@@ -2,15 +2,15 @@ import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 import { privateKeyToAccount } from "viem/accounts";
 
-// Server-signed x402 settlement. Skopos's own Base wallet fronts the ~$0.01 USDC
-// micropayment for the Nansen smart-money read, so the browser needs no wallet,
-// no chain switch, and no signature — the user just asks and gets the answer.
-// Gated on SKOPOS_X402_PRIVATE_KEY; unset falls back to the user-signed path in
+// Server-signed x402 settlement for Nansen Token God Mode reads. Skopos's own Base
+// wallet fronts the ~$0.01 USDC micropayment, so the browser needs no wallet, no
+// chain switch, and no signature — the user just asks and gets the answer. Gated on
+// SKOPOS_X402_PRIVATE_KEY; unset falls back to the user-signed path in
 // lib/smartMoneyClient.ts. The wallet pays in USDC only (EIP-3009 is gasless for
 // the payer — the facilitator submits), so it needs USDC on Base, no ETH.
 
 const BASE_NETWORK = "eip155:8453";
-const NANSEN_RESOURCE = "https://api.nansen.ai/api/v1/tgm/who-bought-sold";
+const NANSEN_BASE = "https://api.nansen.ai/api/v1";
 const LOOKBACK_DAYS = 30;
 const SETTLEMENT_TIMEOUT_MS = 60_000;
 
@@ -35,15 +35,12 @@ function isoNoMillis(date: Date): string {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-export async function fetchSmartMoneyServer(
-  token: { symbol: string | null; address: string | null; chain?: string | null },
-  direction: "BUY" | "SELL" = "BUY",
-): Promise<SmartMoneyResponse> {
+// Shared paid fetch — signs the x402 payment with the agent key and calls one TGM
+// endpoint. Every TGM read is x402-priced with the same auth, so callers only vary
+// the endpoint path and body.
+async function paidTgmFetch(endpoint: string, body: Record<string, unknown>): Promise<SmartMoneyResponse> {
   const key = agentKey();
   if (!key) return { ok: false, error: "Agent payments are not configured." };
-  if (!token.address || !token.chain) {
-    return { ok: false, error: "Couldn't locate this token on a supported chain." };
-  }
 
   const account = privateKeyToAccount(key);
   const signer = toClientEvmSigner({
@@ -60,35 +57,58 @@ export async function fetchSmartMoneyServer(
   const client = new x402Client().register(BASE_NETWORK, new ExactEvmScheme(signer));
   const payFetch = wrapFetchWithPayment(globalThis.fetch, client);
 
-  const now = new Date();
-  const from = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SETTLEMENT_TIMEOUT_MS);
   try {
-    const res = await payFetch(NANSEN_RESOURCE, {
+    const res = await payFetch(`${NANSEN_BASE}/${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chain: token.chain,
-        token_address: token.address,
-        buy_or_sell: direction,
-        date: { from: isoNoMillis(from), to: isoNoMillis(now) },
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
     if (!res.ok) {
-      console.error(`[smart-money-server] Nansen ${res.status}`);
-      return { ok: false, error: `Smart-money request failed (${res.status}).` };
+      console.error(`[nansen-paid] ${endpoint} ${res.status}`);
+      return { ok: false, error: `Request failed (${res.status}).` };
     }
     return { ok: true, data: await res.json() };
   } catch (err) {
     console.error(
-      "[smart-money-server] paid fetch threw:",
+      `[nansen-paid] ${endpoint} threw:`,
       err instanceof Error ? `${err.name}: ${err.message}` : err,
     );
-    return { ok: false, error: "Smart-money read failed to settle." };
+    return { ok: false, error: "The read failed to settle." };
   } finally {
     clearTimeout(timer);
   }
+}
+
+type Token = { symbol: string | null; address: string | null; chain?: string | null };
+
+export async function fetchSmartMoneyServer(
+  token: Token,
+  direction: "BUY" | "SELL" = "BUY",
+): Promise<SmartMoneyResponse> {
+  if (!token.address || !token.chain) {
+    return { ok: false, error: "Couldn't locate this token on a supported chain." };
+  }
+  const now = new Date();
+  const from = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
+  return paidTgmFetch("tgm/who-bought-sold", {
+    chain: token.chain,
+    token_address: token.address,
+    buy_or_sell: direction,
+    date: { from: isoNoMillis(from), to: isoNoMillis(now) },
+  });
+}
+
+export async function fetchHoldersServer(token: Token): Promise<SmartMoneyResponse> {
+  if (!token.address || !token.chain) {
+    return { ok: false, error: "Couldn't locate this token on a supported chain." };
+  }
+  return paidTgmFetch("tgm/holders", {
+    chain: token.chain,
+    token_address: token.address,
+    order_by: [{ field: "value_usd", direction: "DESC" }],
+    pagination: { page: 1, per_page: 20 },
+  });
 }

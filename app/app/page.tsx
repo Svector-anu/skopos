@@ -81,6 +81,7 @@ type SuggestionsResult = { type: "suggestions"; prompts: { label: string; comman
 
 type IntelResult = {
   type: "intel";
+  read?: "smart-money" | "holders";
   direction?: "BUY" | "SELL";
   context?: { url: string; sourceHost: string; title: string; excerpt: string };
   token?: { symbol: string | null; address: string | null; chain?: string | null };
@@ -3019,8 +3020,9 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
 function IntelDisplay({ result }: { result: IntelResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const ACCENT = "#38bdf8";
-  const { context, token, premium, direction } = result;
+  const { context, token, premium, direction, read } = result;
   const isToken = !!token;
+  const isHolders = read === "holders";
 
   const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
@@ -3041,7 +3043,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
       setSmState("loading");
       setSmMessage(null);
       try {
-        const res = await fetch("/api/intel/smart-money", {
+        const res = await fetch(isHolders ? "/api/intel/holders" : "/api/intel/smart-money", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token, direction }),
@@ -3119,7 +3121,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
           <circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
         <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>
-          {isToken ? "TOKEN INTEL" : "WEB INTEL"}
+          {isToken ? (isHolders ? "TOKEN HOLDERS" : "TOKEN INTEL") : "WEB INTEL"}
         </span>
         <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>
           {isToken
@@ -3135,7 +3137,9 @@ function IntelDisplay({ result }: { result: IntelResult }) {
             {token!.symbol ? `$${token!.symbol}` : (token!.address ? shorten(token!.address) : "Token")}
           </p>
           <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
-            See which wallets are accumulating or exiting this token (top traders by net flow).
+            {isHolders
+              ? "See the biggest holders — how concentrated the supply is, and who's been adding or trimming."
+              : "See which wallets are accumulating or exiting this token (top traders by net flow)."}
           </p>
         </div>
       ) : (
@@ -3178,7 +3182,110 @@ function IntelDisplay({ result }: { result: IntelResult }) {
         </div>
       )}
 
-      {smState === "done" && smData != null && <SmartMoneyPanel data={smData} chain={token?.chain ?? null} />}
+      {smState === "done" && smData != null && (
+        isHolders
+          ? <HoldersPanel data={smData} chain={token?.chain ?? null} />
+          : <SmartMoneyPanel data={smData} chain={token?.chain ?? null} />
+      )}
+    </div>
+  );
+}
+
+const HOLDER_FIELDS = {
+  ownership: ["ownership_percentage", "ownership_pct", "supply_percentage"],
+  change:    ["balance_change_7d", "balance_change_30d", "balance_change_24h"],
+  value:     ["value_usd", "balance_usd", "usd_value"],
+};
+
+function HoldersPanel({ data, chain }: { data: unknown; chain: string | null }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const shorten = (a: string) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+  const explorerBase = chain ? SM_EXPLORER[chain] : undefined;
+  const rows = smRows(data);
+
+  if (rows.length === 0) {
+    return (
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+          No holder data found for this token.
+        </p>
+      </div>
+    );
+  }
+
+  const parsed = rows.map((r) => ({
+    id: pickStr(r, SM_FIELDS.address),
+    label: pickStr(r, SM_FIELDS.label),
+    ownership: pickNum(r, HOLDER_FIELDS.ownership),
+    change: pickNum(r, HOLDER_FIELDS.change),
+    value: pickNum(r, HOLDER_FIELDS.value),
+  })).filter((p) => p.id || p.label);
+
+  if (parsed.length === 0) {
+    return (
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 6px" }}>
+          Read complete — {rows.length} record(s), unrecognized shape.
+        </p>
+        <pre style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 160, overflow: "auto" }}>
+          {JSON.stringify(data, null, 2).slice(0, 600)}
+        </pre>
+      </div>
+    );
+  }
+
+  const sorted = [...parsed].sort((a, b) => (b.value ?? 0) - (a.value ?? 0)).slice(0, 6);
+  const shownOwnership = sorted.reduce((s, p) => s + (p.ownership ?? 0), 0);
+
+  return (
+    <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>
+          TOP HOLDERS · {sorted.length} SHOWN
+        </span>
+        {shownOwnership > 0 && (
+          <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: "var(--card-text-dim, rgba(255,255,255,0.6))", whiteSpace: "nowrap" }}>
+            {(shownOwnership * 100).toFixed(1)}% of supply
+          </span>
+        )}
+      </div>
+      {sorted.map((p, i) => {
+        const adding = (p.change ?? 0) >= 0;
+        const display = p.label ?? (p.id ? shorten(p.id) : "Unknown");
+        const href = p.id && explorerBase ? `${explorerBase}${p.id}` : null;
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            {href ? (
+              <a href={href} target="_blank" rel="noopener noreferrer" title={p.id ?? undefined}
+                style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", textDecoration: "none", borderBottom: "1px dotted var(--card-text-faint, rgba(255,255,255,0.3))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {display}
+              </a>
+            ) : (
+              <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {display}
+              </span>
+            )}
+            <span style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+              {p.ownership != null && (
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.5))" }}>
+                  {(p.ownership * 100).toFixed(2)}%
+                </span>
+              )}
+              {p.value != null && (
+                <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>
+                  {fmtUsdShort(p.value)}
+                </span>
+              )}
+              {p.change != null && p.change !== 0 && (
+                <span title={adding ? "added in the last 7d" : "trimmed in the last 7d"}
+                  style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: adding ? "#22c55e" : "#ef4444" }}>
+                  {adding ? "▲" : "▼"}
+                </span>
+              )}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
