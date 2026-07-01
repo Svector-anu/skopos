@@ -32,6 +32,7 @@ import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/py
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { parseTimeframe } from "@/lib/timeframe";
+import { aeonEnabled } from "@/lib/bankrAgent";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -537,6 +538,21 @@ export async function POST(req: NextRequest) {
     if (context) {
       return json({ type: "intel", context });
     }
+  }
+
+  // ── Aeon narrative read — "what's the narrative / what's hot today". Proxied to
+  // the Bankr agent's installed Aeon skill; the client triggers it on tap (async).
+  if (/\bnarrative(?:s)?\b|\bwhat(?:'?s|s| is)?\s+hot\b|\bnarrative\s+map\b/i.test(trimmed)) {
+    const enabled = aeonEnabled();
+    return json({
+      type: "aeon",
+      kind: "narrative",
+      title: "Today's narratives",
+      subtitle: "What's hot in crypto and AI right now — with a front-run / ride / fade / skip call per narrative.",
+      premium: enabled
+        ? { available: true, label: "Get the read", note: "Free — Skopos covers it · powered by Aeon on Bankr" }
+        : { available: false, label: "Get the read", note: "Narrative reads are rolling out — check back soon." },
+    });
   }
 
   // ── Smart-money screener — discovery, no token. "what is smart money buying".

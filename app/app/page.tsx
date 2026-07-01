@@ -97,7 +97,9 @@ type PayResult = { type: "pay"; token: string; tokenSymbol: string; decimals: nu
 type MemoPaymentItem = { chainId: number; chainName: string; token: string; tokenSymbol: string; amount: string; from: string; memo: string; memoText: string; txHash: string; timestamp: number | null };
 type PaymentsResult = { type: "payments"; address: string; payments: MemoPaymentItem[] };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult;
+type AeonResult = { type: "aeon"; kind: "narrative" | "defi" | "onchain"; title: string; subtitle: string; premium?: { available: boolean; label: string; note: string } };
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1179,6 +1181,11 @@ export default function AppPage() {
                     {msg.result.type === "intel" && (
                       <ErrorBoundary label="Intel card failed to render.">
                         <IntelDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "aeon" && (
+                      <ErrorBoundary label="Aeon card failed to render.">
+                        <AeonDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "paywall" && (
@@ -3015,6 +3022,87 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function AeonDisplay({ result }: { result: AeonResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const ACCENT = "#a78bfa";
+  const { kind, title, subtitle, premium } = result;
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const [text, setText] = useState<string | null>(null);
+
+  async function handleRead() {
+    setState("loading");
+    setMessage(null);
+    try {
+      const res = await fetch("/api/aeon/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.ok) {
+        setText(payload.text);
+        setState("done");
+      } else {
+        setState("error");
+        setMessage(payload.error ?? "Request failed.");
+      }
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "Request failed.");
+    }
+  }
+
+  return (
+    <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
+      <div style={{ padding: "12px 18px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /><circle cx="12" cy="12" r="3.2" />
+        </svg>
+        <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>AEON</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>via Bankr</span>
+      </div>
+
+      <div style={{ padding: "0 18px 14px" }}>
+        <p style={{ ...MONO, fontSize: "1.15rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.2 }}>{title}</p>
+        <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>{subtitle}</p>
+      </div>
+
+      {premium && (
+        <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--card-surface)" }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
+              {message ?? (state === "loading" ? "Aeon is scanning — up to ~30s…" : premium.note)}
+            </p>
+          </div>
+          <button
+            onClick={handleRead}
+            disabled={!premium.available || state === "loading"}
+            style={{
+              ...MONO, fontSize: "0.66rem", fontWeight: 700,
+              color: premium.available ? ACCENT : "var(--card-text-faint, rgba(255,255,255,0.28))",
+              background: premium.available ? `${ACCENT}18` : "transparent",
+              border: `1px solid ${premium.available ? `${ACCENT}40` : "var(--card-border)"}`,
+              borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
+              cursor: premium.available && state !== "loading" ? "pointer" : "default",
+              opacity: premium.available ? 1 : 0.65,
+            }}
+          >
+            {state === "loading" ? "…" : state === "done" ? "✓" : premium.available ? "Read" : "Soon"}
+          </button>
+        </div>
+      )}
+
+      {state === "done" && text && (
+        <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.65, color: "var(--card-text-dim, rgba(255,255,255,0.7))", margin: 0, whiteSpace: "pre-wrap" }}>{text}</p>
+        </div>
+      )}
     </div>
   );
 }
