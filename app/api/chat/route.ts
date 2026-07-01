@@ -542,7 +542,12 @@ export async function POST(req: NextRequest) {
 
   // ── Aeon narrative read — "what's the narrative / what's hot today". Proxied to
   // the Bankr agent's installed Aeon skill; the client triggers it on tap (async).
-  if (/\bnarrative(?:s)?\b|\bwhat(?:'?s|s| is)?\s+hot\b|\bnarrative\s+map\b/i.test(trimmed)) {
+  // Market-wide by nature: if the query names a token ($ticker / 0x address), let
+  // the token-scoped Nansen intel blocks below win instead — no overlap.
+  if (
+    !/\$[a-zA-Z]|\b0x[0-9a-fA-F]{40}\b/.test(trimmed) &&
+    /\bnarrative(?:s)?\b|\bwhat(?:'?s|s| is)?\s+hot\b|\bnarrative\s+map\b/i.test(trimmed)
+  ) {
     const enabled = aeonEnabled();
     return json({
       type: "aeon",
