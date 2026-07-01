@@ -1,18 +1,34 @@
 // Bankr Agent API client. Skopos sends a natural-language prompt to a Bankr agent
 // that has the Aeon skills installed; the agent runs the skill and returns text.
-// Async job model: submit → poll → result. Gated on BANKR_AGENT_KEY (a bk_ Agent
-// API key); unset → the Aeon reads simply aren't offered. Separate from
-// BANKR_LLM_KEY (the Smart-tier text gateway).
+//
+// Reads take 50-70s (measured), which exceeds serverless function limits, so the
+// work is split: the server SUBMITS (fast) and the CLIENT polls the job. Gated on
+// BANKR_AGENT_KEY (a bk_ Agent API key); unset → the Aeon reads aren't offered.
+// Separate from BANKR_LLM_KEY (the Smart-tier text gateway).
 
 const BASE = "https://api.bankr.bot";
-const POLL_INTERVAL_MS = 2000;
-const MAX_WAIT_MS = 45_000;
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 12_000;
 
-export interface AgentResponse {
+export interface SubmitResult {
   ok: boolean;
+  jobId?: string;
+  error?: string;
+}
+
+export type JobStatus = "pending" | "completed" | "failed" | "cancelled" | "unknown";
+
+export interface JobResult {
+  ok: boolean;
+  status: JobStatus;
   text?: string;
   error?: string;
+}
+
+// Bankr job ids look like `job_J3WHLF6V94SGPR2C`. Validate before interpolating
+// into the poll URL so a crafted id can't reshape the request path (SSRF guard).
+const JOB_ID_RE = /^job_[A-Za-z0-9]+$/;
+export function isJobId(v: unknown): v is string {
+  return typeof v === "string" && JOB_ID_RE.test(v);
 }
 
 function agentKey(): string | null {
@@ -22,10 +38,6 @@ function agentKey(): string | null {
 
 export function aeonEnabled(): boolean {
   return agentKey() !== null;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function timedFetch(url: string, init: RequestInit, ms: number): Promise<Response> {
@@ -85,13 +97,11 @@ function extractText(job: unknown): string | null {
   return null;
 }
 
-export async function promptAgent(prompt: string): Promise<AgentResponse> {
+export async function submitAgentPrompt(prompt: string): Promise<SubmitResult> {
   const key = agentKey();
   if (!key) return { ok: false, error: "Agent API is not configured." };
 
   const headers = { "Content-Type": "application/json", "X-API-Key": key };
-
-  let jobId: string;
   try {
     const res = await timedFetch(
       `${BASE}/agent/prompt`,
@@ -103,31 +113,36 @@ export async function promptAgent(prompt: string): Promise<AgentResponse> {
       return { ok: false, error: `Agent submit failed (${res.status}).` };
     }
     const data = (await res.json()) as { jobId?: string };
-    if (!data?.jobId) return { ok: false, error: "Agent returned no job id." };
-    jobId = data.jobId;
+    if (!isJobId(data?.jobId)) return { ok: false, error: "Agent returned no job id." };
+    return { ok: true, jobId: data.jobId };
   } catch (err) {
     console.error("[bankr-agent] submit threw:", err instanceof Error ? err.message : err);
     return { ok: false, error: "Agent is unreachable." };
   }
+}
 
-  const deadline = Date.now() + MAX_WAIT_MS;
-  while (Date.now() < deadline) {
-    await sleep(POLL_INTERVAL_MS);
-    try {
-      const res = await timedFetch(`${BASE}/agent/job/${jobId}`, { headers }, REQUEST_TIMEOUT_MS);
-      if (!res.ok) continue;
-      const job = (await res.json()) as { status?: string };
-      const status = String(job?.status ?? "").toLowerCase();
-      if (status === "completed") {
-        const text = extractText(job);
-        return text ? { ok: true, text } : { ok: false, error: "Agent returned no readable text." };
-      }
-      if (status === "failed" || status === "cancelled") {
-        return { ok: false, error: `Agent job ${status}.` };
-      }
-    } catch {
-      // transient poll error — keep polling until the deadline
+export async function pollAgentJob(jobId: string): Promise<JobResult> {
+  const key = agentKey();
+  if (!key) return { ok: false, status: "unknown", error: "Agent API is not configured." };
+  if (!isJobId(jobId)) return { ok: false, status: "unknown", error: "Invalid job id." };
+
+  const headers = { "X-API-Key": key };
+  try {
+    const res = await timedFetch(`${BASE}/agent/job/${jobId}`, { headers }, REQUEST_TIMEOUT_MS);
+    if (!res.ok) return { ok: false, status: "unknown", error: `Job check failed (${res.status}).` };
+    const job = (await res.json()) as { status?: string };
+    const status = String(job?.status ?? "").toLowerCase();
+    if (status === "completed") {
+      const text = extractText(job);
+      return text
+        ? { ok: true, status: "completed", text }
+        : { ok: false, status: "completed", error: "Agent returned no readable text." };
     }
+    if (status === "failed" || status === "cancelled") {
+      return { ok: false, status, error: `Agent job ${status}.` };
+    }
+    return { ok: true, status: "pending" };
+  } catch {
+    return { ok: false, status: "unknown", error: "Job check failed." };
   }
-  return { ok: false, error: "Agent timed out." };
 }

@@ -3038,19 +3038,43 @@ function AeonDisplay({ result }: { result: AeonResult }) {
     setState("loading");
     setMessage(null);
     try {
-      const res = await fetch("/api/aeon/read", {
+      const sub = await fetch("/api/aeon/read", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kind }),
       });
-      const payload = await res.json();
-      if (res.ok && payload.ok) {
-        setText(payload.text);
-        setState("done");
-      } else {
+      const subData = await sub.json();
+      if (!sub.ok || !subData.ok || !subData.jobId) {
         setState("error");
-        setMessage(payload.error ?? "Request failed.");
+        setMessage(subData.error ?? "Couldn't start the read.");
+        return;
       }
+      const jobId: string = subData.jobId;
+
+      // Reads run 50-70s, so poll the job from the client (no serverless timeout).
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const jr = await fetch("/api/aeon/job", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        });
+        const jd = await jr.json();
+        if (jd.status === "completed" && jd.text) {
+          setText(jd.text);
+          setState("done");
+          return;
+        }
+        if (jd.status === "failed" || jd.status === "cancelled") {
+          setState("error");
+          setMessage(jd.error ?? "Read failed.");
+          return;
+        }
+        // pending / transient → keep polling until the deadline
+      }
+      setState("error");
+      setMessage("Read timed out — try again.");
     } catch (err) {
       setState("error");
       setMessage(err instanceof Error ? err.message : "Request failed.");
@@ -3077,7 +3101,7 @@ function AeonDisplay({ result }: { result: AeonResult }) {
           <div style={{ minWidth: 0 }}>
             <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
             <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
-              {message ?? (state === "loading" ? "Aeon is scanning — up to ~30s…" : premium.note)}
+              {message ?? (state === "loading" ? "Aeon is scanning — this can take up to a minute…" : premium.note)}
             </p>
           </div>
           <button
