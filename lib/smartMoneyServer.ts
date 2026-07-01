@@ -112,3 +112,44 @@ export async function fetchHoldersServer(token: Token): Promise<SmartMoneyRespon
     pagination: { page: 1, per_page: 20 },
   });
 }
+
+// Accumulation trend over time by wallet label (smart money by default).
+export async function fetchFlowsServer(token: Token): Promise<SmartMoneyResponse> {
+  if (!token.address || !token.chain) {
+    return { ok: false, error: "Couldn't locate this token on a supported chain." };
+  }
+  const now = new Date();
+  const from = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
+  return paidTgmFetch("tgm/flows", {
+    chain: token.chain,
+    token_address: token.address,
+    label: "smart_money",
+    date: { from: isoNoMillis(from), to: isoNoMillis(now) },
+    pagination: { page: 1, per_page: 60 },
+  });
+}
+
+// Net flow per wallet segment (smart traders, whales, exchanges, fresh wallets):
+// where the token is moving right now.
+export async function fetchFlowIntelServer(token: Token): Promise<SmartMoneyResponse> {
+  if (!token.address || !token.chain) {
+    return { ok: false, error: "Couldn't locate this token on a supported chain." };
+  }
+  return paidTgmFetch("tgm/flow-intelligence", {
+    chain: token.chain,
+    token_address: token.address,
+    timeframe: "7d",
+  });
+}
+
+// Discovery — tokens smart money is buying right now. Not token-scoped; lives at
+// /token-screener (no tgm/ prefix). Optional chain narrows the screen.
+export async function fetchScreenerServer(opts: { chain?: string | null } = {}): Promise<SmartMoneyResponse> {
+  return paidTgmFetch("token-screener", {
+    timeframe: "24h",
+    chains: opts.chain ? [opts.chain] : ["ethereum", "base", "solana", "arbitrum"],
+    filters: { only_smart_money: true },
+    order_by: [{ field: "netflow", direction: "DESC" }],
+    pagination: { page: 1, per_page: 15 },
+  });
+}

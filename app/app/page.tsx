@@ -81,8 +81,9 @@ type SuggestionsResult = { type: "suggestions"; prompts: { label: string; comman
 
 type IntelResult = {
   type: "intel";
-  read?: "smart-money" | "holders";
+  read?: "smart-money" | "holders" | "flows" | "flow-intel" | "screener";
   direction?: "BUY" | "SELL";
+  screenChain?: string | null;
   context?: { url: string; sourceHost: string; title: string; excerpt: string };
   token?: { symbol: string | null; address: string | null; chain?: string | null };
   premium?: { available: boolean; mode?: "user" | "agent"; label: string; price: string; note: string };
@@ -3020,9 +3021,31 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
 function IntelDisplay({ result }: { result: IntelResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const ACCENT = "#38bdf8";
-  const { context, token, premium, direction, read } = result;
+  const { context, token, premium, direction, read, screenChain } = result;
   const isToken = !!token;
-  const isHolders = read === "holders";
+  const isWeb = !!context;
+  const isScreener = read === "screener";
+
+  const ENDPOINT: Record<string, string> = {
+    "smart-money": "/api/intel/smart-money",
+    holders: "/api/intel/holders",
+    flows: "/api/intel/flows",
+    "flow-intel": "/api/intel/flow-intel",
+    screener: "/api/intel/screener",
+  };
+  const endpoint = ENDPOINT[read ?? "smart-money"] ?? "/api/intel/smart-money";
+
+  const EYEBROW: Record<string, string> = {
+    "smart-money": "TOKEN INTEL", holders: "TOKEN HOLDERS",
+    flows: "FLOW TREND", "flow-intel": "FLOW INTEL", screener: "SMART MONEY",
+  };
+  const DESC: Record<string, string> = {
+    "smart-money": "See which wallets are accumulating or exiting this token (top traders by net flow).",
+    holders: "See the biggest holders — how concentrated the supply is, and who's been adding or trimming.",
+    flows: "Track how smart money's position in this token has grown or shrunk over the last 30 days.",
+    "flow-intel": "See where this token is flowing — smart traders, whales, fresh wallets, and exchanges.",
+    screener: "The tokens smart money is buying right now, ranked by net inflow across chains.",
+  };
 
   const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
@@ -3035,7 +3058,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
   const [smData, setSmData] = useState<unknown>(null);
 
   async function handleSmartMoney() {
-    if (!token) return;
+    if (!token && !isScreener) return;
 
     // Agent-paid: Skopos's wallet fronts the x402 fee server-side, so the browser
     // needs no wallet, no chain switch, no signature — one tap and the data lands.
@@ -3043,10 +3066,10 @@ function IntelDisplay({ result }: { result: IntelResult }) {
       setSmState("loading");
       setSmMessage(null);
       try {
-        const res = await fetch(isHolders ? "/api/intel/holders" : "/api/intel/smart-money", {
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, direction }),
+          body: JSON.stringify(isScreener ? { chain: screenChain ?? null } : { token, direction }),
         });
         const payload = await res.json();
         if (res.ok && payload.ok) {
@@ -3064,8 +3087,9 @@ function IntelDisplay({ result }: { result: IntelResult }) {
       return;
     }
 
-    // User-signed x402 fallback — SKOPOS_X402_PRIVATE_KEY unset. First live run
-    // needs a connected, funded wallet.
+    // User-signed x402 fallback — only smart-money has one; other reads are
+    // agent-paid only, so they always return above. token is defined here.
+    if (!token) return;
     if (!walletClient) {
       // Reuse the app's existing Privy connect (mirrors handleWalletAction):
       // reconnect a ghost session, otherwise open login.
@@ -3121,28 +3145,18 @@ function IntelDisplay({ result }: { result: IntelResult }) {
           <circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
         <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>
-          {isToken ? (isHolders ? "TOKEN HOLDERS" : "TOKEN INTEL") : "WEB INTEL"}
+          {isWeb ? "WEB INTEL" : (EYEBROW[read ?? "smart-money"] ?? "TOKEN INTEL")}
         </span>
         <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>
-          {isToken
-            ? [token!.chain, token!.address ? shorten(token!.address) : null].filter(Boolean).join(" · ") || "on-chain"
-            : context!.sourceHost}
+          {isWeb
+            ? context!.sourceHost
+            : isScreener
+              ? "across chains"
+              : [token!.chain, token!.address ? shorten(token!.address) : null].filter(Boolean).join(" · ") || "on-chain"}
         </span>
       </div>
 
-      {isToken ? (
-        /* Token mode — header is the smart-money target */
-        <div style={{ padding: "0 18px 14px" }}>
-          <p style={{ ...MONO, fontSize: "1.15rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.2 }}>
-            {token!.symbol ? `$${token!.symbol}` : (token!.address ? shorten(token!.address) : "Token")}
-          </p>
-          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
-            {isHolders
-              ? "See the biggest holders — how concentrated the supply is, and who's been adding or trimming."
-              : "See which wallets are accumulating or exiting this token (top traders by net flow)."}
-          </p>
-        </div>
-      ) : (
+      {isWeb ? (
         /* Web mode — free Jina context */
         <div style={{ padding: "0 18px 14px" }}>
           <a href={context!.url} target="_blank" rel="noopener noreferrer"
@@ -3151,6 +3165,26 @@ function IntelDisplay({ result }: { result: IntelResult }) {
           </a>
           <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
             {context!.excerpt}
+          </p>
+        </div>
+      ) : isScreener ? (
+        /* Screener mode — discovery, no token target */
+        <div style={{ padding: "0 18px 14px" }}>
+          <p style={{ ...MONO, fontSize: "1.15rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.2 }}>
+            Smart money is buying
+          </p>
+          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+            {DESC.screener}
+          </p>
+        </div>
+      ) : (
+        /* Token mode — header is the target token */
+        <div style={{ padding: "0 18px 14px" }}>
+          <p style={{ ...MONO, fontSize: "1.15rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.2 }}>
+            {token!.symbol ? `$${token!.symbol}` : (token!.address ? shorten(token!.address) : "Token")}
+          </p>
+          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+            {DESC[read ?? "smart-money"] ?? DESC["smart-money"]}
           </p>
         </div>
       )}
@@ -3183,9 +3217,11 @@ function IntelDisplay({ result }: { result: IntelResult }) {
       )}
 
       {smState === "done" && smData != null && (
-        isHolders
-          ? <HoldersPanel data={smData} chain={token?.chain ?? null} />
-          : <SmartMoneyPanel data={smData} chain={token?.chain ?? null} />
+        read === "holders" ? <HoldersPanel data={smData} chain={token?.chain ?? null} />
+        : read === "flows" ? <FlowsPanel data={smData} />
+        : read === "flow-intel" ? <FlowIntelPanel data={smData} />
+        : read === "screener" ? <ScreenerPanel data={smData} />
+        : <SmartMoneyPanel data={smData} chain={token?.chain ?? null} />
       )}
     </div>
   );
@@ -3281,6 +3317,165 @@ function HoldersPanel({ data, chain }: { data: unknown; chain: string | null }) 
                   style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: adding ? "#22c55e" : "#ef4444" }}>
                   {adding ? "▲" : "▼"}
                 </span>
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FlowsPanel({ data }: { data: unknown }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const rows = smRows(data)
+    .map((r) => ({ date: pickStr(r, ["date"]), value: pickNum(r, ["value_usd"]), amount: pickNum(r, ["token_amount"]) }))
+    .filter((p) => p.value != null)
+    .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+
+  if (rows.length < 2) {
+    return (
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>Not enough flow history for a trend yet.</p>
+      </div>
+    );
+  }
+
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  const base = first.amount ?? 0;
+  const changePct = base > 0 ? (((last.amount ?? 0) - base) / base) * 100 : 0;
+  const up = (last.amount ?? 0) >= base;
+  const maxVal = Math.max(...rows.map((r) => r.value ?? 0)) || 1;
+  const bars = rows.slice(-24);
+
+  return (
+    <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>
+          SMART MONEY · {rows.length}D
+        </span>
+        <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: up ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
+          {up ? "▲ accumulating" : "▼ distributing"} {changePct >= 0 ? "+" : ""}{changePct.toFixed(1)}%
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 40 }}>
+        {bars.map((b, i) => (
+          <div key={i} title={`${b.date}: ${fmtUsdShort(b.value ?? 0)}`}
+            style={{ flex: 1, height: `${Math.max(2, ((b.value ?? 0) / maxVal) * 40)}px`, background: up ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)", borderRadius: 1 }} />
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>{first.date}</span>
+        <span style={{ ...MONO, fontSize: "0.62rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>{fmtUsdShort(last.value ?? 0)} held</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>{last.date}</span>
+      </div>
+    </div>
+  );
+}
+
+const FLOW_SEGMENTS: { key: string; label: string; invert: boolean }[] = [
+  { key: "smart_trader", label: "Smart traders", invert: false },
+  { key: "top_pnl", label: "Top PnL wallets", invert: false },
+  { key: "whale", label: "Whales", invert: false },
+  { key: "public_figure", label: "Public figures", invert: false },
+  { key: "fresh_wallets", label: "Fresh wallets", invert: false },
+  { key: "exchange", label: "Exchanges", invert: true },
+];
+
+function FlowIntelPanel({ data }: { data: unknown }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const rows = smRows(data);
+  const obj = (rows[0] ?? (data && typeof data === "object" ? data : {})) as Record<string, unknown>;
+
+  const segs = FLOW_SEGMENTS.map((s) => ({
+    label: s.label,
+    invert: s.invert,
+    net: pickNum(obj, [`${s.key}_net_flow_usd`]),
+    count: pickNum(obj, [`${s.key}_wallet_count`]),
+  })).filter((s) => (s.net != null && s.net !== 0) || (s.count != null && s.count > 0));
+
+  if (segs.length === 0) {
+    return (
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>No segment flow data for this token.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
+      <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))", marginBottom: 2 }}>
+        NET FLOW · 7D
+      </span>
+      {segs.map((s, i) => {
+        const net = s.net ?? 0;
+        const inflow = net >= 0;
+        const bullish = s.invert ? net < 0 : net >= 0;
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)" }}>{s.label}</span>
+            <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: bullish ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
+              {inflow ? "▲" : "▼"} {fmtUsdShort(Math.abs(net))}
+            </span>
+          </div>
+        );
+      })}
+      <span style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint, rgba(255,255,255,0.35))", marginTop: 4 }}>
+        Exchange outflows (▼) = leaving exchanges = less sell pressure.
+      </span>
+    </div>
+  );
+}
+
+function ScreenerPanel({ data }: { data: unknown }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const rows = smRows(data)
+    .map((r) => ({
+      symbol: pickStr(r, ["token_symbol"]),
+      chain: pickStr(r, ["chain"]),
+      addr: pickStr(r, ["token_address"]),
+      net: pickNum(r, ["netflow"]),
+      change: pickNum(r, ["price_change"]),
+    }))
+    .filter((p) => p.symbol)
+    .slice(0, 8);
+
+  if (rows.length === 0) {
+    return (
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>No screener results right now.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 7 }}>
+      <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))", marginBottom: 2 }}>
+        TOP NET INFLOW · 24H
+      </span>
+      {rows.map((p, i) => {
+        const explorerBase = p.chain ? SM_EXPLORER[p.chain] : undefined;
+        const href = p.addr && explorerBase ? `${explorerBase}${p.addr}` : null;
+        const changePct = (p.change ?? 0) * 100;
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              {href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.68rem", fontWeight: 700, color: "var(--card-text, #ffffff)", textDecoration: "none" }}>${p.symbol}</a>
+              ) : (
+                <span style={{ ...MONO, fontSize: "0.68rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>${p.symbol}</span>
+              )}
+              <span style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint, rgba(255,255,255,0.35))" }}>{p.chain}</span>
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+              {p.change != null && (
+                <span style={{ ...MONO, fontSize: "0.6rem", color: changePct >= 0 ? "#22c55e" : "#ef4444" }}>
+                  {changePct >= 0 ? "+" : ""}{changePct.toFixed(1)}%
+                </span>
+              )}
+              {p.net != null && (
+                <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: "#22c55e" }}>{fmtUsdShort(p.net)}</span>
               )}
             </span>
           </div>

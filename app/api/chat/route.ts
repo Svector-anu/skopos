@@ -439,6 +439,15 @@ function json(data: unknown, init?: ResponseInit): NextResponse {
 // otherwise reads the "eth" in "vitalik.eth" as a token and hijacks it to the price path.
 const ENS_RE = /\b([a-z0-9][a-z0-9-]*)\.eth\b/i;
 
+// Bareword false-positives to reject when a query names no $ticker/address — so
+// "where is it going" doesn't resolve "IT" as a token.
+const INTEL_STOP = new Set([
+  "OF", "THE", "IS", "A", "AN", "MY", "THIS", "THAT", "IT", "ARE", "IN", "ON", "TOP",
+  "BIGGEST", "MOST", "FOR", "ABOUT", "WITH", "INTO", "UP", "MORE", "NOW", "TODAY",
+  "AND", "TO", "GOING", "HEADING", "FLOWING", "MOVING", "PRESSURE", "SELL", "BUY",
+  "WHAT", "WHERE", "SMART", "MONEY", "EXCHANGE", "CEX", "FLOW", "FLOWS",
+]);
+
 export async function POST(req: NextRequest) {
   // CORS — only allow requests from the production origin and localhost dev
   const origin = req.headers.get("origin") ?? "";
@@ -526,6 +535,80 @@ export async function POST(req: NextRequest) {
     const context = await fetchWebContext(intelUrl);
     if (context) {
       return json({ type: "intel", context });
+    }
+  }
+
+  // ── Smart-money screener — discovery, no token. "what is smart money buying".
+  if (/\bwhat(?:'s|s| is| are)?\s+(?:the\s+)?smart\s+money\s+(?:buying|accumulating|aping|into|loading|grabbing)\b|\bsmart\s+money\s+screener\b|\btrending\s+(?:smart\s+money\s+)?(?:tokens?|coins?|plays?)\b|\bwhat\s+should\s+i\s+(?:buy|ape|look\s+at)\b/i.test(trimmed)) {
+    const CHAIN_ALIAS: Record<string, string> = { eth: "ethereum", ethereum: "ethereum", base: "base", solana: "solana", sol: "solana", arbitrum: "arbitrum", arb: "arbitrum", polygon: "polygon", matic: "polygon" };
+    const chainWord = trimmed.match(/\bon\s+(ethereum|eth|base|solana|sol|arbitrum|arb|polygon|matic)\b/i)?.[1]?.toLowerCase() ?? null;
+    const agentPaid = agentPaidEnabled();
+    const label = "Show what smart money's buying";
+    return json({
+      type: "intel",
+      read: "screener",
+      screenChain: chainWord ? CHAIN_ALIAS[chainWord] : null,
+      premium: agentPaid
+        ? { available: true, mode: "agent", label, price: "Reveal", note: "Free — Skopos covers the data fee · smart-money screener via Nansen" }
+        : { available: false, mode: "agent", label, price: "Reveal", note: "Live screener is rolling out — check back soon." },
+    });
+  }
+
+  // ── Flow intelligence — where a token is moving (exchanges vs wallet segments).
+  if (/\b(?:exchange|cex)\s+(?:in|out)?flows?\b|\b(?:cex|exchange)\s+(?:deposits?|withdrawals?)\b|\bwhere\s+is\s+\$?[a-zA-Z0-9]+\s+(?:flowing|going|heading|moving)\b|\bsell\s+pressure\b|\bflow\s+intel(?:ligence)?\b/i.test(trimmed)) {
+    const address = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1] ?? null;
+    let symbol = trimmed.match(/\$([a-zA-Z][a-zA-Z0-9]{1,14})\b/)?.[1]?.toUpperCase() ?? null;
+    if (!symbol && !address) {
+      const bw = (
+        trimmed.match(/\bwhere\s+is\s+([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
+        ?? trimmed.match(/\b(?:pressure|flows?|intel(?:ligence)?)\s+(?:on|for|of)\s+([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
+      )?.toUpperCase();
+      if (bw && !INTEL_STOP.has(bw)) symbol = bw;
+    }
+    if (address || symbol) {
+      const target = await resolveTokenTarget(address ?? symbol!);
+      const nansenChain = target ? toNansenChain(target.chainId) : null;
+      const canPay = !!(target && nansenChain);
+      const agentPaid = agentPaidEnabled();
+      const label = "Break down the flows";
+      return json({
+        type: "intel",
+        read: "flow-intel",
+        token: { symbol: target?.symbol ?? symbol, address: target?.address ?? address, chain: nansenChain },
+        premium:
+          canPay && agentPaid
+            ? { available: true, mode: "agent", label, price: "Reveal", note: "Free — Skopos covers the data fee · exchange & wallet flows via Nansen" }
+            : { available: false, mode: "agent", label, price: "Reveal", note: canPay ? "Rolling out — check back soon." : "Not available for this token yet." },
+      });
+    }
+  }
+
+  // ── Smart-money flows — accumulation trend over time for a $ticker or contract.
+  if (/\bflows?\b|\bflow\s+trend\b|\baccumulation\s+trend\b|\baccumulating\s+over\s+time\b/i.test(trimmed)) {
+    const address = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1] ?? null;
+    let symbol = trimmed.match(/\$([a-zA-Z][a-zA-Z0-9]{1,14})\b/)?.[1]?.toUpperCase() ?? null;
+    if (!symbol && !address) {
+      const bw = (
+        trimmed.match(/\b([a-zA-Z][a-zA-Z0-9]{1,14})\s+flows?\b/i)?.[1]
+        ?? trimmed.match(/\bflows?\s+(?:on|for|of)\s+([a-zA-Z][a-zA-Z0-9]{1,14})\b/i)?.[1]
+      )?.toUpperCase();
+      if (bw && !INTEL_STOP.has(bw)) symbol = bw;
+    }
+    if (address || symbol) {
+      const target = await resolveTokenTarget(address ?? symbol!);
+      const nansenChain = target ? toNansenChain(target.chainId) : null;
+      const canPay = !!(target && nansenChain);
+      const agentPaid = agentPaidEnabled();
+      const label = "Show the accumulation trend";
+      return json({
+        type: "intel",
+        read: "flows",
+        token: { symbol: target?.symbol ?? symbol, address: target?.address ?? address, chain: nansenChain },
+        premium:
+          canPay && agentPaid
+            ? { available: true, mode: "agent", label, price: "Reveal", note: "Free — Skopos covers the data fee · smart-money flow trend via Nansen" }
+            : { available: false, mode: "agent", label, price: "Reveal", note: canPay ? "Rolling out — check back soon." : "Not available for this token yet." },
+      });
     }
   }
 
