@@ -22,6 +22,18 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   {
+    date: "Jul 1, 2026",
+    title: "Read the smart money — we cover the bill",
+    lede:
+      "Ask what the smart money is doing on almost any token and just see the answer — no wallet, no signing. Skopos fronts the tiny x402 data fee itself. \"who's dumping $PEPE\", \"who holds $ARB\", \"what's smart money buying\" — you ask, it pays, you read.",
+    highlights: [
+      "Five reads on one rail: who's buying or selling, top holders, the accumulation trend over time, where a token is flowing (wallet segments vs exchanges), and a cross-chain screener of what smart money is buying right now.",
+      "Named wallets, not 0x… — paid Nansen access surfaces real entities: market makers, funds, top-PnL traders.",
+      "No wallet connect, no chain switch, no signature — Skopos's own wallet settles the x402 micropayment server-side.",
+      "Powered by Nansen Token God Mode over x402 — the same HTTP-native settlement rail that underpins agent-to-agent payments.",
+    ],
+  },
+  {
     date: "Jun 29, 2026",
     title: "B20 payments on Base",
     lede:
