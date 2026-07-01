@@ -21,6 +21,7 @@ export interface JobResult {
   ok: boolean;
   status: JobStatus;
   text?: string;
+  note?: string;
   error?: string;
 }
 
@@ -141,7 +142,15 @@ export async function pollAgentJob(jobId: string): Promise<JobResult> {
     if (status === "failed" || status === "cancelled") {
       return { ok: false, status, error: `Agent job ${status}.` };
     }
-    return { ok: true, status: "pending" };
+    // Surface the agent's latest step so the wait feels alive ("thinking",
+    // "market intelligence", …).
+    const updates = (job as { statusUpdates?: Array<{ message?: string }> })?.statusUpdates;
+    let note: string | undefined;
+    if (Array.isArray(updates) && updates.length) {
+      const last = updates[updates.length - 1]?.message;
+      if (typeof last === "string" && last.trim()) note = last.trim();
+    }
+    return { ok: true, status: "pending", note };
   } catch {
     return { ok: false, status: "unknown", error: "Job check failed." };
   }

@@ -3026,6 +3026,30 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
   );
 }
 
+const AEON_CALLS: Record<string, string> = {
+  RIDE: "#22c55e",
+  FADE: "#ef4444",
+  SKIP: "var(--card-text-faint, rgba(255,255,255,0.45))",
+  "FRONT-RUN": "#F5B800",
+  "FRONT RUN": "#F5B800",
+};
+
+// Renders the read with the call keywords (RIDE/FADE/SKIP/FRONT-RUN) colored so
+// the takeaways pop out of the block.
+function AeonText({ text }: { text: string }) {
+  const parts = text.split(/(\bRIDE\b|\bFADE\b|\bSKIP\b|\bFRONT[-\s]RUN\b)/gi);
+  return (
+    <>
+      {parts.map((p, i) => {
+        const color = AEON_CALLS[p.toUpperCase()];
+        return color
+          ? <span key={i} style={{ color, fontWeight: 700 }}>{p}</span>
+          : <span key={i}>{p}</span>;
+      })}
+    </>
+  );
+}
+
 function AeonDisplay({ result }: { result: AeonResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const ACCENT = "#a78bfa";
@@ -3071,6 +3095,8 @@ function AeonDisplay({ result }: { result: AeonResult }) {
           setMessage(jd.error ?? "Read failed.");
           return;
         }
+        // live step from the agent ("thinking", "market intelligence", …)
+        if (jd.note) setMessage(`${jd.note}…`);
         // pending / transient → keep polling until the deadline
       }
       setState("error");
@@ -3123,8 +3149,10 @@ function AeonDisplay({ result }: { result: AeonResult }) {
       )}
 
       {state === "done" && text && (
-        <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.65, color: "var(--card-text-dim, rgba(255,255,255,0.7))", margin: 0, whiteSpace: "pre-wrap" }}>{text}</p>
+        <div style={{ padding: "14px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+          <p style={{ ...MONO, fontSize: "0.78rem", lineHeight: 1.72, color: "var(--card-text, #ffffff)", margin: 0, whiteSpace: "pre-wrap" }}>
+            <AeonText text={text} />
+          </p>
         </div>
       )}
     </div>
