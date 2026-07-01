@@ -3033,20 +3033,89 @@ const AEON_CALLS: Record<string, string> = {
   "FRONT-RUN": "#F5B800",
   "FRONT RUN": "#F5B800",
 };
+const AEON_VIOLET = "#a78bfa";
 
-// Renders the read with the call keywords (RIDE/FADE/SKIP/FRONT-RUN) colored so
-// the takeaways pop out of the block.
-function AeonText({ text }: { text: string }) {
-  const parts = text.split(/(\bRIDE\b|\bFADE\b|\bSKIP\b|\bFRONT[-\s]RUN\b)/gi);
+// Color the call keywords (RIDE/FADE/SKIP/FRONT-RUN) so takeaways pop.
+function colorCalls(s: string, keyBase: string): React.ReactNode[] {
+  return s.split(/(\bRIDE\b|\bFADE\b|\bSKIP\b|\bFRONT[-\s]RUN\b)/gi).map((p, i) => {
+    const c = AEON_CALLS[p.toUpperCase()];
+    return c
+      ? <span key={`${keyBase}-${i}`} style={{ color: c, fontWeight: 700 }}>{p}</span>
+      : <span key={`${keyBase}-${i}`}>{p}</span>;
+  });
+}
+
+// Inline: **bold** + call coloring.
+function inlineNodes(s: string, keyBase: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  s.split(/(\*\*[^*]+\*\*)/g).forEach((seg, i) => {
+    if (!seg) return;
+    if (/^\*\*[^*]+\*\*$/.test(seg)) {
+      out.push(
+        <strong key={`${keyBase}-b${i}`} style={{ color: "var(--card-text, #fff)", fontWeight: 700 }}>
+          {colorCalls(seg.slice(2, -2), `${keyBase}-b${i}`)}
+        </strong>,
+      );
+    } else {
+      out.push(...colorCalls(seg, `${keyBase}-t${i}`));
+    }
+  });
+  return out;
+}
+
+// Markdown-lite renderer for the agent read: title, numbered sections, bullets,
+// inline labels, bold, and colored calls.
+function AeonMarkdown({ text }: { text: string }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const BODY: React.CSSProperties = { ...MONO, fontSize: "0.76rem", lineHeight: 1.72, color: "var(--card-text, #ffffff)", margin: 0 };
+  const lines = text.replace(/\r/g, "").split("\n");
+  const firstIdx = lines.findIndex((l) => l.trim() !== "");
+
   return (
-    <>
-      {parts.map((p, i) => {
-        const color = AEON_CALLS[p.toUpperCase()];
-        return color
-          ? <span key={i} style={{ color, fontWeight: 700 }}>{p}</span>
-          : <span key={i}>{p}</span>;
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      {lines.map((raw, i) => {
+        const line = raw.replace(/\s+$/, "");
+        if (line.trim() === "") return <div key={i} style={{ height: 6 }} />;
+
+        if (i === firstIdx) {
+          return (
+            <p key={i} style={{ ...MONO, fontSize: "0.85rem", fontWeight: 700, color: "var(--card-text, #fff)", margin: "0 0 4px", lineHeight: 1.3 }}>
+              {inlineNodes(line, `l${i}`)}
+            </p>
+          );
+        }
+
+        const num = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+        if (num) {
+          return (
+            <p key={i} style={{ ...MONO, fontSize: "0.78rem", fontWeight: 700, color: "var(--card-text, #fff)", margin: "9px 0 1px", lineHeight: 1.5 }}>
+              <span style={{ color: AEON_VIOLET }}>{num[1]}.</span> {inlineNodes(num[2], `l${i}`)}
+            </p>
+          );
+        }
+
+        const bul = line.match(/^\s*[-•*]\s+(.*)$/);
+        if (bul) {
+          return (
+            <div key={i} style={{ display: "flex", gap: 8, paddingLeft: 2 }}>
+              <span style={{ ...MONO, color: AEON_VIOLET, fontSize: "0.76rem", lineHeight: 1.72 }}>·</span>
+              <span style={BODY}>{inlineNodes(bul[1], `l${i}`)}</span>
+            </div>
+          );
+        }
+
+        const lab = line.match(/^([A-Za-z][A-Za-z /&]{1,22}):\s+(.*)$/);
+        if (lab && lab[2]) {
+          return (
+            <p key={i} style={BODY}>
+              <span style={{ color: "var(--card-text-dim, rgba(255,255,255,0.55))", fontWeight: 600 }}>{lab[1]}:</span> {inlineNodes(lab[2], `l${i}`)}
+            </p>
+          );
+        }
+
+        return <p key={i} style={BODY}>{inlineNodes(line, `l${i}`)}</p>;
       })}
-    </>
+    </div>
   );
 }
 
@@ -3150,9 +3219,7 @@ function AeonDisplay({ result }: { result: AeonResult }) {
 
       {state === "done" && text && (
         <div style={{ padding: "14px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-          <p style={{ ...MONO, fontSize: "0.78rem", lineHeight: 1.72, color: "var(--card-text, #ffffff)", margin: 0, whiteSpace: "pre-wrap" }}>
-            <AeonText text={text} />
-          </p>
+          <AeonMarkdown text={text} />
         </div>
       )}
     </div>
