@@ -531,7 +531,7 @@ export async function POST(req: NextRequest) {
 
   // ── Token holders — "who holds / top holders of" a $ticker or contract.
   // Agent-paid tgm/holders read: top holders, % supply, recent balance change.
-  if (/\bholders?\b|\bwho\s+owns\b|\bholder\s+concentration\b/i.test(trimmed)) {
+  if (/\bholders?\b|\bwho\s+(?:holds|owns)\b|\bholder\s+concentration\b/i.test(trimmed)) {
     const HSTOP = new Set(["OF", "THE", "IS", "A", "AN", "MY", "THIS", "THAT", "IT", "ARE", "IN", "ON", "TOP", "BIGGEST", "MOST"]);
     const address = trimmed.match(/\b(0x[0-9a-fA-F]{40})\b/)?.[1] ?? null;
     let symbol = trimmed.match(/\$([a-zA-Z][a-zA-Z0-9]{1,14})\b/)?.[1]?.toUpperCase() ?? null;
