@@ -24,6 +24,12 @@ const ANON_TEASER_CAP  = envCap("SMART_ANON_TEASER_CAP", 2);
 const AGENT_DAILY_CAP        = envCap("SMART_AGENT_DAILY_CAP", 500);
 const AGENT_HANDLE_DAILY_CAP = envCap("SMART_AGENT_HANDLE_DAILY_CAP", 50);
 
+// Smart-money intel budget. When Skopos fronts the x402 micropayment (agent-paid
+// mode), every reveal spends real USDC from Skopos's wallet, so a global daily
+// ceiling protects the wallet from runaway clicks. Soft cap, fail-open like the
+// rest of this module — Redis trouble lets reads through rather than breaking.
+const INTEL_AGENT_DAILY_CAP  = envCap("SMART_MONEY_AGENT_DAILY_CAP", 200);
+
 let client: Redis | null = null;
 function getRedis(): Redis | null {
   const url   = process.env.UPSTASH_REDIS_REST_URL;
@@ -143,5 +149,38 @@ export async function incrAgentSmart(handle?: string | null): Promise<void> {
     }
   } catch (err) {
     console.error("[usage] agent incr failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+function intelGlobalKey(day: string): string {
+  return `intel:agent:${day}`;
+}
+
+// Read-only: never increments. Fail-open — if Redis is down the read is allowed
+// and the budget simply isn't enforced, rather than the request breaking.
+export async function checkIntelBudget(): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) {
+    console.warn("[usage] Upstash not configured — intel budget disabled (fail-open)");
+    return true;
+  }
+  try {
+    const used = Number((await redis.get<number>(intelGlobalKey(utcDay()))) ?? 0);
+    return used < INTEL_AGENT_DAILY_CAP;
+  } catch (err) {
+    console.error("[usage] intel budget check failed — fail-open:", err instanceof Error ? err.message : err);
+    return true;
+  }
+}
+
+export async function incrIntel(): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  const day = utcDay();
+  try {
+    const count = await redis.incr(intelGlobalKey(day));
+    if (count === 1) await redis.expire(intelGlobalKey(day), TTL_SECONDS);
+  } catch (err) {
+    console.error("[usage] intel incr failed:", err instanceof Error ? err.message : err);
   }
 }

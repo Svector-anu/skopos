@@ -30,6 +30,7 @@ import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "
 import { getPrice, getPriceChart, type PriceResult } from "@/lib/priceCache";
 import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
 import { fetchWebContext, extractUrl } from "@/lib/intel";
+import { agentPaidEnabled } from "@/lib/smartMoneyServer";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -550,16 +551,37 @@ export async function POST(req: NextRequest) {
       const target = await resolveTokenTarget(address ?? symbol!);
       const nansenChain = target ? toNansenChain(target.chainId) : null;
       const canPay = !!(target && nansenChain);
+      // Agent-paid mode: Skopos's wallet fronts the x402 fee, so the user pays
+      // nothing and never touches a wallet. Falls back to the user-signed $0.01
+      // path when SKOPOS_X402_PRIVATE_KEY is unset.
+      const agentPaid = agentPaidEnabled();
+      const mode = agentPaid ? "agent" : "user";
+      const label = "See who's buying & selling";
+      // who-bought-sold defaults to the BUY side; flip to SELL when the user asked
+      // about selling/dumping/exiting so the read matches the question.
+      const direction: "BUY" | "SELL" =
+        /\b(sell|selling|sold|dump|dumping|dumped|exit|exiting|offload|offloading|unload|unloading)\b/i.test(trimmed)
+          ? "SELL"
+          : "BUY";
       return json({
         type: "intel",
+        direction,
         token: {
           symbol: target?.symbol ?? symbol,
           address: target?.address ?? address,
           chain: nansenChain,
         },
         premium: canPay
-          ? { available: true, label: "See who's buying & selling", price: "$0.01", note: "$0.01 from your wallet pulls live smart-money flows · Nansen" }
-          : { available: false, label: "See who's buying & selling", price: "$0.01", note: "Not available for this token yet." },
+          ? {
+              available: true,
+              mode,
+              label,
+              price: agentPaid ? "Reveal" : "$0.01",
+              note: agentPaid
+                ? "Free — Skopos covers the data fee · live smart-money flows via Nansen"
+                : "$0.01 from your wallet pulls live smart-money flows · Nansen",
+            }
+          : { available: false, mode, label, price: agentPaid ? "Reveal" : "$0.01", note: "Not available for this token yet." },
       });
     }
   }

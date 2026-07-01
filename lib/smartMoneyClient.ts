@@ -43,6 +43,7 @@ function isoNoMillis(date: Date): string {
 export async function fetchSmartMoney(
   walletClient: WalletClient,
   token: { symbol: string | null; address: string | null; chain?: string | null },
+  direction: "BUY" | "SELL" = "BUY",
 ): Promise<SmartMoneyResponse> {
   if (!token.address || !token.chain) {
     return { ok: false, error: "Couldn't locate this token on a supported chain." };
@@ -68,6 +69,7 @@ export async function fetchSmartMoney(
       body: {
         chain: token.chain,
         token_address: token.address,
+        buy_or_sell: direction,
         date: { from: isoNoMillis(from), to: isoNoMillis(now) },
       },
     }),

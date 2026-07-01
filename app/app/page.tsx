@@ -81,9 +81,10 @@ type SuggestionsResult = { type: "suggestions"; prompts: { label: string; comman
 
 type IntelResult = {
   type: "intel";
+  direction?: "BUY" | "SELL";
   context?: { url: string; sourceHost: string; title: string; excerpt: string };
   token?: { symbol: string | null; address: string | null; chain?: string | null };
-  premium?: { available: boolean; label: string; price: string; note: string };
+  premium?: { available: boolean; mode?: "user" | "agent"; label: string; price: string; note: string };
 };
 
 type PaywallResult = { type: "paywall"; reason: "connect" | "daily_cap"; used: number; cap: number };
@@ -3018,7 +3019,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
 function IntelDisplay({ result }: { result: IntelResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const ACCENT = "#38bdf8";
-  const { context, token, premium } = result;
+  const { context, token, premium, direction } = result;
   const isToken = !!token;
 
   const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -3031,9 +3032,38 @@ function IntelDisplay({ result }: { result: IntelResult }) {
   const [smMessage, setSmMessage] = useState<string | null>(null);
   const [smData, setSmData] = useState<unknown>(null);
 
-  // Untested at live settlement — first real run needs a connected, funded wallet.
   async function handleSmartMoney() {
     if (!token) return;
+
+    // Agent-paid: Skopos's wallet fronts the x402 fee server-side, so the browser
+    // needs no wallet, no chain switch, no signature — one tap and the data lands.
+    if (premium?.mode === "agent") {
+      setSmState("loading");
+      setSmMessage(null);
+      try {
+        const res = await fetch("/api/intel/smart-money", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, direction }),
+        });
+        const payload = await res.json();
+        if (res.ok && payload.ok) {
+          setSmData(payload.data);
+          setSmState("done");
+          setSmMessage(null);
+        } else {
+          setSmState("error");
+          setSmMessage(payload.error ?? "Request failed.");
+        }
+      } catch (err) {
+        setSmState("error");
+        setSmMessage(err instanceof Error ? err.message : "Request failed.");
+      }
+      return;
+    }
+
+    // User-signed x402 fallback — SKOPOS_X402_PRIVATE_KEY unset. First live run
+    // needs a connected, funded wallet.
     if (!walletClient) {
       // Reuse the app's existing Privy connect (mirrors handleWalletAction):
       // reconnect a ghost session, otherwise open login.
@@ -3065,7 +3095,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
     setSmState("loading");
     setSmMessage(null);
     try {
-      const res = await fetchSmartMoney(walletClient, token);
+      const res = await fetchSmartMoney(walletClient, token, direction);
       if (res.ok) {
         setSmData(res.data);
         setSmState("done");
@@ -3143,7 +3173,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
               opacity: premium.available ? 1 : 0.65,
             }}
           >
-            {smState === "loading" ? "…" : smState === "done" ? "✓" : !walletClient ? "Connect" : premium.price}
+            {smState === "loading" ? "…" : smState === "done" ? "✓" : premium.mode === "agent" ? premium.price : !walletClient ? "Connect" : premium.price}
           </button>
         </div>
       )}

@@ -1,23 +1,45 @@
 import { NextRequest } from "next/server";
-import { getSmartMoneyQuote } from "@/lib/nansen";
+import { fetchSmartMoneyServer, agentPaidEnabled } from "@/lib/smartMoneyServer";
+import { checkIntelBudget, incrIntel } from "@/lib/usage";
 
 export const dynamic = "force-dynamic";
 
+// Agent-paid smart-money read. Skopos's own wallet fronts the x402 micropayment
+// (lib/smartMoneyServer.ts), so the browser needs no wallet, no chain switch, no
+// signature. A global daily budget (lib/usage.ts) guards the wallet from runaway
+// clicks. Only increments the budget on a settled read, so failures are free.
 export async function POST(req: NextRequest) {
-  let symbol: string | null = null;
-  let address: string | null = null;
+  if (!agentPaidEnabled()) {
+    return Response.json({ ok: false, error: "Agent-paid intel is not enabled." }, { status: 503 });
+  }
+
+  let token: { symbol: string | null; address: string | null; chain: string | null };
+  let direction: "BUY" | "SELL";
   try {
     const body = await req.json();
-    symbol = typeof body.symbol === "string" ? body.symbol : null;
-    address = typeof body.address === "string" ? body.address : null;
+    token = {
+      symbol: typeof body?.token?.symbol === "string" ? body.token.symbol : null,
+      address: typeof body?.token?.address === "string" ? body.token.address : null,
+      chain: typeof body?.token?.chain === "string" ? body.token.chain : null,
+    };
+    direction = body?.direction === "SELL" ? "SELL" : "BUY";
   } catch {
-    // empty body is allowed — the quote is token-agnostic
+    return Response.json({ ok: false, error: "Invalid request body." }, { status: 400 });
   }
 
-  const quote = await getSmartMoneyQuote();
-  if (!quote) {
-    return Response.json({ ok: false, error: "Smart-money quote unavailable right now." }, { status: 502 });
+  if (!token.address || !token.chain) {
+    return Response.json({ ok: false, error: "Couldn't locate this token on a supported chain." }, { status: 400 });
   }
 
-  return Response.json({ ok: true, token: { symbol, address }, quote });
+  if (!(await checkIntelBudget())) {
+    return Response.json(
+      { ok: false, error: "Smart-money reads are at today's free limit. Try again tomorrow." },
+      { status: 429 },
+    );
+  }
+
+  const result = await fetchSmartMoneyServer(token, direction);
+  if (result.ok) await incrIntel();
+
+  return Response.json(result, { status: result.ok ? 200 : 502 });
 }
