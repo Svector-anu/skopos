@@ -23,6 +23,18 @@ interface Entry {
 const ENTRIES: Entry[] = [
   {
     date: "Jul 1, 2026",
+    title: "The market's narrative, in chat",
+    lede:
+      "Ask \"what's the narrative today\" or \"defi read today\" and Skopos runs a Bankr agent to hand you the daily map — the hot narratives, each with a front-run / ride / fade / skip call, and the DeFi regime with real-vs-emissions yield. Agentic market reads, right in the chat. No wallet, no signing.",
+    highlights: [
+      "Narrative map: what's hot in crypto and AI right now, each with a clear front-run / ride / fade / skip call.",
+      "DeFi read: risk-on / risk-off regime, top movers with a one-line reason, and where yield is real vs just emissions.",
+      "Powered by a Bankr agent through its Agent API — Skopos asks, the agent runs, you read the result.",
+      "Skopos covers the cost; you never connect a wallet or sign anything.",
+    ],
+  },
+  {
+    date: "Jul 1, 2026",
     title: "Read the smart money — we cover the bill",
     lede:
       "Ask what the smart money is doing on almost any token and just see the answer — no wallet, no signing. Skopos fronts the tiny x402 data fee itself. \"who's dumping $PEPE\", \"who holds $ARB\", \"what's smart money buying\" — you ask, it pays, you read.",
