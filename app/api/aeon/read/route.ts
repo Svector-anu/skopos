@@ -11,6 +11,8 @@ export const maxDuration = 60; // agent reads poll for up to ~45s
 const PROMPTS: Record<string, string> = {
   narrative:
     "What's the crypto narrative today? Give the daily narrative map: the top narratives right now with a clear front-run / ride / fade / skip call for each. Keep it concise and skimmable.",
+  defi:
+    "What's the DeFi market read today? Give the regime (risk-on / risk-off / neutral), the top movers with a one-line reason each, and note where yield is real vs just emissions. Keep it concise and skimmable.",
 };
 
 // Agent-proxied Aeon read. Skopos's Bankr agent runs the installed Aeon skill; a

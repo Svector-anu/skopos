@@ -560,6 +560,24 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // ── Aeon DeFi read — "defi read today / market regime / risk on or off".
+  // Market-wide; same token guard so a token query goes to Nansen intel instead.
+  if (
+    !/\$[a-zA-Z]|\b0x[0-9a-fA-F]{40}\b/.test(trimmed) &&
+    /\bdefi\s+(?:read|overview|regime|today|market)\b|\bmarket\s+regime\b|\brisk[\s-]?(?:on|off)\b|\bhow'?s\s+defi\b/i.test(trimmed)
+  ) {
+    const enabled = aeonEnabled();
+    return json({
+      type: "aeon",
+      kind: "defi",
+      title: "Today's DeFi read",
+      subtitle: "Risk-on or risk-off, the top movers, and where yield is real vs just emissions.",
+      premium: enabled
+        ? { available: true, label: "Get the read", note: "Free — Skopos covers it · powered by Aeon on Bankr" }
+        : { available: false, label: "Get the read", note: "DeFi reads are rolling out — check back soon." },
+    });
+  }
+
   // ── Smart-money screener — discovery, no token. "what is smart money buying".
   if (/\bwhat(?:'s|s| is| are)?\s+(?:the\s+)?smart\s+money\s+(?:buying|accumulating|aping|into|loading|grabbing)\b|\bsmart\s+money\s+screener\b|\btrending\s+(?:smart\s+money\s+)?(?:tokens?|coins?|plays?)\b|\bwhat\s+should\s+i\s+(?:buy|ape|look\s+at)\b/i.test(trimmed)) {
     const CHAIN_ALIAS: Record<string, string> = { eth: "ethereum", ethereum: "ethereum", base: "base", solana: "solana", sol: "solana", arbitrum: "arbitrum", arb: "arbitrum", polygon: "polygon", matic: "polygon" };
