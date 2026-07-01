@@ -73,9 +73,10 @@ const ENTRIES: Entry[] = [
 
 function TimelineEntry({ entry, last }: { entry: Entry; last: boolean }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "132px 1fr", gap: 0 }}>
+    <div className="cl-entry" style={{ display: "grid", gridTemplateColumns: "132px 1fr", gap: 0 }}>
       {/* Date */}
       <div
+        className="cl-date"
         style={{
           fontFamily: MONO,
           fontSize: "0.74rem",
@@ -183,9 +184,23 @@ function TimelineEntry({ entry, last }: { entry: Entry; last: boolean }) {
 export default function ChangelogPage() {
   return (
     <main style={{ minHeight: "100vh", background: "#000000", color: "#ffffff" }}>
+      <style>{`
+        @media (max-width: 640px) {
+          .cl-entry { grid-template-columns: 1fr !important; }
+          .cl-date {
+            text-align: left !important;
+            padding-right: 0 !important;
+            padding-left: 34px !important;
+            padding-bottom: 6px !important;
+          }
+          .cl-header { padding-left: 16px !important; padding-right: 16px !important; }
+          .cl-wrap { padding-left: 16px !important; padding-right: 16px !important; }
+        }
+      `}</style>
       <CornerBrackets />
 
       <header
+        className="cl-header"
         style={{
           display: "flex",
           alignItems: "center",
@@ -211,7 +226,7 @@ export default function ChangelogPage() {
         <HeaderIcons />
       </header>
 
-      <div style={{ maxWidth: 1080, margin: "0 auto", padding: "0 24px 96px" }}>
+      <div className="cl-wrap" style={{ maxWidth: 1080, margin: "0 auto", padding: "0 24px 96px" }}>
         {/* Hero */}
         <section style={{ padding: "48px 0 40px" }}>
           <span
