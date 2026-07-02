@@ -28,7 +28,7 @@ export function classifyIntent(input: string): IntentType {
 
   // Equity — the stocks we have verified Pyth feed IDs for (route.ts maps the
   // ticker → feed). "coin" is excluded (too crypto-ambiguous); "coinbase" only.
-  if (/\b(aapl|apple|msft|microsoft|hood|robinhood|nvda|nvidia|tsla|tesla|googl|google|meta|amzn|amazon|coinbase)\b/i.test(t)) return "equity";
+  if (/\b(aapl|apple|msft|microsoft|hood|robinhood|nvda|nvidia|tsla|tesla|googl|google|meta|amzn|amazon|coinbase|spy|qqq|mstr|microstrategy|amd|pltr|palantir|nflx|netflix|mara|marathon|riot|sofi|pypl|paypal|dis|disney|jpm|jpmorgan|baba|alibaba|intc|avgo|broadcom|uber|crm|salesforce|orcl|smci|supermicro|arkk)\b/i.test(t)) return "equity";
 
   // Token launch — a deploy verb plus an explicit token noun or a $ticker.
   // Requires both so "launch the dashboard" never trips it.
