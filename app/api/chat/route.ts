@@ -555,7 +555,7 @@ export async function POST(req: NextRequest) {
       title: "Today's narratives",
       subtitle: "What's hot in crypto and AI right now — with a front-run / ride / fade / skip call per narrative.",
       premium: enabled
-        ? { available: true, label: "Get the read", note: "Free — Skopos covers it · powered by Aeon on Bankr" }
+        ? { available: true, label: "Get the read", note: "Free — Skopos covers the read" }
         : { available: false, label: "Get the read", note: "Narrative reads are rolling out — check back soon." },
     });
   }
@@ -573,7 +573,7 @@ export async function POST(req: NextRequest) {
       title: "Today's DeFi read",
       subtitle: "Risk-on or risk-off, the top movers, and where yield is real vs just emissions.",
       premium: enabled
-        ? { available: true, label: "Get the read", note: "Free — Skopos covers it · powered by Aeon on Bankr" }
+        ? { available: true, label: "Get the read", note: "Free — Skopos covers the read" }
         : { available: false, label: "Get the read", note: "DeFi reads are rolling out — check back soon." },
     });
   }
