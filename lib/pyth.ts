@@ -16,9 +16,17 @@ export const PYTH_FEEDS = {
   // Metals
   "XAU/USD": "0x765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2",
   "XAG/USD": "0xf2fb02c32b055c805e7238d628e5e9dadef274376114eb1f012337cabe93871e",
-  // Equities (US market hours only — check stale before surfacing)
+  // Equities — regular US-hours Pyth feeds (Equity.US.<TICKER>/USD), verified
+  // against Hermes 2026-07-02. Stale after hours; check `stale` before surfacing.
   "AAPL":    "0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688",
   "MSFT":    "0xd0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1",
+  "HOOD":    "0x306736a4035846ba15a3496eed57225b64cc19230a50d14f3ed20fd7219b7849",
+  "NVDA":    "0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
+  "TSLA":    "0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1",
+  "GOOGL":   "0x5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6",
+  "META":    "0x78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe",
+  "AMZN":    "0xb5d0e0fa58a1f8b81498ae670ce93c872d14434b72c364885d4fa1b257cbb07a",
+  "COIN":    "0xfee33f2a978bf32dd6b662b65ba8083c6773b494f8401194ec1870c640860245",
 } as const;
 
 export type PythFeedKey = keyof typeof PYTH_FEEDS;

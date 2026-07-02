@@ -26,8 +26,9 @@ export function classifyIntent(input: string): IntentType {
   // Metal keywords are unambiguous — gold/silver/XAU/XAG never appear in crypto bridge flows
   if (/\b(gold|silver|xau|xag)\b/i.test(t)) return "metal";
 
-  // Equity — narrow list, only what we have feed IDs for
-  if (/\b(aapl|apple\s+stock|msft|microsoft\s+stock)\b/i.test(t)) return "equity";
+  // Equity — the stocks we have verified Pyth feed IDs for (route.ts maps the
+  // ticker → feed). "coin" is excluded (too crypto-ambiguous); "coinbase" only.
+  if (/\b(aapl|apple|msft|microsoft|hood|robinhood|nvda|nvidia|tsla|tesla|googl|google|meta|amzn|amazon|coinbase)\b/i.test(t)) return "equity";
 
   // Token launch — a deploy verb plus an explicit token noun or a $ticker.
   // Requires both so "launch the dashboard" never trips it.

@@ -915,14 +915,22 @@ export async function POST(req: NextRequest) {
 
   // ── Equity prices ─────────────────────────────────────────────────────────
   if (queryType === "equity") {
-    const isMSFT = /\b(msft|microsoft)\b/i.test(trimmed);
-    const key: PythFeedKey  = isMSFT ? "MSFT" : "AAPL";
-    const ticker = isMSFT ? "MSFT" : "AAPL";
-    const name   = isMSFT ? "Microsoft" : "Apple";
+    const EQUITIES: { re: RegExp; key: PythFeedKey; ticker: string; name: string }[] = [
+      { re: /\b(hood|robinhood)\b/i,  key: "HOOD",  ticker: "HOOD",  name: "Robinhood Markets" },
+      { re: /\b(nvda|nvidia)\b/i,     key: "NVDA",  ticker: "NVDA",  name: "NVIDIA" },
+      { re: /\b(tsla|tesla)\b/i,      key: "TSLA",  ticker: "TSLA",  name: "Tesla" },
+      { re: /\b(googl|google)\b/i,    key: "GOOGL", ticker: "GOOGL", name: "Alphabet" },
+      { re: /\b(amzn|amazon)\b/i,     key: "AMZN",  ticker: "AMZN",  name: "Amazon" },
+      { re: /\b(meta)\b/i,            key: "META",  ticker: "META",  name: "Meta" },
+      { re: /\b(coinbase)\b/i,        key: "COIN",  ticker: "COIN",  name: "Coinbase" },
+      { re: /\b(msft|microsoft)\b/i,  key: "MSFT",  ticker: "MSFT",  name: "Microsoft" },
+      { re: /\b(aapl|apple)\b/i,      key: "AAPL",  ticker: "AAPL",  name: "Apple" },
+    ];
+    const stock = EQUITIES.find((e) => e.re.test(trimmed)) ?? EQUITIES[EQUITIES.length - 1];
 
-    const rate = await getPythRate(key);
+    const rate = await getPythRate(stock.key);
     if (!rate || rate.price <= 0) {
-      return json({ type: "error", text: `Unable to fetch ${name} price right now.` });
+      return json({ type: "error", text: `Unable to fetch ${stock.name} price right now.` });
     }
 
     const fmt = rate.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -931,7 +939,7 @@ export async function POST(req: NextRequest) {
       : " (live — US market hours)";
     return json({
       type: "text",
-      text: `${name} (${ticker}): $${fmt}${staleNote}`,
+      text: `${stock.name} (${stock.ticker}): $${fmt}${staleNote}`,
     });
   }
 
