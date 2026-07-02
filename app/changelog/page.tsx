@@ -22,6 +22,17 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   {
+    date: "Jul 2, 2026",
+    title: "Live stock prices, in chat",
+    lede:
+      "Ask for a stock the way you ask for a token — \"HOOD price\", \"MSTR price\", \"NVDA price\" — and Skopos returns a live quote. 29 stocks and ETFs, the TradFi names crypto actually watches, right next to your crypto, yields, and cross-chain swaps.",
+    highlights: [
+      "29 tickers: crypto proxies (MSTR, COIN, HOOD, MARA, RIOT), AI + chips (NVDA, AMD, AVGO, PLTR), indices (SPY, QQQ), and big tech.",
+      "Real quotes via Pyth — live during US market hours, last-close after.",
+      "One box: crypto, stocks, FX, gold, prediction odds, and cross-chain execution, all in the same chat.",
+    ],
+  },
+  {
     date: "Jul 1, 2026",
     title: "The market's narrative, in chat",
     lede:
