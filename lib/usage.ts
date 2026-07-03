@@ -35,6 +35,12 @@ const INTEL_AGENT_DAILY_CAP  = envCap("SMART_MONEY_AGENT_DAILY_CAP", 200);
 // contract as the rest of this module.
 const AEON_AGENT_DAILY_CAP   = envCap("AEON_AGENT_DAILY_CAP", 200);
 
+// Headless text-mode intel reads (format:"text") spend x402 inline, so they get a
+// per-anonId daily cap ON TOP of the global cap. Unlike the rest of this module,
+// this one FAILS CLOSED — no anonId or Redis down → deny, so a headless caller can
+// never drain the USDC budget when metering is unavailable.
+const AGENT_TEXT_INTEL_DAILY_CAP = envCap("AGENT_TEXT_INTEL_DAILY_CAP", 15);
+
 let client: Redis | null = null;
 function getRedis(): Redis | null {
   const url   = process.env.UPSTASH_REDIS_REST_URL;
@@ -218,5 +224,36 @@ export async function incrAeon(): Promise<void> {
     if (count === 1) await redis.expire(aeonGlobalKey(day), TTL_SECONDS);
   } catch (err) {
     console.error("[usage] aeon incr failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+function agentTextIntelKey(anonId: string, day: string): string {
+  return `agenttext:intel:${anonId.slice(0, 64)}:${day}`;
+}
+
+// Fail-CLOSED: no anonId or Redis unavailable → deny (don't spend). This is the
+// spend guard for headless text-mode intel reads.
+export async function checkAgentTextIntelCap(anonId: string | null | undefined): Promise<boolean> {
+  if (!anonId) return false;
+  const redis = getRedis();
+  if (!redis) return false;
+  try {
+    const used = Number((await redis.get<number>(agentTextIntelKey(anonId, utcDay()))) ?? 0);
+    return used < AGENT_TEXT_INTEL_DAILY_CAP;
+  } catch (err) {
+    console.error("[usage] agent-text intel cap check failed (fail-closed):", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+export async function incrAgentTextIntel(anonId: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  const day = utcDay();
+  try {
+    const count = await redis.incr(agentTextIntelKey(anonId, day));
+    if (count === 1) await redis.expire(agentTextIntelKey(anonId, day), TTL_SECONDS);
+  } catch (err) {
+    console.error("[usage] agent-text intel incr failed:", err instanceof Error ? err.message : err);
   }
 }

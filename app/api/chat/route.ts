@@ -33,6 +33,7 @@ import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { parseTimeframe } from "@/lib/timeframe";
 import { aeonEnabled } from "@/lib/bankrAgent";
+import { cardToText } from "@/lib/cardToText";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -450,7 +451,38 @@ const INTEL_STOP = new Set([
   "WHAT", "WHERE", "SMART", "MONEY", "EXCHANGE", "CEX", "FLOW", "FLOWS",
 ]);
 
-export async function POST(req: NextRequest) {
+// Public entry. Peeks `format` from a cloned body (leaving the real body untouched
+// for handleChat), then for format:"text" projects the returned card to plain text
+// for headless clients. Browser (format omitted/"card") path is byte-for-byte
+// unchanged — it never enters the projection branch.
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  let format = "card";
+  let anonId: string | undefined;
+  let senderAddress: string | undefined;
+  try {
+    const peek = await req.clone().json();
+    if (peek?.format === "text") format = "text";
+    if (typeof peek?.anonId === "string") anonId = peek.anonId;
+    if (typeof peek?.senderAddress === "string") senderAddress = peek.senderAddress;
+  } catch {
+    // malformed body — let handleChat produce the canonical error response
+  }
+
+  const res = await handleChat(req);
+  if (format !== "text") return res;
+
+  let card: unknown;
+  try {
+    card = await res.clone().json();
+  } catch {
+    return res;
+  }
+  const type = card && typeof card === "object" && "type" in card ? String((card as { type: unknown }).type) : "text";
+  const text = await cardToText(card, { anonId, senderAddress });
+  return json({ type, text }, { status: res.status });
+}
+
+async function handleChat(req: NextRequest): Promise<NextResponse> {
   // CORS — only allow requests from the production origin and localhost dev
   const origin = req.headers.get("origin") ?? "";
   const allowedOrigins = new Set(["https://www.tryskopos.xyz", "https://tryskopos.xyz"]);
