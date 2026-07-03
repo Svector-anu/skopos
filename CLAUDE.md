@@ -200,3 +200,4 @@ All external fetches use an 8s `AbortController` timeout via `fetchWithTimeout()
 `docs/skopos-system.md` — authoritative architecture reference, update when anything structural changes.
 `docs/skopos-core.md` — deeper architecture and routing waterfall detail.
 `docs/pyth-integration.md` — verified feed IDs, Hermes API endpoints, cross-rate math, staleness rules. Update when adding new Pyth feeds.
+`docs/headless-text-mode.md` — `/api/chat` `format:"text"` for agents/bots (imessage-i, CLI, MCP): request/response contract, per-type text, the fail-closed intel cost cap. Update when adding card types or changing the text projection (`lib/cardToText.ts`).
