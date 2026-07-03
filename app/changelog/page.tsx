@@ -22,6 +22,17 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   {
+    date: "Jul 3, 2026",
+    title: "Skopos, embeddable anywhere",
+    lede:
+      "Skopos's crypto brain now runs headless — any bot, app, or agent can ask it in plain English and get a plain-text answer back. The whole copilot — prices, swaps, portfolios, live smart-money intel — over a single call. First up: an iMessage agent that texts you what the smart money is doing.",
+    highlights: [
+      "Bring Skopos into iMessage, Telegram, a CLI, or an MCP agent with one request.",
+      "Full copilot in text: prices + stocks, swap quotes, portfolios, yields, and live smart-money intel.",
+      "Skopos fronts the data costs on integrations, capped per caller so they stay safe by default.",
+    ],
+  },
+  {
     date: "Jul 2, 2026",
     title: "Live stock prices, in chat",
     lede:
