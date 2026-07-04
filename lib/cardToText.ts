@@ -21,6 +21,20 @@ export interface CardTextCtx {
   senderAddress?: string;
 }
 
+// Execution deep-link for headless clients. Reuses the web app's ?q= auto-submit
+// (app/app/page.tsx) so opening it re-runs the original intent and stages the
+// signable card — no dedicated /swap or /pay route needed. Only for intents that
+// need a signature; headless clients get this link instead of a signable payload.
+const EXECUTE_LINK_TYPES = new Set(["quote", "rebalance", "pay"]);
+
+export function executeLinkFor(card: unknown, message: string | undefined): string | undefined {
+  if (!message || !message.trim()) return undefined;
+  if (!card || typeof card !== "object") return undefined;
+  const type = (card as { type?: unknown }).type;
+  if (typeof type !== "string" || !EXECUTE_LINK_TYPES.has(type)) return undefined;
+  return `${APP}?q=${encodeURIComponent(message.trim())}`;
+}
+
 type Card = Record<string, unknown>;
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -173,7 +187,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       const intent = c.intent as { from?: { token?: string; amount?: string; chain?: string }; to?: { token?: string; chain?: string } } | undefined;
       const route = c.route as { outputAmount?: string; tool?: string } | undefined;
       const f = intent?.from, to = intent?.to;
-      return `Swap ${str(f?.amount)} ${str(f?.token)} on ${str(f?.chain)} → ~${str(route?.outputAmount)} ${str(to?.token)} on ${str(to?.chain)}${route?.tool ? ` (via ${route.tool})` : ""}. Sign in Skopos to execute: ${APP}`;
+      return `Swap ${str(f?.amount)} ${str(f?.token)} on ${str(f?.chain)} → ~${str(route?.outputAmount)} ${str(to?.token)} on ${str(to?.chain)}${route?.tool ? ` (via ${route.tool})` : ""}. Tap to sign in the Skopos app.`;
     }
 
     case "rebalance": {
@@ -235,7 +249,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
     case "pay": {
       const amt = str(c.amountDisplay) || String(num(c.amountWei) ?? "");
       const sym = str(c.tokenSymbol) || "tokens";
-      return `Ready: send ${amt} ${sym} to ${str(c.to)}${c.chainName ? ` on ${str(c.chainName)}` : ""}${c.memoText ? ` for "${str(c.memoText)}"` : ""}. Sign in Skopos to execute: ${APP}`;
+      return `Ready: send ${amt} ${sym} to ${str(c.to)}${c.chainName ? ` on ${str(c.chainName)}` : ""}${c.memoText ? ` for "${str(c.memoText)}"` : ""}. Tap to sign in the Skopos app.`;
     }
 
     default:

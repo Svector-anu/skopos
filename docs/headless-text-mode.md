@@ -49,14 +49,17 @@ Relay `text` verbatim. Your client needs **zero card knowledge**.
 
 Always `{ type, text }` where **`text` is a non-empty plain-text string** (no
 markdown — targets iMessage). `type` is kept so you can still branch if you want.
+Execute intents also carry an optional **`link`** (see below). A future `image`
+field will carry a chart PNG url; clients should ignore fields they don't handle.
 
 | Card `type` | Text you get |
 |---|---|
 | `text`, `error` | passthrough of the existing message |
 | `price` | `ETH (Ethereum): $1.6K · -1.05% 24h · mcap $196.96B` |
 | `intel` (smart-money / holders / screener / flows / flow-intel) | executes the read inline (see **Cost**) → named-wallet summary |
-| `quote` (swap/bridge) | `Swap 0.1 ETH on Base → ~174 USDC on Base (via OKX). Sign in Skopos to execute: <app>` |
-| `pay` | intent explanation + "Sign in Skopos to execute" — **never a signable payload** |
+| `quote` (swap/bridge) | route summary + a **`link`** to sign (never a signable payload) |
+| `rebalance` | multi-leg summary + a **`link`** to sign |
+| `pay` | intent explanation + a **`link`** to sign — **never a signable payload** |
 | `address`, `tx` | the card's existing `summary` |
 | `yield_pools` | top 3 pools with APY + TVL |
 | `polymarket` | top markets with odds |
@@ -66,6 +69,23 @@ markdown — targets iMessage). `type` is kept so you can still branch if you wa
 | `aeon` (narrative / defi read) | **fallback line** → "open Skopos" (60s inline is unreliable on serverless; not executed headless yet) |
 | `paywall` | "connect a wallet" / "subscribe" line |
 | unknown / new | graceful "open Skopos for this: <link>" — never blank, never throws |
+
+---
+
+## Execution handoff (`link`)
+
+Skopos is non-custodial, so headless clients never get a signable payload. Instead,
+execute intents (`quote`, `rebalance`, `pay`) return a **`link`**:
+
+```
+https://www.tryskopos.xyz/app?q=<url-encoded original message>
+```
+
+Opening it drops the user into the Skopos web app, which auto-submits the query and
+re-produces the card **staged to sign** — reusing the normal chat + wallet flow, with
+no dedicated `/swap` or `/pay` route. Execution only ever happens on Skopos; the intent
+syncs through the link. A client appends `link` to its reply (imessage-i already does
+this, so it lights up with no client change).
 
 ---
 
