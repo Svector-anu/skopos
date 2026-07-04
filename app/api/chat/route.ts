@@ -508,7 +508,8 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429, headers: corsHeaders });
   }
 
-  const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage, llmTier, anonId } = await req.json();
+  const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage, llmTier, anonId, format } = await req.json();
+  const textMode = format === "text";
 
   // Fast (Groq) vs Smart (Bankr gateway). Default fast → behaviour unchanged.
   const tier: LlmTier = llmTier === "smart" ? "smart" : "fast";
@@ -1243,6 +1244,8 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   if (looksLikeRebalance(message)) {
     const legs = await parseRebalanceIntent(message);
     if (legs && legs.length >= 2) {
+      // Headless: hand off to the app via the link rather than quoting each leg.
+      if (textMode) return json({ type: "rebalance", mode: "handoff", legs: [] });
       // Validate that legs are actually cross-chain — same-chain legs indicate the LLM couldn't infer origin
       const samechainLegs = legs.filter(l => resolveChainId(l.originChain) === resolveChainId(l.destinationChain));
       if (samechainLegs.length > 0) {
@@ -1474,6 +1477,18 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   const intent = await parseIntent(message);
 
   if (intent) {
+    // Headless clients have no wallet, so a quote build would fail the wallet guard.
+    // Hand the intent off to the app via the link instead of building/quoting.
+    if (textMode) {
+      return json({
+        type: "quote",
+        mode: "handoff",
+        intent: {
+          from: { chain: intent.originChain, token: intent.token, amount: intent.amount },
+          to:   { chain: intent.destinationChain, token: intent.destinationToken || intent.token },
+        },
+      });
+    }
     const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress);
     if (!result.ok) return json({ type: "error", text: result.text });
     const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;

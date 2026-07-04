@@ -213,16 +213,21 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
     }
 
     case "quote": {
-      const intent = c.intent as { from?: { token?: string; amount?: string; chain?: string }; to?: { token?: string; chain?: string } } | undefined;
+      const qi = c.intent as { from?: { token?: string; amount?: string; chain?: string }; to?: { token?: string; chain?: string } } | undefined;
       const route = c.route as { outputAmount?: string; tool?: string } | undefined;
-      const f = intent?.from, to = intent?.to;
-      return `Swap ${str(f?.amount)} ${str(f?.token)} on ${str(f?.chain)} → ~${str(route?.outputAmount)} ${str(to?.token)} on ${str(to?.chain)}${route?.tool ? ` (via ${route.tool})` : ""}. Tap to sign in the Skopos app.`;
+      const f = qi?.from, to = qi?.to;
+      const dest = route?.outputAmount
+        ? `~${str(route.outputAmount)} ${str(to?.token)} on ${str(to?.chain)}`
+        : `${str(to?.token)} on ${str(to?.chain)}`;
+      return `Swap ${str(f?.amount)} ${str(f?.token)} on ${str(f?.chain)} → ${dest}${route?.tool ? ` (via ${route.tool})` : ""}. Tap to sign in the Skopos app.`;
     }
 
     case "rebalance": {
       const legs = Array.isArray(c.legs) ? c.legs : [];
       const ok = legs.filter((l) => (l as Card)?.type === "quote").length;
-      return `Rebalance preview — ${ok} leg${ok === 1 ? "" : "s"} routed. Sign each in Skopos: ${APP}`;
+      return ok > 0
+        ? `Rebalance preview — ${ok} legs routed. Tap to sign in the Skopos app.`
+        : `Rebalance ready. Tap to sign in the Skopos app.`;
     }
 
     case "token_risk": {
