@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Source+Sans+3:wght@400;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; }
+  body {
+    background: #000;
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    color: #fff;
+    position: relative;
+  }
+
+  /* faint terminal grid */
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(120% 100% at 50% 40%, #000 40%, transparent 100%);
+  }
+  /* yellow glow, top-right */
+  .glow {
+    position: absolute; top: -280px; right: -220px;
+    width: 1200px; height: 1200px;
+    background: radial-gradient(circle at center, rgba(245,184,0,0.42), rgba(245,184,0,0.10) 38%, transparent 66%);
+    filter: blur(8px);
+  }
+  .glow2 {
+    position: absolute; bottom: -420px; left: -260px;
+    width: 900px; height: 900px;
+    background: radial-gradient(circle at center, rgba(245,184,0,0.10), transparent 65%);
+  }
+
+  .wrap { position: absolute; inset: 0; display: flex; align-items: center; }
+
+  /* ── left: copy ── */
+  .left { width: 52%; padding: 0 0 0 128px; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 12px;
+    font-family: "JetBrains Mono", monospace; font-weight: 700;
+    font-size: 24px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: #F5B800;
+    padding: 14px 26px; border-radius: 999px;
+    border: 1.5px solid rgba(245,184,0,0.45);
+    background: rgba(245,184,0,0.07);
+  }
+  .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: #F5B800; box-shadow: 0 0 14px 2px rgba(245,184,0,0.8); }
+
+  h1 {
+    font-weight: 800; font-size: 132px; line-height: 0.98;
+    letter-spacing: -0.03em; margin: 40px 0 6px;
+  }
+  h1 .mark { color: #F5B800; }
+  h1 .star { color: #F5B800; font-family: "Source Serif 4", serif; font-weight: 600; }
+
+  .date {
+    display: inline-block; margin-top: 44px;
+    font-family: "JetBrains Mono", monospace; font-weight: 500;
+    font-size: 28px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255,255,255,0.62);
+    padding: 12px 24px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.03);
+  }
+
+  /* ── right: skopos terminal ── */
+  .right { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; }
+  .termglow {
+    position: absolute; width: 760px; height: 620px; border-radius: 40px;
+    background: radial-gradient(circle at 50% 40%, rgba(245,184,0,0.22), transparent 70%);
+    filter: blur(30px);
+  }
+  .term {
+    position: relative; width: 720px;
+    background: linear-gradient(180deg, #0E0E0E, #0A0A0A);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 26px;
+    box-shadow: 0 40px 120px -30px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05);
+    overflow: hidden;
+  }
+  .term .bar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 22px 28px; border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .term .bar .d { width: 13px; height: 13px; border-radius: 50%; }
+  .d.r { background: #ff5f57; } .d.y { background: #F5B800; } .d.g { background: #28c840; }
+  .term .bar .name {
+    margin-left: auto; font-family: "JetBrains Mono", monospace; font-weight: 700;
+    font-size: 21px; letter-spacing: 0.16em; color: rgba(255,255,255,0.55);
+  }
+  .term .bar .name b { color: #F5B800; }
+
+  .term .body { padding: 34px 34px 40px; font-family: "JetBrains Mono", monospace; }
+  .q { font-size: 30px; color: #fff; font-weight: 500; }
+  .q .caret { color: #F5B800; margin-right: 14px; font-weight: 700; }
+
+  .resp { margin-top: 30px; }
+  .resp .head {
+    font-size: 20px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255,255,255,0.42); margin-bottom: 22px;
+  }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; font-size: 27px; }
+  .row .who { color: rgba(255,255,255,0.92); }
+  .row .who .bot { margin-right: 12px; }
+  .row .amt { color: #F5B800; font-weight: 700; }
+  .foot {
+    margin-top: 30px; padding-top: 26px; border-top: 1px solid rgba(255,255,255,0.07);
+    font-size: 23px; color: rgba(255,255,255,0.55); white-space: nowrap;
+  }
+  .foot b { color: #F5B800; }
+
+  /* bottom-left wordmark */
+  .brandline {
+    position: absolute; left: 128px; bottom: 72px;
+    font-family: "JetBrains Mono", monospace; font-size: 25px; letter-spacing: 0.04em;
+    color: rgba(255,255,255,0.5);
+  }
+  .brandline b { color: #fff; }
+  .brandline .u { color: #F5B800; }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow"></div>
+  <div class="glow2"></div>
+
+  <div class="wrap">
+    <div class="left">
+      <div class="pill"><span class="dot"></span> Product Updates</div>
+      <h1>Shipped this<br>week at <span class="star">✦</span> <span class="mark">skopos</span></h1>
+      <div class="date">Jun 27 – Jul 3</div>
+    </div>
+
+    <div class="right">
+      <div class="termglow"></div>
+      <div class="term">
+        <div class="bar">
+          <span class="d r"></span><span class="d y"></span><span class="d g"></span>
+          <span class="name">✦ <b>skopos</b></span>
+        </div>
+        <!-- Swap this .body block each week to feature the week's headline shipment.
+             Keep the numbers real — the terminal doubles as branding + a live demo. -->
+        <div class="body">
+          <div class="q"><span class="caret">›</span>who's buying $aero</div>
+          <div class="resp">
+            <div class="head">$AERO · top buyers · 30d</div>
+            <div class="row"><span class="who"><span class="bot">🤖</span>Wintermute Market Making</span><span class="amt">+$10.69M</span></div>
+            <div class="row"><span class="who">Token Millionaire</span><span class="amt">+$1.02M</span></div>
+            <div class="row"><span class="who">High Balance</span><span class="amt">+$681.7K</span></div>
+            <div class="foot">net <b>accumulating $15.54M</b> · no wallet, no signing</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="brandline"><b>tryskopos.xyz</b> &nbsp;·&nbsp; cross-chain defi copilot &nbsp;·&nbsp; <span class="u">say it, it executes</span></div>
+</body>
+</html>
