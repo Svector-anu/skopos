@@ -47,6 +47,32 @@ function fmtUsd(x: number): string {
   return `${x < 0 ? "-" : ""}$${s}`;
 }
 
+// Compact unicode sparkline from a price series — renders in plain text (iMessage),
+// no image, no endpoint. Downsamples to `width` bars scaled to the true low/high.
+const SPARK_TICKS = "▁▂▃▄▅▆▇█";
+function downsample(data: number[], n: number): number[] {
+  if (data.length <= n) return data;
+  const out: number[] = [];
+  const step = data.length / n;
+  for (let i = 0; i < n; i++) {
+    const slice = data.slice(Math.floor(i * step), Math.max(Math.floor((i + 1) * step), Math.floor(i * step) + 1));
+    out.push(slice.reduce((a, b) => a + b, 0) / slice.length);
+  }
+  return out;
+}
+function sparkline(raw: unknown, width = 24): { bars: string; lo: number; hi: number; chg: number } | null {
+  if (!Array.isArray(raw)) return null;
+  const data = raw.filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+  if (data.length < 2) return null;
+  const lo = Math.min(...data), hi = Math.max(...data), range = hi - lo || 1;
+  const bars = downsample(data, width)
+    .map((v) => SPARK_TICKS[Math.max(0, Math.min(7, Math.round(((v - lo) / range) * 7)))])
+    .join("");
+  const first = data[0];
+  const chg = first ? ((data[data.length - 1] - first) / first) * 100 : 0;
+  return { bars, lo, hi, chg };
+}
+
 // ── shared Nansen row helpers ────────────────────────────────────────────────
 function rowsOf(data: unknown): Card[] {
   if (Array.isArray(data)) return data as Card[];
@@ -180,7 +206,10 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       const name = str(c.name);
       const price = num(c.price), chg = num(c.change24h), mc = num(c.marketCap);
       const head = name ? `${sym} (${name})` : sym;
-      return `${head}: ${price !== null ? fmtUsd(price) : "—"}${chg !== null ? ` · ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% 24h` : ""}${mc !== null ? ` · mcap ${fmtUsd(mc)}` : ""}`;
+      const line = `${head}: ${price !== null ? fmtUsd(price) : "—"}${chg !== null ? ` · ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% 24h` : ""}${mc !== null ? ` · mcap ${fmtUsd(mc)}` : ""}`;
+      const sp = sparkline(c.sparkline);
+      if (!sp) return line;
+      return `${line}\n${sp.bars}  7d ${sp.chg >= 0 ? "+" : ""}${sp.chg.toFixed(1)}% · ${fmtUsd(sp.lo)}–${fmtUsd(sp.hi)}`;
     }
 
     case "quote": {

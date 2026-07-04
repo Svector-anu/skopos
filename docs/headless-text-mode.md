@@ -55,7 +55,7 @@ field will carry a chart PNG url; clients should ignore fields they don't handle
 | Card `type` | Text you get |
 |---|---|
 | `text`, `error` | passthrough of the existing message |
-| `price` | `ETH (Ethereum): $1.6K · -1.05% 24h · mcap $196.96B` |
+| `price` | summary line + a unicode 7d sparkline line, e.g. `ETH (Ethereum): $1.6K · -1.05% 24h · mcap $196.96B` / `▂▂▃▅▆▇█  7d +11.6% · $1.6K–$1.8K` |
 | `intel` (smart-money / holders / screener / flows / flow-intel) | executes the read inline (see **Cost**) → named-wallet summary |
 | `quote` (swap/bridge) | route summary + a **`link`** to sign (never a signable payload) |
 | `rebalance` | multi-leg summary + a **`link`** to sign |
