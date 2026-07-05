@@ -1,0 +1,31 @@
+{
+  "name": "skopos-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Skopos — the cross-chain DeFi copilot (prices, smart-money intel, swaps, bridges) as an installable agent skill.",
+  "type": "module",
+  "bin": {
+    "skopos-mcp": "index.js"
+  },
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "skopos",
+    "defi",
+    "crypto",
+    "agent",
+    "skill"
+  ],
+  "license": "MIT",
+  "homepage": "https://www.tryskopos.xyz"
+}
