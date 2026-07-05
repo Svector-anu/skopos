@@ -13,6 +13,19 @@ opt-in projection that returns a single plain-text answer instead.
 
 ---
 
+## Three ways to embed Skopos
+
+Same headless API, three consumer-shaped on-ramps — all wrap the API below, which is
+the foundation:
+
+| You are building | Use | Where |
+|---|---|---|
+| a bot/app with its own runtime (imessage-i, Telegram, WhatsApp) | the raw API | this doc |
+| an agent that loads skills (Claude, Cursor, Aeon) | the `skopos` skill | [`skills/skopos/SKILL.md`](../skills) |
+| an MCP-native client (Claude Desktop, Cursor, `zero mcp`) | the `skopos-mcp` server | [`mcp/`](../mcp) |
+
+---
+
 ## Quick start
 
 ```bash
