@@ -178,7 +178,7 @@ function CommandRow({ prompt, desc }: Command) {
 
 export default function DocsPage() {
   return (
-    <main style={{ minHeight: "100vh", background: "#000000", color: "#ffffff" }}>
+    <main style={{ minHeight: "100vh", background: "#000000", color: "#ffffff", textTransform: "lowercase" }}>
       <CornerBrackets />
 
       <header
