@@ -485,6 +485,48 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return json({ type, text, ...(link ? { link } : {}) }, { status: res.status });
 }
 
+// /api/chat is POST-only. A browser click sends GET — instead of a bare error,
+// serve a small on-brand teapot with the curl that actually works. 418, obviously.
+export function GET(): NextResponse {
+  const html = `<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>skopos api · 418</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:grid;place-items:center;background:#000;color:#e8e8e8;font-family:'JetBrains Mono',ui-monospace,monospace;padding:24px;background-image:radial-gradient(60% 50% at 72% -10%,rgba(245,184,0,.16),transparent 70%)}
+.term{width:100%;max-width:660px;background:#0c0c0c;border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;box-shadow:0 30px 90px -30px #000}
+.bar{display:flex;gap:8px;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
+.bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+.r{background:#ff5f57}.y{background:#F5B800}.g{background:#28c840}
+.bar b{margin-left:auto;color:rgba(255,255,255,.5);letter-spacing:.14em;font-size:13px;font-weight:700}
+.bar b span{color:#F5B800}
+.body{padding:22px;font-size:14px;line-height:1.7}
+.p{color:#F5B800}.dim{color:rgba(255,255,255,.45)}
+p{margin:14px 0}
+pre{margin:14px 0;padding:14px;background:rgba(245,184,0,.05);border:1px solid rgba(245,184,0,.16);border-radius:10px;white-space:pre-wrap;word-break:break-word;font-size:12.5px;color:#fff}
+a{color:#F5B800;text-decoration:none}
+</style></head><body>
+<div class="term">
+  <div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><b>&#10022; <span>skopos</span></b></div>
+  <div class="body">
+    <div><span class="p">&gt;</span> GET /api/chat</div>
+    <div class="dim">418 &mdash; i'm a teapot &#129380; (well, a POST-only api)</div>
+    <p>you can't read the smart money by staring at a url. this endpoint only speaks POST. talk to it:</p>
+<pre>curl -sX POST https://www.tryskopos.xyz/api/chat \\
+  -H 'content-type: application/json' \\
+  -d '{"message":"who is buying $aero","format":"text"}'</pre>
+    <div class="dim">&rarr; named wallets, in plain text.</div>
+    <p class="dim" style="margin-top:16px">built for bots, agents &amp; blue bubbles.<br>say it, it executes &middot; <a href="https://www.tryskopos.xyz">tryskopos.xyz</a></p>
+  </div>
+</div>
+</body></html>`;
+  return new NextResponse(html, {
+    status: 418,
+    headers: { "content-type": "text/html; charset=utf-8", "x-skopos": "say it, it executes", ...NO_CACHE },
+  });
+}
+
 async function handleChat(req: NextRequest): Promise<NextResponse> {
   // CORS — only allow requests from the production origin and localhost dev
   const origin = req.headers.get("origin") ?? "";
