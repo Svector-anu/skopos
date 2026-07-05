@@ -460,12 +460,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let anonId: string | undefined;
   let senderAddress: string | undefined;
   let message: string | undefined;
+  let sparkline: boolean | undefined;
   try {
     const peek = await req.clone().json();
     if (peek?.format === "text") format = "text";
     if (typeof peek?.anonId === "string") anonId = peek.anonId;
     if (typeof peek?.senderAddress === "string") senderAddress = peek.senderAddress;
     if (typeof peek?.message === "string") message = peek.message;
+    if (typeof peek?.sparkline === "boolean") sparkline = peek.sparkline;
   } catch {
     // malformed body — let handleChat produce the canonical error response
   }
@@ -480,7 +482,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return res;
   }
   const type = card && typeof card === "object" && "type" in card ? String((card as { type: unknown }).type) : "text";
-  const text = await cardToText(card, { anonId, senderAddress });
+  const text = await cardToText(card, { anonId, senderAddress, sparkline });
   const link = executeLinkFor(card, message);
   return json({ type, text, ...(link ? { link } : {}) }, { status: res.status });
 }

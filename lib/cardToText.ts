@@ -19,6 +19,7 @@ const SITE = "https://www.tryskopos.xyz";
 export interface CardTextCtx {
   anonId?: string;
   senderAddress?: string;
+  sparkline?: boolean; // default true; set false to omit the ASCII price sparkline
 }
 
 // Execution deep-link for headless clients. Reuses the web app's ?q= auto-submit
@@ -207,7 +208,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       const price = num(c.price), chg = num(c.change24h), mc = num(c.marketCap);
       const head = name ? `${sym} (${name})` : sym;
       const line = `${head}: ${price !== null ? fmtUsd(price) : "—"}${chg !== null ? ` · ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% 24h` : ""}${mc !== null ? ` · mcap ${fmtUsd(mc)}` : ""}`;
-      const sp = sparkline(c.sparkline);
+      const sp = ctx.sparkline === false ? null : sparkline(c.sparkline);
       if (!sp) return line;
       return `${line}\n${sp.bars}  7d ${sp.chg >= 0 ? "+" : ""}${sp.chg.toFixed(1)}% · ${fmtUsd(sp.lo)}–${fmtUsd(sp.hi)}`;
     }
