@@ -16,7 +16,7 @@ const server = new McpServer({ name: "skopos", version: "0.1.0" });
 
 server.tool(
   "skopos_ask",
-  "Ask Skopos, a cross-chain DeFi copilot, anything in plain English and get a concise text answer. Handles: token and stock prices (with a 7d trend), smart-money intel (who is buying/holding/dumping a token, via Nansen), yields, and market reads. For swaps, bridges and payments it returns a link the user opens to sign in the Skopos app (execution is non-custodial — never a signable payload here).",
+  "Ask Skopos, a cross-chain DeFi copilot, anything in plain English and get a concise text answer. Handles: token/stock/currency/metal prices (with a 7d trend on tokens), smart-money intel (who is buying/holding/dumping a token, accumulation flows, cross-chain screener, via Nansen), yields, token safety/rug checks, wallet/ENS/transaction lookups, prediction markets, and general crypto questions. For swaps, bridges and payments it returns a link the user opens to sign in the Skopos app (execution is non-custodial — never a signable payload here).",
   {
     message: z
       .string()
