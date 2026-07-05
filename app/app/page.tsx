@@ -1506,6 +1506,10 @@ export default function AppPage() {
 
 function AutoSubmit({ onSubmit }: { onSubmit: (q: string) => void }) {
   const searchParams = useSearchParams();
+  // Hold the latest onSubmit in a ref so it isn't an effect dependency — otherwise
+  // the effect re-runs on every render (onSubmit is recreated each render).
+  const onSubmitRef = useRef(onSubmit);
+  onSubmitRef.current = onSubmit;
   const fired = useRef(false);
 
   useEffect(() => {
@@ -1513,10 +1517,11 @@ function AutoSubmit({ onSubmit }: { onSubmit: (q: string) => void }) {
     const q = searchParams.get("q");
     if (!q) return;
     fired.current = true;
-    // Defer one tick so AppPage state is fully initialised
-    const t = setTimeout(() => onSubmit(q), 80);
-    return () => clearTimeout(t);
-  }, [searchParams, onSubmit]);
+    // Defer a tick so app state is initialised. Deliberately NO cleanup: a
+    // re-render within the delay (Privy/wallet init on prod/mobile) must not cancel
+    // the pending submit — that was the bug that stopped the ?q= handoff firing.
+    setTimeout(() => onSubmitRef.current(q), 150);
+  }, [searchParams]);
 
   return null;
 }
