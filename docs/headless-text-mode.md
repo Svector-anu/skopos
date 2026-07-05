@@ -46,6 +46,7 @@ Relay `text` verbatim. Your client needs **zero card knowledge**.
 {
   "message": "<the user's text>",          // required
   "format": "text",                          // "text" | "card" (default "card")
+  "sparkline": true,                         // optional — set false to omit the ASCII price sparkline
   "anonId": "<stable per-conversation id>",  // REQUIRED for text-mode intel (cost cap key)
   "senderAddress": "0x…",                    // optional — unlocks that address's tier
   "solanaAddress": "…",                      // optional — Solana leg
