@@ -87,4 +87,4 @@ Response shape:
 ## Config
 
 - Endpoint: `https://www.tryskopos.xyz/api/chat` (override with `SKOPOS_API_URL` for a local/dev instance).
-- Full API contract: https://github.com/Svector-anu/skopos/blob/main/docs/headless-text-mode.md
+- The `curl` above is the whole contract — this skill is self-contained. More at https://www.tryskopos.xyz

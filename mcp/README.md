@@ -63,4 +63,4 @@ intents).
 
 - Non-custodial: the agent never gets a signable payload. Anything requiring a
   signature returns a link the user opens in the Skopos web app.
-- Full API contract: [`docs/headless-text-mode.md`](https://github.com/Svector-anu/skopos/blob/main/docs/headless-text-mode.md).
+- More at [tryskopos.xyz](https://www.tryskopos.xyz).
