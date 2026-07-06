@@ -12,6 +12,7 @@ import {
 } from "./smartMoneyServer";
 import { checkAgentTextIntelCap, incrAgentTextIntel, checkIntelBudget, incrIntel } from "./usage";
 import { isTimeframe } from "./timeframe";
+import { getAeonRead } from "./aeonFeed";
 
 const APP = "https://www.tryskopos.xyz/app";
 const SITE = "https://www.tryskopos.xyz";
@@ -273,8 +274,12 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
     case "intel":
       return renderIntel(c, ctx);
 
-    case "aeon":
-      return `Market reads take ~a minute — open Skopos for the ${str(c.kind) === "defi" ? "DeFi read" : "narrative map"}: ${SITE}`;
+    case "aeon": {
+      const kind = str(c.kind) === "defi" ? "defi" : "narrative";
+      const read = await getAeonRead(kind);
+      if (read) return read;
+      return `Market reads take ~a minute — open Skopos for the ${kind === "defi" ? "DeFi read" : "narrative map"}: ${SITE}`;
+    }
 
     case "paywall":
       return str(c.reason) === "connect"

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { submitAgentPrompt, aeonEnabled } from "@/lib/bankrAgent";
+import { getAeonRead } from "@/lib/aeonFeed";
 import { checkAeonBudget, incrAeon } from "@/lib/usage";
 
 export const dynamic = "force-dynamic";
@@ -17,16 +18,23 @@ const PROMPTS: Record<string, string> = {
 // /api/aeon/job for the result, because reads run 50-70s (beyond serverless
 // limits). Budget is charged on submit (the agent runs regardless of polling).
 export async function POST(req: NextRequest) {
-  if (!aeonEnabled()) {
-    return Response.json({ ok: false, error: "Aeon reads are not enabled." }, { status: 503 });
-  }
-
   let kind: string;
   try {
     const body = await req.json();
     kind = typeof body?.kind === "string" ? body.kind : "";
   } catch {
     return Response.json({ ok: false, error: "Invalid request body." }, { status: 400 });
+  }
+
+  // Prefer the cached fork read — free and instant. Only when the fork hasn't
+  // produced this read yet do we fall through to the Bankr agent (async job).
+  if (kind === "defi" || kind === "narrative") {
+    const read = await getAeonRead(kind);
+    if (read) return Response.json({ ok: true, text: read }, { status: 200 });
+  }
+
+  if (!aeonEnabled()) {
+    return Response.json({ ok: false, error: "Aeon reads are not enabled." }, { status: 503 });
   }
 
   const prompt = PROMPTS[kind];

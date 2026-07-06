@@ -3142,6 +3142,12 @@ function AeonDisplay({ result }: { result: AeonResult }) {
         body: JSON.stringify({ kind }),
       });
       const subData = await sub.json();
+      // Cache hit from the Aeon fork — the read is already here, no polling.
+      if (sub.ok && subData.ok && typeof subData.text === "string" && subData.text) {
+        setText(subData.text);
+        setState("done");
+        return;
+      }
       if (!sub.ok || !subData.ok || !subData.jobId) {
         setState("error");
         setMessage(subData.error ?? "Couldn't start the read.");
