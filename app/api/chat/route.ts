@@ -33,7 +33,7 @@ import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { parseTimeframe } from "@/lib/timeframe";
 import { aeonEnabled } from "@/lib/bankrAgent";
-import { cardToText, executeLinkFor } from "@/lib/cardToText";
+import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -484,7 +484,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const type = card && typeof card === "object" && "type" in card ? String((card as { type: unknown }).type) : "text";
   const text = await cardToText(card, { anonId, senderAddress, sparkline });
   const link = executeLinkFor(card, message);
-  return json({ type, text, ...(link ? { link } : {}) }, { status: res.status });
+  const image = chartImageFor(card);
+  return json({ type, text, ...(link ? { link } : {}), ...(image ? { image } : {}) }, { status: res.status });
 }
 
 // /api/chat is POST-only. A browser click sends GET — instead of a bare error,

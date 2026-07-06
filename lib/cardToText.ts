@@ -37,6 +37,19 @@ export function executeLinkFor(card: unknown, message: string | undefined): stri
   return `${APP}?q=${encodeURIComponent(message.trim())}`;
 }
 
+// Chart PNG url for price cards (the `image` response field). Self-contained: the
+// route (/api/og/chart) re-fetches its own data, so the url is all a client needs.
+// Only emitted when the card has real 7d data, so clients never get a blank chart.
+export function chartImageFor(card: unknown): string | undefined {
+  if (!card || typeof card !== "object") return undefined;
+  const c = card as { type?: unknown; symbol?: unknown; sparkline?: unknown };
+  if (c.type !== "price") return undefined;
+  const symbol = typeof c.symbol === "string" ? c.symbol.trim() : "";
+  if (!symbol) return undefined;
+  if (!Array.isArray(c.sparkline) || c.sparkline.length < 2) return undefined;
+  return `${SITE}/api/og/chart?token=${encodeURIComponent(symbol)}`;
+}
+
 type Card = Record<string, unknown>;
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
