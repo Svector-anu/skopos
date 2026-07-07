@@ -598,6 +598,7 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
     `Value: ${tx.valueEth} ${tx.chainId === 137 ? "POL" : "ETH"}`,
     `Gas cost: ${tx.gasCostEth} ETH`,
     tx.method ? `Method: ${tx.method}` : null,
+    tx.approval ? `Approval granted to ${tx.approval.spender}${tx.approval.unlimited ? " (UNLIMITED allowance)" : " (capped allowance)"}` : null,
     `Log events: ${tx.logCount}`,
     tx.timestamp ? `Time: ${new Date(tx.timestamp * 1000).toUTCString()}` : null,
   ].filter(Boolean).join("\n");

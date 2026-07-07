@@ -45,6 +45,27 @@ const METHOD_SIGS: Record<string, string> = {
   "0x0d5f0e3b": "fillLimitOrder (0x)",
 };
 
+// Decode an ERC-20 approve(address spender, uint256 amount) call.
+// Layout: 0x095ea7b3 | spender (32B, right-aligned 20B) | amount (32B).
+// Anything >= 2^255 is treated as unlimited — covers type(uint256).max and the
+// common "infinite" allowances that make wallet-drainer approvals dangerous.
+// 2^255 — an allowance at or above this is effectively unlimited (covers
+// type(uint256).max). Built via the BigInt constructor, not a `255n` literal,
+// since the project's tsconfig target predates BigInt literals.
+const UNLIMITED_APPROVAL_MIN = BigInt("57896044618658097711785492504343953926634992332820282019728792003956564819968");
+
+function decodeApprove(input: string | undefined): { spender: string; unlimited: boolean } | null {
+  if (!input || input.length < 138) return null;
+  const spender = ("0x" + input.slice(34, 74)).toLowerCase();
+  let amount: bigint;
+  try {
+    amount = BigInt("0x" + input.slice(74, 138));
+  } catch {
+    return null;
+  }
+  return { spender, unlimited: amount >= UNLIMITED_APPROVAL_MIN };
+}
+
 // ── internal helpers ──────────────────────────────────────────────────────────
 
 const TIMEOUT_MS = 8000;
@@ -135,6 +156,7 @@ export async function lookupTx(hash: string): Promise<TxData | null> {
       const gasPrice   = hexToNum(tx.gasPrice ?? tx.maxFeePerGas);
       const gasCostEth = ((gasUsed * gasPrice) / 1e18).toFixed(6);
       const method     = tx.input?.length >= 10 ? (METHOD_SIGS[tx.input.slice(0, 10)] ?? null) : null;
+      const approval   = method === "approve" ? decodeApprove(tx.input) : null;
       const statusCode = receipt ? hexToNum(receipt.status) : -1;
       const status: TxData["status"] = statusCode === 1 ? "success" : statusCode === 0 ? "failed" : "pending";
 
@@ -151,6 +173,7 @@ export async function lookupTx(hash: string): Promise<TxData | null> {
         gasUsed:     gasUsed.toString(),
         gasCostEth,
         method,
+        approval,
         timestamp:   block?.timestamp ? hexToNum(block.timestamp) : null,
         logCount:    receipt?.logs?.length ?? 0,
       } satisfies TxData;

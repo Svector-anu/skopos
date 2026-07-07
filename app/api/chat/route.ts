@@ -1109,8 +1109,11 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   if (/^0x[0-9a-fA-F]{64}$/.test(trimmed)) {
     const tx = await lookupTx(trimmed);
     if (tx) {
-      const summary = await generateTxSummary(tx);
-      return json({ type: "tx", tx, summary });
+      const llmSummary = await generateTxSummary(tx);
+      const flag = tx.approval?.unlimited
+        ? `⚠️ Unlimited token approval — this granted ${tx.approval.spender.slice(0, 6)}…${tx.approval.spender.slice(-4)} permission to move that token from the sender's wallet with no cap. If you don't recognize the spender, revoke the allowance.\n\n`
+        : "";
+      return json({ type: "tx", tx, summary: flag + llmSummary });
     }
     return json({ type: "error", text: "Transaction not found on any supported chain." });
   }

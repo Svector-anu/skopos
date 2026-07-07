@@ -13,6 +13,9 @@ export interface TxData {
   method: string | null;
   timestamp: number | null;
   logCount: number;
+  // Present only for ERC-20 approve() calls — the spender granted an allowance,
+  // and whether that allowance is effectively unlimited (the classic drainer vector).
+  approval: { spender: string; unlimited: boolean } | null;
 }
 
 export interface Transfer {
