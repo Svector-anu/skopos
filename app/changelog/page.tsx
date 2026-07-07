@@ -22,6 +22,28 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   {
+    date: "Jul 7, 2026",
+    title: "Spot a drainer before you sign",
+    lede:
+      "Paste any transaction hash and Skopos reads it back in plain English — and flags the dangerous parts. Unlimited token approvals (the setup behind most wallet drains) and honeypot tokens (you can buy but you can't sell) now get a clear warning, across 10 chains, not just one.",
+    highlights: [
+      "Unlimited-approval warning — catch the \"approve everything\" that lets a contract move a token out of your wallet anytime.",
+      "Honeypot flag — a token with buys but zero sells is marked CRITICAL before you ape in.",
+      "Multi-chain by default: Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, and more, in one read.",
+    ],
+  },
+  {
+    date: "Jul 6, 2026",
+    title: "The market read, now instant and everywhere",
+    lede:
+      "The daily market reads got wider and faster. Alongside the narrative map and DeFi regime, ask \"what's trending\" or \"top DeFi protocols\" — and every read now answers instantly, in the app and over iMessage and Telegram.",
+    highlights: [
+      "Two new reads: what's trending on CoinGecko, and the biggest protocols by TVL with their weekly move.",
+      "Instant — served from a live feed that refreshes on its own, no waiting on an agent.",
+      "Everywhere — the same reads now land in iMessage and Telegram, not just the app.",
+    ],
+  },
+  {
     date: "Jul 3, 2026",
     title: "Skopos, embeddable anywhere",
     lede:
