@@ -50,6 +50,16 @@ export function chartImageFor(card: unknown): string | undefined {
   return `${SITE}/api/og/chart?token=${encodeURIComponent(symbol)}`;
 }
 
+const RISK_FLAG_LABELS: Record<string, string> = {
+  NO_LIQUIDITY: "no meaningful liquidity",
+  VOLUME_SPIKE: "abnormal volume spike",
+  SINGLE_POOL: "only 1 liquidity pool",
+  NEW_TOKEN: "token < 7 days old",
+  HIGH_VOLATILITY: "price moved >50% in 24h",
+  HEAVY_SELLING: "heavy sell pressure",
+  POSSIBLE_HONEYPOT: "buys but no sells — possible honeypot",
+};
+
 type Card = Record<string, unknown>;
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -247,7 +257,8 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
 
     case "token_risk": {
       const risk = c.risk as { symbol?: string; label?: string; score?: number; priceUsd?: string; flags?: string[] } | undefined;
-      const flags = Array.isArray(risk?.flags) && risk!.flags.length ? ` Flags: ${risk!.flags.join(", ")}.` : "";
+      const flagList = Array.isArray(risk?.flags) ? risk!.flags.map((f) => RISK_FLAG_LABELS[f] ?? f) : [];
+      const flags = flagList.length ? ` Flags: ${flagList.join(", ")}.` : "";
       return `${str(risk?.symbol)} risk: ${str(risk?.label)} (${risk?.score ?? "?"}/4).${risk?.priceUsd ? ` $${risk.priceUsd}.` : ""}${flags}`;
     }
 

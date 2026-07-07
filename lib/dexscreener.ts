@@ -73,6 +73,7 @@ async function fetchSparkline(symbol: string): Promise<number[] | undefined> {
 }
 
 function scoreRisk(liquidityUsd: number, flags: string[]): 1 | 2 | 3 | 4 {
+  if (flags.includes("POSSIBLE_HONEYPOT"))                      return 4; // can't-sell overrides liquidity
   if (liquidityUsd < 10_000 || flags.includes("NO_LIQUIDITY"))  return 4;
   if (liquidityUsd < 100_000 || flags.length >= 3)              return 3;
   if (liquidityUsd < 500_000 || flags.length >= 1)              return 2;
@@ -191,6 +192,9 @@ export async function scanToken(query: string): Promise<TokenRisk | null> {
   const buys  = top.txns?.h24?.buys  ?? 0;
   const sells = top.txns?.h24?.sells ?? 0;
   if (buys + sells > 0 && sells / (buys + sells) > 0.7)        flags.push("HEAVY_SELLING");
+  // Buys but no sells over 24h = a strong "can't sell" / honeypot signal. Require a
+  // few buys so a brand-new quiet pair isn't mislabeled.
+  if (buys >= 5 && sells === 0)                                flags.push("POSSIBLE_HONEYPOT");
 
   const score = scoreRisk(totalLiquidity, flags);
   const LABELS = { 1: "LOW", 2: "MEDIUM", 3: "HIGH", 4: "CRITICAL" } as const;

@@ -3733,6 +3733,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
     NEW_TOKEN:       "Token < 7 days old",
     HIGH_VOLATILITY: "Price moved >50% in 24h",
     HEAVY_SELLING:   "Heavy sell pressure",
+    POSSIBLE_HONEYPOT: "Buys but no sells — possible honeypot",
   };
 
   return (
