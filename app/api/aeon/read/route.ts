@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { submitAgentPrompt, aeonEnabled } from "@/lib/bankrAgent";
-import { getAeonRead } from "@/lib/aeonFeed";
+import { getAeonRead, type AeonKind } from "@/lib/aeonFeed";
 import { checkAeonBudget, incrAeon } from "@/lib/usage";
 
 export const dynamic = "force-dynamic";
@@ -26,20 +26,23 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: false, error: "Invalid request body." }, { status: 400 });
   }
 
-  // Prefer the cached fork read — free and instant. Only when the fork hasn't
-  // produced this read yet do we fall through to the Bankr agent (async job).
-  if (kind === "defi" || kind === "narrative") {
-    const read = await getAeonRead(kind);
+  // Prefer the cached fork read — free and instant. defi/narrative fall through to
+  // the Bankr agent on a miss; trending/protocols are cache-only.
+  const AEON_KINDS = new Set(["defi", "narrative", "trending", "protocols"]);
+  if (AEON_KINDS.has(kind)) {
+    const read = await getAeonRead(kind as AeonKind);
     if (read) return Response.json({ ok: true, text: read }, { status: 200 });
-  }
-
-  if (!aeonEnabled()) {
-    return Response.json({ ok: false, error: "Aeon reads are not enabled." }, { status: 503 });
   }
 
   const prompt = PROMPTS[kind];
   if (!prompt) {
-    return Response.json({ ok: false, error: "Unsupported read." }, { status: 400 });
+    return AEON_KINDS.has(kind)
+      ? Response.json({ ok: false, error: "That read isn't ready yet — try again in a moment." }, { status: 503 })
+      : Response.json({ ok: false, error: "Unsupported read." }, { status: 400 });
+  }
+
+  if (!aeonEnabled()) {
+    return Response.json({ ok: false, error: "Aeon reads are not enabled." }, { status: 503 });
   }
 
   if (!(await checkAeonBudget())) {

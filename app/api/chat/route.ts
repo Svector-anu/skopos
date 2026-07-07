@@ -659,6 +659,38 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // ── Aeon Trending read — "what's trending" (CoinGecko). Free: harvested from the
+  // same market-context.md the DeFi cron already commits. Token guard so a token
+  // query routes to Nansen intel. Narrower than the smart-money screener's
+  // "trending tokens/coins/plays", which stays token-discovery.
+  if (
+    !/\$[a-zA-Z]|\b0x[0-9a-fA-F]{40}\b/.test(trimmed) &&
+    /\bwhat(?:'?s|s| is)?\s+trending\b|\btrending\s+(?:on\s+)?coingecko\b|\bcoingecko\s+trending\b/i.test(trimmed)
+  ) {
+    return json({
+      type: "aeon",
+      kind: "trending",
+      title: "What's trending",
+      subtitle: "The coins climbing CoinGecko right now, with why each is moving.",
+      premium: { available: true, label: "Get the read", note: "Free · powered by Aeon" },
+    });
+  }
+
+  // ── Aeon Top-protocols read — "top defi protocols / biggest TVL". Free: same
+  // market-context.md source. Token guard as above.
+  if (
+    !/\$[a-zA-Z]|\b0x[0-9a-fA-F]{40}\b/.test(trimmed) &&
+    /\btop\s+(?:defi\s+)?protocols?\b|\bbiggest\s+(?:defi\s+)?protocols?\b|\bwhere(?:'?s|s| is)?\s+(?:the\s+)?tvl\b|\b(?:biggest|highest|most)\s+tvl\b|\btvl\s+(?:leaders?|rankings?|leaderboard)\b/i.test(trimmed)
+  ) {
+    return json({
+      type: "aeon",
+      kind: "protocols",
+      title: "Top DeFi protocols",
+      subtitle: "The biggest protocols by TVL and how they moved this week.",
+      premium: { available: true, label: "Get the read", note: "Free · powered by Aeon" },
+    });
+  }
+
   // ── Smart-money screener — discovery, no token. "what is smart money buying".
   if (/\bwhat(?:'s|s| is| are)?\s+(?:the\s+)?smart\s+money\s+(?:buying|accumulating|aping|into|loading|grabbing)\b|\bsmart\s+money\s+screener\b|\btrending\s+(?:smart\s+money\s+)?(?:tokens?|coins?|plays?)\b|\bwhat\s+should\s+i\s+(?:buy|ape|look\s+at)\b/i.test(trimmed)) {
     const CHAIN_ALIAS: Record<string, string> = { eth: "ethereum", ethereum: "ethereum", base: "base", solana: "solana", sol: "solana", arbitrum: "arbitrum", arb: "arbitrum", polygon: "polygon", matic: "polygon" };

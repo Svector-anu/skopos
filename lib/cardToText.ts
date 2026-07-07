@@ -12,7 +12,7 @@ import {
 } from "./smartMoneyServer";
 import { checkAgentTextIntelCap, incrAgentTextIntel, checkIntelBudget, incrIntel } from "./usage";
 import { isTimeframe } from "./timeframe";
-import { getAeonRead } from "./aeonFeed";
+import { getAeonRead, type AeonKind } from "./aeonFeed";
 
 const APP = "https://www.tryskopos.xyz/app";
 const SITE = "https://www.tryskopos.xyz";
@@ -288,10 +288,12 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       return renderIntel(c, ctx);
 
     case "aeon": {
-      const kind = str(c.kind) === "defi" ? "defi" : "narrative";
+      const rawKind = str(c.kind);
+      const kind: AeonKind = (["defi", "narrative", "trending", "protocols"].includes(rawKind) ? rawKind : "defi") as AeonKind;
       const read = await getAeonRead(kind);
       if (read) return read;
-      return `Market reads take ~a minute — open Skopos for the ${kind === "defi" ? "DeFi read" : "narrative map"}: ${SITE}`;
+      const label = { defi: "DeFi read", narrative: "narrative map", trending: "trending list", protocols: "top protocols" }[kind];
+      return `Open Skopos for the ${label}: ${SITE}`;
     }
 
     case "paywall":
