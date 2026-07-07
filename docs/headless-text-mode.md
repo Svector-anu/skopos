@@ -63,13 +63,14 @@ Relay `text` verbatim. Your client needs **zero card knowledge**.
 
 Always `{ type, text }` where **`text` is a non-empty plain-text string** (no
 markdown — targets iMessage). `type` is kept so you can still branch if you want.
-Execute intents also carry an optional **`link`** (see below). A future `image`
-field will carry a chart PNG url; clients should ignore fields they don't handle.
+Execute intents also carry an optional **`link`** (see below), and `price`
+responses carry an optional **`image`** (a chart PNG url). Clients should ignore
+fields they don't handle.
 
 | Card `type` | Text you get |
 |---|---|
 | `text`, `error` | passthrough of the existing message |
-| `price` | summary line + a unicode 7d sparkline line, e.g. `ETH (Ethereum): $1.6K · -1.05% 24h · mcap $196.96B` / `▂▂▃▅▆▇█  7d +11.6% · $1.6K–$1.8K` |
+| `price` | summary line + a unicode 7d sparkline line (e.g. `ETH (Ethereum): $1.6K · -1.05% 24h · mcap $196.96B` / `▂▂▃▅▆▇█  7d +11.6% · $1.6K–$1.8K`), **plus an `image`** chart-PNG url (`/api/og/chart`) |
 | `intel` (smart-money / holders / screener / flows / flow-intel) | executes the read inline (see **Cost**) → named-wallet summary |
 | `quote` (swap/bridge) | route summary + a **`link`** to sign (never a signable payload) |
 | `rebalance` | multi-leg summary + a **`link`** to sign |
@@ -80,7 +81,7 @@ field will carry a chart PNG url; clients should ignore fields they don't handle
 | `payments` | recent incoming memo payments |
 | `token_risk` | risk label/score + flags |
 | `rebalance`, `suggestions` | short summary |
-| `aeon` (narrative / defi read) | **fallback line** → "open Skopos" (60s inline is unreliable on serverless; not executed headless yet) |
+| `aeon` (defi / narrative / trending / protocols read) | the cached read from the self-hosted Aeon fork, verbatim: the defi regime + narratives, the front-run/ride/fade narrative map, trending coins, or top protocols by TVL. Cache-first (`lib/aeonFeed.ts`), so it's instant; falls back to "open Skopos" only if the fork cache is empty |
 | `paywall` | "connect a wallet" / "subscribe" line |
 | unknown / new | graceful "open Skopos for this: <link>" — never blank, never throws |
 
@@ -121,7 +122,9 @@ Over either cap → a plain-text "daily intel limit reached — try later or ope
 Skopos" line (no spend). **Always send a stable `anonId`** (e.g. the conversation id)
 or intel is refused.
 
-`aeon` reads are not executed headless in v1 (they take ~60s), so they never spend.
+`aeon` reads are served from the self-hosted fork's committed files (via
+`lib/aeonFeed.ts`), so they're instant and **never spend** — the paid work happens
+on the fork's own cron, not per request.
 
 ---
 
