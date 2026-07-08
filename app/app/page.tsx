@@ -97,7 +97,7 @@ type PayResult = { type: "pay"; token: string; tokenSymbol: string; decimals: nu
 type MemoPaymentItem = { chainId: number; chainName: string; token: string; tokenSymbol: string; amount: string; from: string; memo: string; memoText: string; txHash: string; timestamp: number | null };
 type PaymentsResult = { type: "payments"; address: string; payments: MemoPaymentItem[] };
 
-type AeonResult = { type: "aeon"; kind: "narrative" | "defi" | "onchain" | "trending" | "protocols"; title: string; subtitle: string; premium?: { available: boolean; label: string; note: string } };
+type AeonResult = { type: "aeon"; kind: "narrative" | "defi" | "onchain" | "trending" | "protocols" | "fear" | "x402"; title: string; subtitle: string; premium?: { available: boolean; label: string; note: string } };
 
 type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
@@ -3243,7 +3243,7 @@ function AeonDisplay({ result }: { result: AeonResult }) {
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /><circle cx="12" cy="12" r="3.2" />
         </svg>
-        <span style={{ ...MONO, fontSize: "0.56rem", fontWeight: 700, letterSpacing: "0.13em", color: ACCENT }}>{({ defi: "DEFI READ", narrative: "NARRATIVE", trending: "TRENDING", protocols: "TOP TVL", onchain: "ONCHAIN" } as Record<string, string>)[kind] ?? "READ"}</span>
+        <span style={{ ...MONO, fontSize: "0.56rem", fontWeight: 700, letterSpacing: "0.13em", color: ACCENT }}>{({ defi: "DEFI READ", narrative: "NARRATIVE", trending: "TRENDING", protocols: "TOP TVL", onchain: "ONCHAIN", fear: "FEAR DIVERGENCE", x402: "X402 PULSE" } as Record<string, string>)[kind] ?? "READ"}</span>
         <span style={{ ...MONO, fontSize: "0.54rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>daily · skopos</span>
       </div>
 

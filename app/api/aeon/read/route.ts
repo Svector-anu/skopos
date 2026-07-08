@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
   // Prefer the cached fork read — free and instant. defi/narrative fall through to
   // the Bankr agent on a miss; trending/protocols are cache-only.
-  const AEON_KINDS = new Set(["defi", "narrative", "trending", "protocols"]);
+  const AEON_KINDS = new Set(["defi", "narrative", "trending", "protocols", "fear", "x402"]);
   if (AEON_KINDS.has(kind)) {
     const read = await getAeonRead(kind as AeonKind);
     if (read) return Response.json({ ok: true, text: read }, { status: 200 });

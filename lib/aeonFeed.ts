@@ -19,8 +19,10 @@ const NEG_TTL_MS = 60 * 1000;
 
 const MARKET_CONTEXT = "memory/topics/market-context.md";
 const NARRATIVE = "output/.chains/narrative-tracker.md";
+const FEAR_DIVERGENCE = "output/.chains/fear-divergence.md";
+const X402_MONITOR = "output/.chains/x402-monitor.md";
 
-export type AeonKind = "defi" | "narrative" | "trending" | "protocols";
+export type AeonKind = "defi" | "narrative" | "trending" | "protocols" | "fear" | "x402";
 
 interface RawEntry {
   text: string | null;
@@ -128,12 +130,70 @@ function extractNarrative(md: string): string | null {
   return `${structured}\n— powered by Aeon`;
 }
 
+// fear-divergence is conditional (only screens when Fear & Greed < 25) and often
+// skips cleanly — that's a legitimate answer, not a missing read, so we surface
+// the skip reason honestly rather than fabricating a signal that isn't there.
+function extractFearDivergence(md: string): string | null {
+  const body = md.trim();
+  if (!body) return null;
+  const isSkip = /skip path taken|No qualifying assets|No notification sent/i.test(body);
+  if (isSkip) {
+    const fng = body.match(/F&G:\s*(\d+)\s*\(([^)]+)\)/i);
+    const btc7d = body.match(/BTC 7d:\s*\*{0,2}([+-][\d.]+%)\*{0,2}/i);
+    const btc24h = body.match(/BTC 24h:\s*\*{0,2}([+-][\d.]+%)\*{0,2}/i);
+    const parts = ["No fear-divergence signal right now."];
+    if (fng) parts.push(`Fear & Greed is ${fng[1]} (${fng[2]})`);
+    if (btc7d || btc24h) {
+      const bits = [btc7d ? `BTC ${btc7d[1]} 7d` : null, btc24h ? `${btc24h[1]} 24h` : null].filter(Boolean).join(", ");
+      parts.push(`but BTC is actually up (${bits}) — divergence needs BTC falling while other assets hold up, so there's nothing to screen for today.`);
+    }
+    return `${parts.join(" — ")}\n— powered by Aeon`;
+  }
+  const structured = body
+    .split("\n")
+    .map((line) => {
+      const t = line.trim();
+      if (!t) return line;
+      if (/^[A-Z][A-Z ]{2,24}$/.test(t)) return `**${t}**`;
+      return line;
+    })
+    .join("\n");
+  return `${structured}\n— powered by Aeon`;
+}
+
+// x402-monitor's committed output is already chat-ready; drop the internal
+// bookkeeping line and bold the standalone section labels (no inline content,
+// unlike "momentum: breakout" which the renderer already handles as a label line).
+function extractX402Monitor(md: string): string | null {
+  const body = md.trim();
+  if (!body) return null;
+  const structured = body
+    .split("\n")
+    .filter((line) => !/^state:\s*memory\//i.test(line.trim()))
+    .map((line) => {
+      const t = line.trim();
+      if (!t) return line;
+      if (t.endsWith(":")) return `**${t}**`;
+      return line;
+    })
+    .join("\n");
+  return `${structured}\n— powered by Aeon`;
+}
+
 // Returns the concise read for a kind, or null when the fork hasn't produced one
 // yet (callers fall back to their existing behavior).
 export async function getAeonRead(kind: AeonKind): Promise<string | null> {
   if (kind === "narrative") {
     const md = await fetchRaw(NARRATIVE);
     return md ? extractNarrative(md) : null;
+  }
+  if (kind === "fear") {
+    const md = await fetchRaw(FEAR_DIVERGENCE);
+    return md ? extractFearDivergence(md) : null;
+  }
+  if (kind === "x402") {
+    const md = await fetchRaw(X402_MONITOR);
+    return md ? extractX402Monitor(md) : null;
   }
   const md = await fetchRaw(MARKET_CONTEXT);
   if (!md) return null;

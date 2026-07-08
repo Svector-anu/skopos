@@ -732,6 +732,35 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // ── Aeon Fear-divergence read — conditional (only screens when Fear & Greed
+  // < 25); a clean "nothing to screen today" is a legitimate answer, not a miss.
+  if (
+    !/\$[a-zA-Z]|\b0x[0-9a-fA-F]{40}\b/.test(trimmed) &&
+    /\bfear\s*(?:&|and)?\s*greed\s+diverg\w*\b|\bfear\s+diverg\w*\b|\bdiverg\w*\s+(?:from|despite)\s+(?:the\s+)?fear\b/i.test(trimmed)
+  ) {
+    return json({
+      type: "aeon",
+      kind: "fear",
+      title: "Fear divergence",
+      subtitle: "Assets holding up while the market's in Fear & Greed — or an honest 'nothing today.'",
+      premium: { available: true, label: "Get the read", note: "Free · powered by Aeon" },
+    });
+  }
+
+  // ── Aeon x402 monitor — weekly protocol/ecosystem velocity tracker.
+  if (
+    !/\$[a-zA-Z]|\b0x[0-9a-fA-F]{40}\b/.test(trimmed) &&
+    /\bx402\s+(?:monitor|pulse|ecosystem|adoption|update|tracker)\b|\bwhat'?s?\s+(?:new|happening)\s+(?:with\s+)?x402\b/i.test(trimmed)
+  ) {
+    return json({
+      type: "aeon",
+      kind: "x402",
+      title: "x402 pulse",
+      subtitle: "New integrations, npm downloads, and adoption signals in the x402 ecosystem.",
+      premium: { available: true, label: "Get the read", note: "Free · powered by Aeon" },
+    });
+  }
+
   // ── Smart-money screener — discovery, no token. "what is smart money buying".
   if (/\bwhat(?:'s|s| is| are)?\s+(?:the\s+)?smart\s+money\s+(?:buying|accumulating|aping|into|loading|grabbing)\b|\bsmart\s+money\s+screener\b|\btrending\s+(?:smart\s+money\s+)?(?:tokens?|coins?|plays?)\b|\bwhat\s+should\s+i\s+(?:buy|ape|look\s+at)\b/i.test(trimmed)) {
     const CHAIN_ALIAS: Record<string, string> = { eth: "ethereum", ethereum: "ethereum", base: "base", solana: "solana", sol: "solana", arbitrum: "arbitrum", arb: "arbitrum", polygon: "polygon", matic: "polygon" };
