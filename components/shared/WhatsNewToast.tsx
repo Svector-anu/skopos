@@ -56,37 +56,36 @@ export function WhatsNewToast({ storageKey = DEFAULT_KEY, changes = DEFAULT_CHAN
             right:        isMobile ? 12 : 24,
             left:         isMobile ? 12 : "auto",
             zIndex:       50,
-            width:        isMobile ? "auto" : 296,
-            background:   "#0D0D0D",
-            border:       "1px solid rgba(255,255,255,0.09)",
-            borderRadius: 12,
-            padding:      "16px 18px",
-            boxShadow:    "0 8px 32px rgba(0,0,0,0.5)",
+            width:        isMobile ? "auto" : 320,
+            background:   "#F5B800",
+            borderRadius: 18,
+            padding:      "18px 20px",
+            boxShadow:    "0 12px 36px rgba(245,184,0,0.22), 0 4px 16px rgba(0,0,0,0.35)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 13 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ color: "#F5B800", fontSize: "0.75rem" }}>✦</span>
-              <span style={{ color: "#ffffff", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600 }}>
+              <span style={{ color: "#000000", fontSize: "0.75rem" }}>✦</span>
+              <span style={{ color: "#000000", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 700 }}>
                 What&apos;s new
               </span>
             </div>
             <button
               onClick={dismiss}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.3)", padding: 2, lineHeight: 1 }}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(0,0,0,0.45)", padding: 2, lineHeight: 1 }}
               aria-label="Dismiss"
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6">
                 <path d="M1 1l10 10M11 1L1 11" strokeLinecap="round"/>
               </svg>
             </button>
           </div>
 
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 9 }}>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
             {changes.map((c, i) => (
               <li key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
-                <span style={{ color: "#F5B800", fontSize: "0.65rem", marginTop: 3, flexShrink: 0 }}>→</span>
-                <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.76rem", lineHeight: 1.5 }}>{c}</span>
+                <span style={{ color: "rgba(0,0,0,0.55)", fontSize: "0.65rem", marginTop: 3, flexShrink: 0 }}>→</span>
+                <span style={{ color: "rgba(0,0,0,0.82)", fontSize: "0.78rem", lineHeight: 1.5, fontWeight: 500 }}>{c}</span>
               </li>
             ))}
           </ul>

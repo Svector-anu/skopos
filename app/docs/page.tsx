@@ -493,29 +493,61 @@ export default function DocsPage() {
               Same API, three shapes
             </h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-              {[
-                { title: "Your own bot or app", body: "Call the endpoint above directly — this is exactly how an iMessage bot uses Skopos today." },
-                { title: "An agent that loads skills", body: "Wrap the same call in an Agent Skills SKILL.md so Claude, Cursor, or any skill-loading agent can use it." },
-                { title: "An MCP client", body: "Wrap the same call in an MCP server so any MCP-native client can call it as a tool." },
-              ].map(lane => (
-                <div
-                  key={lane.title}
+              {/* Lane 1 — raw API, live now */}
+              <div style={{ padding: "14px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12 }}>
+                <p style={{ fontFamily: MONO, fontSize: "0.76rem", fontWeight: 700, color: "#ffffff", margin: "0 0 6px" }}>
+                  Your own bot or app
+                </p>
+                <p style={{ fontFamily: MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "rgba(255,255,255,0.45)", margin: 0 }}>
+                  Call the endpoint above directly — this is exactly how an iMessage bot uses Skopos today.
+                </p>
+              </div>
+
+              {/* Lane 2 — Agent Skills, real download today */}
+              <div style={{ padding: "14px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, display: "flex", flexDirection: "column" }}>
+                <p style={{ fontFamily: MONO, fontSize: "0.76rem", fontWeight: 700, color: "#ffffff", margin: "0 0 6px" }}>
+                  An agent that loads skills
+                </p>
+                <p style={{ fontFamily: MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "rgba(255,255,255,0.45)", margin: "0 0 12px" }}>
+                  Drop this file in for Claude, Cursor, or any Agent Skills–compatible agent.
+                </p>
+                <a
+                  href="/skopos-skill.md"
+                  download
                   style={{
-                    padding: "14px 16px",
-                    background: "rgba(255,255,255,0.03)",
-                    border: "1px solid rgba(255,255,255,0.07)",
-                    borderRadius: 12,
+                    fontFamily: MONO, fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.04em",
+                    textTransform: "uppercase", color: "#000000", background: YELLOW,
+                    borderRadius: 8, padding: "9px 14px", textDecoration: "none",
+                    textAlign: "center", marginTop: "auto",
                   }}
                 >
-                  <p style={{ fontFamily: MONO, fontSize: "0.76rem", fontWeight: 700, color: "#ffffff", margin: "0 0 6px" }}>
-                    {lane.title}
+                  Download SKILL.md →
+                </a>
+              </div>
+
+              {/* Lane 3 — MCP, honestly not published yet */}
+              <div style={{ padding: "14px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 6px" }}>
+                  <p style={{ fontFamily: MONO, fontSize: "0.76rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
+                    An MCP client
                   </p>
-                  <p style={{ fontFamily: MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "rgba(255,255,255,0.45)", margin: 0 }}>
-                    {lane.body}
-                  </p>
+                  <span style={{ fontFamily: MONO, fontSize: "0.6rem", letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(245,184,0,0.85)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 999, padding: "2px 7px" }}>
+                    soon
+                  </span>
                 </div>
-              ))}
+                <p style={{ fontFamily: MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "rgba(255,255,255,0.45)", margin: 0 }}>
+                  An MCP server wrapping the same call, installable as <code style={{ color: "rgba(255,255,255,0.6)" }}>skopos-mcp</code> — publishing shortly.
+                </p>
+              </div>
             </div>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <p style={{ fontFamily: MONO, fontSize: "0.72rem", color: "rgba(255,255,255,0.35)", margin: "0 0 8px" }}>
+              Or place it yourself:
+            </p>
+            <CodeBlock>{`curl -o SKILL.md https://www.tryskopos.xyz/skopos-skill.md
+mkdir -p ~/.claude/skills/skopos && mv SKILL.md ~/.claude/skills/skopos/`}</CodeBlock>
           </div>
 
           <p

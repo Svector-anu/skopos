@@ -1531,7 +1531,7 @@ export default function AppPage() {
       </div>
     </main>
     <WhatsNewToast
-      storageKey="skopos-whatsnew-v3"
+      storageKey="skopos-whatsnew-v4"
       changes={[
         "Ask \"what's trending\" or \"top defi protocols\" — instant market reads, powered by Aeon",
         "Paste any tx hash — now flags unlimited approvals and possible honeypots, across 10 chains",
