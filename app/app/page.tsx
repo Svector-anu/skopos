@@ -1920,10 +1920,17 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
 
         {txHash ? (
           txConfirmed ? (
-            <a href={explorerUrl ?? "#"} target="_blank" rel="noopener noreferrer"
-              style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80", textDecoration: "none" }}>
-              confirmed ✓ · view on explorer →
-            </a>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <a href={explorerUrl ?? "#"} target="_blank" rel="noopener noreferrer"
+                style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80", textDecoration: "none" }}>
+                {route.etaSec ? "origin confirmed ✓ · view on explorer →" : "confirmed ✓ · view on explorer →"}
+              </a>
+              {route.etaSec ? (
+                <div style={{ ...MONO, width: "100%", padding: "10px 0", fontSize: "0.68rem", letterSpacing: "0.04em", textAlign: "center", background: "rgba(245,184,0,0.05)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, color: "rgba(245,184,0,0.8)" }}>
+                  bridging to {intent.to.chain} · funds arrive in ~{route.etaSec >= 60 ? `${Math.round(route.etaSec / 60)} min` : `${Math.round(route.etaSec)} sec`}
+                </div>
+              ) : null}
+            </div>
           ) : txFailed ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <a href={explorerUrl ?? "#"} target="_blank" rel="noopener noreferrer"
