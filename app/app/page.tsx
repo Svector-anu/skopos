@@ -1531,11 +1531,11 @@ export default function AppPage() {
       </div>
     </main>
     <WhatsNewToast
-      storageKey="skopos-whatsnew-vara-v1"
+      storageKey="skopos-whatsnew-v3"
       changes={[
-        "Skopos oracle is live on Vara mainnet",
-        "Mention @skopos-bridge in the Vara Agent Network chat",
-        "6 query types: price, risk, yield, markets, quote, portfolio",
+        "Ask \"what's trending\" or \"top defi protocols\" — instant market reads, powered by Aeon",
+        "Paste any tx hash — now flags unlimited approvals and possible honeypots, across 10 chains",
+        "Cleaner replies — structured, no more walls of text",
       ]}
     />
     </>
