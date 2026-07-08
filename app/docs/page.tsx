@@ -153,6 +153,56 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
+function CodeBlock({ children }: { children: string }) {
+  return (
+    <pre
+      style={{
+        fontFamily: MONO,
+        fontSize: "0.76rem",
+        lineHeight: 1.65,
+        color: "rgba(255,255,255,0.85)",
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.09)",
+        borderRadius: 12,
+        padding: "16px 18px",
+        overflowX: "auto",
+        margin: 0,
+        whiteSpace: "pre",
+      }}
+    >
+      <code>{children}</code>
+    </pre>
+  );
+}
+
+function FieldRow({ name, desc }: { name: string; desc: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 12,
+        padding: "9px 0",
+        borderBottom: "1px solid rgba(255,255,255,0.05)",
+      }}
+    >
+      <code
+        style={{
+          fontFamily: MONO,
+          fontSize: "0.74rem",
+          color: YELLOW,
+          minWidth: 132,
+          flexShrink: 0,
+        }}
+      >
+        {name}
+      </code>
+      <span style={{ fontFamily: MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "rgba(255,255,255,0.5)" }}>
+        {desc}
+      </span>
+    </div>
+  );
+}
+
 function CommandRow({ prompt, desc }: Command) {
   return (
     <div
@@ -289,6 +339,23 @@ export default function DocsPage() {
             >
               Browse Commands
             </a>
+            <a
+              href="#build"
+              style={{
+                fontFamily: MONO,
+                fontSize: "0.72rem",
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,0.7)",
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: 8,
+                padding: "10px 20px",
+                textDecoration: "none",
+              }}
+            >
+              Build on Skopos
+            </a>
           </div>
         </section>
 
@@ -354,6 +421,118 @@ export default function DocsPage() {
               )}
             </div>
           ))}
+        </section>
+
+        {/* Build on Skopos — headless API for bots/agents */}
+        <section
+          id="build"
+          style={{ padding: "28px 0", borderTop: "1px solid rgba(255,255,255,0.06)", scrollMarginTop: 24 }}
+        >
+          <h2 style={{ fontFamily: SERIF, fontWeight: 700, fontSize: "1.6rem", margin: "0 0 10px" }}>
+            Build on Skopos
+          </h2>
+          <p
+            style={{
+              fontFamily: MONO,
+              fontSize: "0.8rem",
+              lineHeight: 1.7,
+              color: "rgba(255,255,255,0.5)",
+              maxWidth: 660,
+              margin: "0 0 18px",
+            }}
+          >
+            The same copilot — prices, swaps, portfolios, live smart-money intel — over one HTTP
+            call. Opt in with <code style={{ color: YELLOW }}>format:&quot;text&quot;</code> and get
+            a plain-text answer back instead of a UI card. No SDK, no API key, no card knowledge
+            required — this is what an iMessage bot uses today.
+          </p>
+
+          <CodeBlock>{`curl -sX POST https://www.tryskopos.xyz/api/chat \\
+  -H "Content-Type: application/json" \\
+  -d '{"message":"who is buying $aero","format":"text","anonId":"chat-123"}'
+
+# → { "type": "intel",
+#     "text": "$AERO — top buyers: Wintermute Market Making +$10.69M, … Net accumulating $15.54M." }`}</CodeBlock>
+
+          <p
+            style={{
+              fontFamily: MONO,
+              fontSize: "0.74rem",
+              color: "rgba(255,255,255,0.35)",
+              margin: "14px 0 24px",
+            }}
+          >
+            Relay <code style={{ color: "rgba(255,255,255,0.55)" }}>text</code> verbatim. Your
+            client needs zero card knowledge.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "0 32px" }}>
+            <div>
+              <h3 style={{ fontFamily: MONO, fontSize: "0.78rem", letterSpacing: "0.04em", color: "rgba(255,255,255,0.7)", margin: "0 0 4px" }}>
+                Request
+              </h3>
+              <FieldRow name="message" desc="required — the user's text, verbatim" />
+              <FieldRow name="format" desc={'"text" | "card" — default "card". The browser uses "card"; headless clients send "text".'} />
+              <FieldRow name="anonId" desc="required for text-mode intel reads — a stable per-conversation id (drives the cost cap)" />
+              <FieldRow name="senderAddress" desc="optional — a connected wallet unlocks that address's tier" />
+              <FieldRow name="sparkline" desc="optional, default true — set false to omit the ASCII price chart" />
+            </div>
+            <div>
+              <h3 style={{ fontFamily: MONO, fontSize: "0.78rem", letterSpacing: "0.04em", color: "rgba(255,255,255,0.7)", margin: "0 0 4px" }}>
+                Response
+              </h3>
+              <FieldRow name="type" desc="the card type — branch on it if you want, or ignore it" />
+              <FieldRow name="text" desc="always populated, plain text, ready to relay" />
+              <FieldRow name="link" desc="on swap / bridge / pay — a tap-to-sign url. Skopos is non-custodial, so execution always finishes in the app, never in your bot" />
+              <FieldRow name="image" desc="on price replies — a chart PNG url" />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 28 }}>
+            <h3 style={{ fontFamily: MONO, fontSize: "0.78rem", letterSpacing: "0.04em", color: "rgba(255,255,255,0.7)", margin: "0 0 12px" }}>
+              Same API, three shapes
+            </h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+              {[
+                { title: "Your own bot or app", body: "Call the endpoint above directly — this is exactly how an iMessage bot uses Skopos today." },
+                { title: "An agent that loads skills", body: "Wrap the same call in an Agent Skills SKILL.md so Claude, Cursor, or any skill-loading agent can use it." },
+                { title: "An MCP client", body: "Wrap the same call in an MCP server so any MCP-native client can call it as a tool." },
+              ].map(lane => (
+                <div
+                  key={lane.title}
+                  style={{
+                    padding: "14px 16px",
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.07)",
+                    borderRadius: 12,
+                  }}
+                >
+                  <p style={{ fontFamily: MONO, fontSize: "0.76rem", fontWeight: 700, color: "#ffffff", margin: "0 0 6px" }}>
+                    {lane.title}
+                  </p>
+                  <p style={{ fontFamily: MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "rgba(255,255,255,0.45)", margin: 0 }}>
+                    {lane.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p
+            style={{
+              fontFamily: MONO,
+              fontSize: "0.74rem",
+              lineHeight: 1.6,
+              color: "rgba(255,255,255,0.35)",
+              marginTop: 20,
+            }}
+          >
+            No versioning — the request shape is stable, and the response is a discriminated union
+            keyed by <code style={{ color: "rgba(255,255,255,0.55)" }}>type</code> that grows over
+            time. Branch on <code style={{ color: "rgba(255,255,255,0.55)" }}>type</code> and handle
+            unknown values gracefully; relaying <code style={{ color: "rgba(255,255,255,0.55)" }}>text</code>{" "}
+            verbatim is always safe.
+          </p>
         </section>
 
         {/* Supported chains */}
