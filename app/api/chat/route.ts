@@ -224,11 +224,32 @@ type LegErr = { ok: false; text: string };
 
 const SOLANA_CHAIN_ID = 1000000001;
 
-async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage?: number, solanaAddress?: string): Promise<LegOk | LegErr> {
+// normalizeToken() aliases a generic "btc"/"bitcoin" mention to "WBTC" everywhere,
+// which is right on Ethereum/Arbitrum (WBTC is the deep, dominant pool there) but
+// wrong on chains where a different BTC wrapper is the liquid, canonical one:
+//   Base       — cbBTC has ~100x WBTC's on-chain liquidity (Coinbase built both)
+//   BSC        — WBTC isn't listed at all; BTCB is the chain's native wrapped BTC
+//   Avalanche  — BTC.b has ~12x WBTC.e's liquidity (the native bridge asset)
+// Only applies when the user said BTC generically — an explicit "wbtc" in the
+// message is always honored literally, never silently substituted.
+const CHAIN_PREFERRED_BTC: Record<number, string> = {
+  8453:  "CBBTC",
+  56:    "BTCB",
+  43114: "BTC.b",
+};
+
+function preferredBtcSymbol(symbol: string, chainId: number, explicitWbtc: boolean): string {
+  if (explicitWbtc || symbol.toUpperCase() !== "WBTC") return symbol;
+  return CHAIN_PREFERRED_BTC[chainId] ?? symbol;
+}
+
+async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage?: number, solanaAddress?: string, rawMessage?: string): Promise<LegOk | LegErr> {
   const parsedAmount = parseFloat(intent.amount);
   if (!isFinite(parsedAmount) || parsedAmount <= 0) {
     return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
   }
+
+  const explicitWbtc = /\bwbtc\b/i.test(rawMessage ?? "");
 
   const originChainId = resolveChainId(intent.originChain);
   const destChainId   = resolveChainId(intent.destinationChain);
@@ -303,10 +324,15 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   }
 
   if (!isOriginNative) {
-    let tokenData = await getToken(originChainId, intent.token);
+    const originSymbol = preferredBtcSymbol(intent.token, originChainId, explicitWbtc);
+    let tokenData = await getToken(originChainId, originSymbol);
     // ETH on non-ETH chains (Polygon, BSC, etc.) is listed as WETH — fall back transparently
     if (!tokenData && intent.token.toUpperCase() === "ETH" && originNativeSymbol?.toUpperCase() !== "ETH") {
       tokenData = await getToken(originChainId, "WETH");
+    }
+    // Preferred BTC substitute not found for some reason — fall back to the literal symbol
+    if (!tokenData && originSymbol !== intent.token) {
+      tokenData = await getToken(originChainId, intent.token);
     }
     if (!tokenData) return { ok: false, text: `Could not find ${intent.token} on ${originChain?.name ?? originChainId}.` };
     originCurrency = tokenData.address;
@@ -314,10 +340,15 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   }
 
   if (!isDestNative) {
-    let tokenData = await getToken(destChainId, destToken);
+    const destSymbol = preferredBtcSymbol(destToken, destChainId, explicitWbtc);
+    let tokenData = await getToken(destChainId, destSymbol);
     // ETH on non-ETH chains — same fallback as origin
     if (!tokenData && destToken.toUpperCase() === "ETH" && destNativeSymbol?.toUpperCase() !== "ETH") {
       tokenData = await getToken(destChainId, "WETH");
+    }
+    // Preferred BTC substitute not found for some reason — fall back to the literal symbol
+    if (!tokenData && destSymbol !== destToken) {
+      tokenData = await getToken(destChainId, destToken);
     }
     if (!tokenData) return { ok: false, text: `Could not find ${destToken} on ${destChain?.name ?? destChainId}.` };
     destCurrency = tokenData.address;
@@ -1332,7 +1363,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         return json({ type: "text", text: `Which chain are the funds coming from? Name the source and I'll split it — e.g. "split 1 ETH from ethereum across base and arbitrum".` });
       }
 
-      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, safeSlippage, solanaAddress)));
+      const results = await Promise.all(legs.map(leg => resolveLeg(leg, senderAddress, safeSlippage, solanaAddress, message)));
 
       const firstErr = results.find((r): r is LegErr => !r.ok);
       if (firstErr) {
@@ -1569,7 +1600,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         },
       });
     }
-    const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress);
+    const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress, message);
     if (!result.ok) return json({ type: "error", text: result.text });
     const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;
     const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(intent, route), tier, meterMeta);
