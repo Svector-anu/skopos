@@ -3078,7 +3078,7 @@ function inlineNodes(s: string, keyBase: string): React.ReactNode[] {
 // inline labels, bold, and colored calls.
 function AeonMarkdown({ text, accent = AEON_VIOLET }: { text: string; accent?: string }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-  const BODY: React.CSSProperties = { ...MONO, fontSize: "0.76rem", lineHeight: 1.72, color: "var(--card-text, #ffffff)", margin: 0 };
+  const BODY: React.CSSProperties = { ...MONO, fontSize: "0.76rem", lineHeight: 1.6, color: "var(--card-text, #ffffff)", margin: 0 };
   const lines = text.replace(/\r/g, "").split("\n");
   const firstIdx = lines.findIndex((l) => l.trim() !== "");
 
@@ -3132,7 +3132,7 @@ function AeonMarkdown({ text, accent = AEON_VIOLET }: { text: string; accent?: s
 
 function AeonDisplay({ result }: { result: AeonResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-  const ACCENT = "#a78bfa";
+  const ACCENT = "#F5B800";
   const { kind, title, subtitle, premium } = result;
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
@@ -3194,22 +3194,22 @@ function AeonDisplay({ result }: { result: AeonResult }) {
   }
 
   return (
-    <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
-      <div style={{ padding: "12px 18px 8px", display: "flex", alignItems: "center", gap: 8 }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <div style={{ border: "1px solid var(--card-border)", borderRadius: 14, overflow: "hidden", maxWidth: 340, background: "var(--card-container-bg, #0D0D0D)" }}>
+      <div style={{ padding: "9px 13px 5px", display: "flex", alignItems: "center", gap: 7 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /><circle cx="12" cy="12" r="3.2" />
         </svg>
-        <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>{({ defi: "DEFI READ", narrative: "NARRATIVE", trending: "TRENDING", protocols: "TOP TVL", onchain: "ONCHAIN" } as Record<string, string>)[kind] ?? "READ"}</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>daily · skopos</span>
+        <span style={{ ...MONO, fontSize: "0.56rem", fontWeight: 700, letterSpacing: "0.13em", color: ACCENT }}>{({ defi: "DEFI READ", narrative: "NARRATIVE", trending: "TRENDING", protocols: "TOP TVL", onchain: "ONCHAIN" } as Record<string, string>)[kind] ?? "READ"}</span>
+        <span style={{ ...MONO, fontSize: "0.54rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>daily · skopos</span>
       </div>
 
-      <div style={{ padding: "0 18px 14px" }}>
-        <p style={{ ...MONO, fontSize: "1.15rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.2 }}>{title}</p>
-        <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>{subtitle}</p>
+      <div style={{ padding: "0 13px 10px" }}>
+        <p style={{ ...MONO, fontSize: "0.98rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 3px", lineHeight: 1.2 }}>{title}</p>
+        <p style={{ ...MONO, fontSize: "0.68rem", lineHeight: 1.5, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>{subtitle}</p>
       </div>
 
       {premium && (
-        <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--card-surface)" }}>
+        <div style={{ padding: "9px 13px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "var(--card-surface)" }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
             <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
@@ -3235,8 +3235,8 @@ function AeonDisplay({ result }: { result: AeonResult }) {
       )}
 
       {state === "done" && text && (
-        <div style={{ padding: "14px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-          <AeonMarkdown text={text} />
+        <div style={{ padding: "11px 13px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+          <AeonMarkdown text={text} accent="#F5B800" />
         </div>
       )}
     </div>

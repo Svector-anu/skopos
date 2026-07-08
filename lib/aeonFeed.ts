@@ -77,9 +77,20 @@ function extractDefi(md: string): string | null {
   const narratives = [...narr.matchAll(/^-\s*\*\*(.+?)\*\*\s*—\s*phase:\s*(\w+)/gm)]
     .slice(0, 5)
     .map((m) => `${m[1]} (${m[2]})`);
-  const lines = [`DeFi read — ${take}`];
-  if (narratives.length) lines.push(`Narratives: ${narratives.join(", ")}.`);
-  lines.push(`— as of ${asOf(md)} · powered by Aeon`);
+
+  // Split "regime — explanation" so the regime reads as a short bold headline
+  // (the renderer bolds the first line) and the rest as plain supporting detail,
+  // instead of one long run-on sentence.
+  const dash = take.match(/^(.+?)\s*—\s*(.+)$/);
+  const regime = dash ? dash[1].trim() : take;
+  const detail = dash ? dash[2].trim() : "";
+
+  const lines = [`DeFi read — ${regime}`];
+  if (detail) lines.push(detail);
+  if (narratives.length) {
+    lines.push("", "**Narratives:**", ...narratives.map((n) => `- ${n}`));
+  }
+  lines.push("", `— as of ${asOf(md)} · powered by Aeon`);
   return lines.join("\n");
 }
 
@@ -96,12 +107,25 @@ function extractProtocols(md: string): string | null {
 }
 
 // narrative-tracker's committed output is already chat-formatted (its own notify
-// body: TRANSITIONS / REFLEXIVITY / POSITIONS / MAP). Pass it through with a light
-// sanity gate and an attribution footer.
+// body: TRANSITIONS / REFLEXIVITY / POSITIONS / MAP), but it's written for
+// Telegram — a *single-asterisk* bold title, and ALL-CAPS section labels with no
+// markup at all. Upgrade both to **double-asterisk** bold so our renderer (which
+// only recognizes **bold**) shows real section headers instead of flat text.
 function extractNarrative(md: string): string | null {
   const body = md.trim();
   if (body.length < 30 || !/narrative/i.test(body)) return null;
-  return `${body}\n— powered by Aeon`;
+  const structured = body
+    .split("\n")
+    .map((line) => {
+      const t = line.trim();
+      if (!t) return line;
+      const telegramBold = t.match(/^\*([^*]+)\*$/);
+      if (telegramBold) return `**${telegramBold[1]}**`;
+      if (/^[A-Z][A-Z ]{2,24}$/.test(t)) return `**${t}**`;
+      return line;
+    })
+    .join("\n");
+  return `${structured}\n— powered by Aeon`;
 }
 
 // Returns the concise read for a kind, or null when the fork hasn't produced one
