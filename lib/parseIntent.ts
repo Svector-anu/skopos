@@ -16,7 +16,7 @@ export function classifyIntent(input: string): IntentType {
   const hasAmount            = /\b\d[\d.,]*\b/.test(t);
   const hasOpinionSignal     = /\b(should\s+i|is\s+(?:it|now|this)\s+(?:a\s+)?(?:good|worth|safe|wise)|worth\s+(?:buying|selling|holding)|would\s+you|do\s+you\s+(?:think|recommend)|good\s+(?:time\s+to|buy|investment)|undervalued|overvalued)\b/i.test(t);
   const hasYieldKeyword      = /\b(yields?|apy|apr|earn|returns|best\s+(?:yields?|rate|apy|apr)|interest\s+(?:on|rate)|earning\s+(?:on|from))\b/i.test(t);
-  const hasPredictionKeyword = /\b(polymarket|prediction\s+markets?|odds|betting\s+odds|market\s+odds|chances?|what\s+(?:are\s+)?people\s+betting|polymarket\s+trends?|top\s+(?:prediction\s+)?markets?|market\s+predictions?|what\s+(?:can\s+i|do\s+i)\s+bet\s+on|bet|wager|buy\s+(?:yes|no)|place\s+(?:a\s+)?bet|take\s+(?:a\s+)?position\s+on)\b/i.test(t);
+  const hasPredictionKeyword = /\b(polymarket|prediction\s+markets?|odds|betting\s+odds|market\s+odds|chances?|what\s+(?:are\s+)?people\s+betting|polymarket\s+trends?|top\s+(?:prediction\s+)?markets?|market\s+predictions?|what\s+(?:can\s+i|do\s+i)\s+bet\s+on|bet|wager|buy\s+(?:yes|no)|place\s+(?:a\s+)?bet|take\s+(?:a\s+)?position\s+on|pm\s*-?\s*pulse|polymarket\s+pulse|prediction\s+market(?:s)?\s+pulse)\b/i.test(t);
 
   // FX must run before execution — "convert 100 EUR to JPY" has exec verb + amount
   // but EUR/GBP/JPY/CHF/AUD are never chain names or crypto tokens in this system.
