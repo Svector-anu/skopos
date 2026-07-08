@@ -32,7 +32,6 @@ import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/py
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { parseTimeframe } from "@/lib/timeframe";
-import { aeonEnabled } from "@/lib/bankrAgent";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
 
 // ── price query token recognition ────────────────────────────────────────────
@@ -662,23 +661,20 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── Aeon narrative read — "what's the narrative / what's hot today". Proxied to
-  // the Bankr agent's installed Aeon skill; the client triggers it on tap (async).
-  // Market-wide by nature: if the query names a token ($ticker / 0x address), let
-  // the token-scoped Nansen intel blocks below win instead — no overlap.
+  // ── Aeon narrative read — "what's the narrative / what's hot today". Served
+  // from the self-hosted Aeon fork's cache (lib/aeonFeed.ts) — no Bankr Agent
+  // dependency. Market-wide by nature: if the query names a token ($ticker /
+  // 0x address), let the token-scoped Nansen intel blocks below win instead.
   if (
     !/\$[a-zA-Z]|\b0x[0-9a-fA-F]{40}\b/.test(trimmed) &&
     /\bnarrative(?:s)?\b|\bwhat(?:'?s|s| is)?\s+hot\b|\bnarrative\s+map\b/i.test(trimmed)
   ) {
-    const enabled = aeonEnabled();
     return json({
       type: "aeon",
       kind: "narrative",
       title: "Today's narratives",
       subtitle: "What's hot in crypto and AI right now — with a front-run / ride / fade / skip call per narrative.",
-      premium: enabled
-        ? { available: true, label: "Get the read", note: "Free — Skopos covers the read" }
-        : { available: false, label: "Get the read", note: "Narrative reads are rolling out — check back soon." },
+      premium: { available: true, label: "Get the read", note: "Free · powered by Aeon" },
     });
   }
 
@@ -688,15 +684,12 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     !/\$[a-zA-Z]|\b0x[0-9a-fA-F]{40}\b/.test(trimmed) &&
     /\bdefi\s+(?:read|overview|regime|today|market)\b|\bmarket\s+regime\b|\brisk[\s-]?(?:on|off)\b|\bhow'?s\s+defi\b/i.test(trimmed)
   ) {
-    const enabled = aeonEnabled();
     return json({
       type: "aeon",
       kind: "defi",
       title: "Today's DeFi read",
       subtitle: "Risk-on or risk-off, the top movers, and where yield is real vs just emissions.",
-      premium: enabled
-        ? { available: true, label: "Get the read", note: "Free — Skopos covers the read" }
-        : { available: false, label: "Get the read", note: "DeFi reads are rolling out — check back soon." },
+      premium: { available: true, label: "Get the read", note: "Free · powered by Aeon" },
     });
   }
 
@@ -1615,6 +1608,30 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // "why is X pumping/dumping" — classifyIntent's broad "why is" pattern lands
+    // here before it ever reaches the risk-scanner block below, so without this
+    // carve-out a live-market momentum question would fall to the generic,
+    // ungrounded chat reply. Reuse the same grounded scan (price/liquidity/
+    // volume/flags + a directional take) rather than duplicating a new prompt.
+    const MOMENTUM_RE = /\b(?:pump\w*|dump\w*|moon\w*|rally\w*|crash\w*|tank\w*|surg\w*|spik\w*)\b/i;
+    if (MOMENTUM_RE.test(trimmed)) {
+      const momentumMatch = trimmed.match(/(\$?[a-z0-9]{2,20})\s+(?:is\s+)?(?:pump\w*|dump\w*|moon\w*|rally\w*|crash\w*|tank\w*|surg\w*|spik\w*)/i)
+        ?? trimmed.match(/(?:pump\w*|dump\w*|moon\w*|rally\w*|crash\w*|tank\w*|surg\w*|spik\w*)[a-z\s]*?(\$[a-z0-9]{2,20})/i);
+      // Guard against hijacking a historical/generic question ("explain the 1929
+      // crash") — only scan when the captured word is unambiguously a ticker
+      // ($-prefixed) or a token Skopos already recognizes.
+      const raw = momentumMatch?.[1];
+      if (raw && (raw.startsWith("$") || PRICE_TOKEN_RE.test(raw))) {
+        const query = raw.replace(/^\$/, "");
+        const risk = await scanToken(query);
+        if (risk) {
+          const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta);
+          await recordSmart();
+          return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
+        }
+      }
+    }
+
     const liveData = tier === "smart" ? await gatherLiveData(trimmed) : null;
     const text = await getInformationalReply(message, history, tier, meterMeta, {
       ...(liveData ? { liveData } : {}),
@@ -1659,7 +1676,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   ) ?? trimmed.match(
     /(?:^|\s)(\$[a-z]{2,10}|0x[0-9a-f]{40})(?:\s|$)/i
   );
-  if (riskMatch && /\b(scan|risk|safe|rug|analyze|legit)\b/i.test(trimmed)) {
+  if (riskMatch && /\b(scan|risk|safe|rug|analyze|legit|deep\s*-?\s*dive)\b/i.test(trimmed)) {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
     if (risk) {

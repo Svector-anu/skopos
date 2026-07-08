@@ -3182,6 +3182,8 @@ function AeonDisplay({ result }: { result: AeonResult }) {
   const [message, setMessage] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
 
+  // Served from the Aeon fork's cache (lib/aeonFeed.ts) — a single fetch, no
+  // polling. The fork's cron runs every few hours, so a miss is brief.
   async function handleRead() {
     setState("loading");
     setMessage(null);
@@ -3192,45 +3194,13 @@ function AeonDisplay({ result }: { result: AeonResult }) {
         body: JSON.stringify({ kind }),
       });
       const subData = await sub.json();
-      // Cache hit from the Aeon fork — the read is already here, no polling.
       if (sub.ok && subData.ok && typeof subData.text === "string" && subData.text) {
         setText(subData.text);
         setState("done");
         return;
       }
-      if (!sub.ok || !subData.ok || !subData.jobId) {
-        setState("error");
-        setMessage(subData.error ?? "Couldn't start the read.");
-        return;
-      }
-      const jobId: string = subData.jobId;
-
-      // Reads run 50-70s, so poll the job from the client (no serverless timeout).
-      const deadline = Date.now() + 120_000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2500));
-        const jr = await fetch("/api/aeon/job", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId }),
-        });
-        const jd = await jr.json();
-        if (jd.status === "completed" && jd.text) {
-          setText(jd.text);
-          setState("done");
-          return;
-        }
-        if (jd.status === "failed" || jd.status === "cancelled") {
-          setState("error");
-          setMessage(jd.error ?? "Read failed.");
-          return;
-        }
-        // live step from the agent ("thinking", "market intelligence", …)
-        if (jd.note) setMessage(`${jd.note}…`);
-        // pending / transient → keep polling until the deadline
-      }
       setState("error");
-      setMessage("Read timed out — try again.");
+      setMessage(subData.error ?? "Couldn't get the read.");
     } catch (err) {
       setState("error");
       setMessage(err instanceof Error ? err.message : "Request failed.");
@@ -3257,7 +3227,7 @@ function AeonDisplay({ result }: { result: AeonResult }) {
           <div style={{ minWidth: 0 }}>
             <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
             <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
-              {message ?? (state === "loading" ? "Aeon is scanning — this can take up to a minute…" : premium.note)}
+              {message ?? (state === "loading" ? "Fetching the read…" : premium.note)}
             </p>
           </div>
           <button
