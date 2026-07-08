@@ -240,6 +240,28 @@ function loadJson<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; } catch { return fallback; }
 }
 
+// Persists the last wallet-blocked query so it can auto-retry after connect even
+// if the connect flow triggers a full page reload (common on mobile/in-app
+// browsers) — a pure in-memory ref can't survive that, since React state resets.
+const PENDING_WALLET_RETRY_KEY = "skopos-pending-wallet-query";
+const PENDING_WALLET_RETRY_TTL_MS = 10 * 60 * 1000;
+
+function savePendingWalletRetry(text: string) {
+  try { localStorage.setItem(PENDING_WALLET_RETRY_KEY, JSON.stringify({ text, ts: Date.now() })); } catch {}
+}
+function readPendingWalletRetry(): string | null {
+  try {
+    const raw = localStorage.getItem(PENDING_WALLET_RETRY_KEY);
+    if (!raw) return null;
+    const { text, ts } = JSON.parse(raw);
+    if (Date.now() - ts > PENDING_WALLET_RETRY_TTL_MS) { localStorage.removeItem(PENDING_WALLET_RETRY_KEY); return null; }
+    return typeof text === "string" ? text : null;
+  } catch { return null; }
+}
+function clearPendingWalletRetry() {
+  try { localStorage.removeItem(PENDING_WALLET_RETRY_KEY); } catch {}
+}
+
 // ─── ErrorBoundary ────────────────────────────────────────────────────────────
 
 class ErrorBoundary extends Component<
@@ -357,8 +379,25 @@ export default function AppPage() {
         /wallet|reconnect/i.test(last.result.text) &&
         secondLast?.role === "user"
       ) {
+        clearPendingWalletRetry();
         submitRef.current?.(secondLast.text);
       }
+    }
+  }, [connectedAddress]);
+
+  // Independent recovery path for the case above: if the wallet-connect flow
+  // reloaded the page (Privy already reports connected on the very first
+  // render), prevConnectedAddressRef initializes to that same value, so the
+  // transition-detection effect above never fires. Fall back to the persisted
+  // query — runs once per pending entry regardless of any transition.
+  const pendingRetryDoneRef = useRef(false);
+  useEffect(() => {
+    if (pendingRetryDoneRef.current || !connectedAddress) return;
+    const pending = readPendingWalletRetry();
+    if (pending) {
+      pendingRetryDoneRef.current = true;
+      clearPendingWalletRetry();
+      submitRef.current?.(pending);
     }
   }, [connectedAddress]);
     const usdcAddress                            = USDC_ADDRESSES[currentChainId];
@@ -610,6 +649,11 @@ export default function AppPage() {
         // JSON response (quote, rebalance, address, tx, error)
         const data: AssistantResult = await res.json();
         if (data.type === "quote") data.originMessage = text;
+        if (data.type === "error" && /wallet|reconnect/i.test(data.text)) {
+          savePendingWalletRetry(text);
+        } else {
+          clearPendingWalletRetry();
+        }
         setMessages(prev => [...prev, { role: "assistant", result: data }]);
         setLoading(false);
       }

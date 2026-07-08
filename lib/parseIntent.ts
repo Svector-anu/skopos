@@ -131,6 +131,15 @@ const CHAIN_AS_TOKEN: Record<string, { token: string; chain: string }> = {
   hype:       { token: "HYPE", chain: "hyperevm" },
 };
 
+// Canonical symbols (post-normalizeToken) that regexParse's "to WORD" dest slot
+// can legitimately mean as a TOKEN rather than a chain — used to recover when
+// the dest slot was mis-captured as a chain name (see parseIntent()).
+const KNOWN_DEST_TOKENS = new Set([
+  "WBTC", "ETH", "WETH", "USDC", "USDT", "DAI", "SOL", "BNB", "POL", "AVAX",
+  "ARB", "OP", "LINK", "UNI", "AAVE", "CRV", "MKR", "SNX", "COMP", "FRAX",
+  "GHO", "LUSD", "CRVUSD", "CBBTC", "PEPE", "SHIB", "DOGE",
+]);
+
 function normalizeToken(t: string): string {
   const aliases: Record<string, string> = {
     ether: "ETH", ethereum: "ETH", btc: "WBTC", bitcoin: "WBTC",
@@ -583,7 +592,22 @@ export async function parseIntent(input: string): Promise<ParsedIntent | null> {
   const regex = regexParse(input);
   if (regex) {
     const originOk = resolveChainId(regex.originChain) !== null;
-    const destOk   = resolveChainId(regex.destinationChain) !== null;
+    let destOk = resolveChainId(regex.destinationChain) !== null;
+
+    // The dest slot may have been a bare TOKEN mis-captured as a chain (e.g.
+    // "bridge 100 eth from base to btc" -> destinationChain:"btc"). Reinterpret
+    // as a same-chain swap to that token rather than handing an ambiguous case
+    // to Groq — it has hallucinated an unrelated chain here before instead of
+    // following the "ends in a token -> same-chain" rule in its own prompt.
+    if (originOk && !destOk) {
+      const asToken = normalizeToken(regex.destinationChain);
+      if (KNOWN_DEST_TOKENS.has(asToken)) {
+        regex.destinationToken = asToken;
+        regex.destinationChain = regex.originChain;
+        destOk = true;
+      }
+    }
+
     if (originOk && destOk) return regex;
     // Chain validation failed (e.g. regex captured "usdc" as a chain name).
     // Fall through to Groq which has language understanding.

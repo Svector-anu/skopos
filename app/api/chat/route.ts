@@ -163,7 +163,7 @@ function buildBridgeAnalysisPrompt(
   const verdict = lostPct == null ? null
     : lostPct < 1   ? "This route is efficient. A spread under 1% is normal and good for a swap — recommend executing."
     : lostPct <= 3  ? "This route is reasonable. The cost is acceptable — fine to execute."
-    : `This route is expensive: over 3% of value is lost. Suggest the user reconsider or try a smaller or alternative route.`;
+    : `This route is expensive: ${lostPct.toFixed(1)}% of value is lost to spread and fees. Suggest the user reconsider or try a smaller or alternative route.`;
 
   return [
     `Swap: ${intent.amount} ${intent.token} from ${intent.originChain} → ${intent.destinationChain}, receiving ${intent.destinationToken}`,
@@ -176,8 +176,8 @@ function buildBridgeAnalysisPrompt(
     route.gasUSD  ? `Gas: $${route.gasUSD}` : null,
     `\nUse ONLY the figures above. Never state or assume any token's USD price beyond what is given — if a value is not listed, do not invent it.`,
     verdict
-      ? `Your conclusion is FIXED — restate it and briefly explain it in one short paragraph. Do NOT contradict it, reverse it, or call its cost a reason to avoid the route: "${verdict}" Flag anything genuinely worth knowing about the adapter, but the verdict above stands.`
-      : `Give a one-paragraph directional take: is this route worth executing at these costs? Flag anything worth knowing about the adapter or route.`,
+      ? `Your conclusion is FIXED: "${verdict}" State it plainly in 1-2 short sentences using only the figures above. Do NOT repeat it verbatim, do NOT contradict or reverse it, and do NOT state any percentage other than the one given. Only add an adapter note if it's genuinely useful — otherwise skip it.`
+      : `Give a one-sentence directional take: is this route worth executing at these costs? Only mention the adapter if something about it is genuinely worth knowing.`,
   ].filter(Boolean).join("\n");
 }
 
@@ -1621,6 +1621,17 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // Yield query with no recognized token — prompt for specifics
   if (queryType === "yield") {
     return json({ type: "text", text: "Which token do you want yield for? Try: 'find highest yield for USDC' or 'best ETH APY'." });
+  }
+
+  // Exec verb with no amount ("swap usdc to eth on base") is a clear execution
+  // attempt missing its quantity — classifyIntent can't call this "execution"
+  // without a number, so it falls through to here. Give a clean nudge instead of
+  // letting the LLM improvise (it has invented placeholder text like "insert
+  // current ETH price, which I don't have" for this exact case before).
+  const EXEC_VERB_RE = /\b(swap|bridge|send|transfer|move|convert)\b/i;
+  if (EXEC_VERB_RE.test(trimmed) && !/\d/.test(trimmed)) {
+    const verb = trimmed.match(EXEC_VERB_RE)?.[1]?.toLowerCase() ?? "swap";
+    return json({ type: "error", text: `Specify an amount — e.g. "${verb} 100 USDC to ETH on base".` });
   }
 
   // ── informational fallback — Smart grounds on live price when a token is named;
