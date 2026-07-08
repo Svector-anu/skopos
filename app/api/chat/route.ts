@@ -308,6 +308,12 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   const isOriginNative = intent.token.toUpperCase() === originNativeSymbol?.toUpperCase();
   const isDestNative   = destToken.toUpperCase()    === destNativeSymbol?.toUpperCase();
 
+  // Display symbols shown to the user — start as the parsed symbol, updated below
+  // if a chain-preferred BTC substitute (cbBTC/BTCB/BTC.b) actually resolved, so
+  // the card never shows "WBTC" while the calldata routes to a different token.
+  let originDisplaySymbol = intent.token;
+  let destDisplaySymbol   = destToken;
+
   // For EVM native tokens Delora expects the token contract address, not the zero address
   if (isOriginNative && originChain?.chainType === "EVM") {
     const tokenData = await getToken(originChainId, originNativeSymbol ?? intent.token);
@@ -326,6 +332,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   if (!isOriginNative) {
     const originSymbol = preferredBtcSymbol(intent.token, originChainId, explicitWbtc);
     let tokenData = await getToken(originChainId, originSymbol);
+    if (tokenData && originSymbol !== intent.token) originDisplaySymbol = originSymbol;
     // ETH on non-ETH chains (Polygon, BSC, etc.) is listed as WETH — fall back transparently
     if (!tokenData && intent.token.toUpperCase() === "ETH" && originNativeSymbol?.toUpperCase() !== "ETH") {
       tokenData = await getToken(originChainId, "WETH");
@@ -333,6 +340,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
     // Preferred BTC substitute not found for some reason — fall back to the literal symbol
     if (!tokenData && originSymbol !== intent.token) {
       tokenData = await getToken(originChainId, intent.token);
+      originDisplaySymbol = intent.token;
     }
     if (!tokenData) return { ok: false, text: `Could not find ${intent.token} on ${originChain?.name ?? originChainId}.` };
     originCurrency = tokenData.address;
@@ -342,6 +350,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   if (!isDestNative) {
     const destSymbol = preferredBtcSymbol(destToken, destChainId, explicitWbtc);
     let tokenData = await getToken(destChainId, destSymbol);
+    if (tokenData && destSymbol !== destToken) destDisplaySymbol = destSymbol;
     // ETH on non-ETH chains — same fallback as origin
     if (!tokenData && destToken.toUpperCase() === "ETH" && destNativeSymbol?.toUpperCase() !== "ETH") {
       tokenData = await getToken(destChainId, "WETH");
@@ -349,6 +358,7 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
     // Preferred BTC substitute not found for some reason — fall back to the literal symbol
     if (!tokenData && destSymbol !== destToken) {
       tokenData = await getToken(destChainId, destToken);
+      destDisplaySymbol = destToken;
     }
     if (!tokenData) return { ok: false, text: `Could not find ${destToken} on ${destChain?.name ?? destChainId}.` };
     destCurrency = tokenData.address;
@@ -446,8 +456,8 @@ async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage
   return {
     ok: true,
     intent: {
-      from: { chain: originChain?.name ?? String(originChainId), chainId: originChainId, token: intent.token, amount: intent.amount },
-      to:   { chain: destChain?.name   ?? String(destChainId),   chainId: destChainId,   token: destToken, receiver: effectiveReceiver },
+      from: { chain: originChain?.name ?? String(originChainId), chainId: originChainId, token: originDisplaySymbol, amount: intent.amount },
+      to:   { chain: destChain?.name   ?? String(destChainId),   chainId: destChainId,   token: destDisplaySymbol, receiver: effectiveReceiver },
     },
     route:    { tool, outputAmount: outputFormatted, feesUSD: totalFeesUSD, gasUSD, inputUSD, outputUSD, etaSec: quote.estimatedTimeSec ?? null },
     approval: isOriginNative ? null : {
@@ -1603,7 +1613,10 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress, message);
     if (!result.ok) return json({ type: "error", text: result.text });
     const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;
-    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(intent, route), tier, meterMeta);
+    // Use the resolved display symbols (e.g. CBBTC, not the raw parsed WBTC) so the
+    // analysis text never contradicts what the card actually shows.
+    const analysisIntent = { ...intent, token: legIntent.from.token, destinationToken: legIntent.to.token };
+    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(analysisIntent, route), tier, meterMeta);
     await recordSmart();
     return json({ type: "quote", mode: "preview", quotedAt: Date.now(), intent: legIntent, route, approval, calldata, raw, ...(bridgeAnalysis && { analysis: bridgeAnalysis }) });
   }
