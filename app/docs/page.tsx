@@ -525,19 +525,27 @@ export default function DocsPage() {
                 </a>
               </div>
 
-              {/* Lane 3 — MCP, honestly not published yet */}
-              <div style={{ padding: "14px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 6px" }}>
-                  <p style={{ fontFamily: MONO, fontSize: "0.76rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
-                    An MCP client
-                  </p>
-                  <span style={{ fontFamily: MONO, fontSize: "0.6rem", letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(245,184,0,0.85)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 999, padding: "2px 7px" }}>
-                    soon
-                  </span>
-                </div>
-                <p style={{ fontFamily: MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "rgba(255,255,255,0.45)", margin: 0 }}>
-                  An MCP server wrapping the same call, installable as <code style={{ color: "rgba(255,255,255,0.6)" }}>skopos-mcp</code> — publishing shortly.
+              {/* Lane 3 — MCP, real package on npm */}
+              <div style={{ padding: "14px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, display: "flex", flexDirection: "column" }}>
+                <p style={{ fontFamily: MONO, fontSize: "0.76rem", fontWeight: 700, color: "#ffffff", margin: "0 0 6px" }}>
+                  An MCP client
                 </p>
+                <p style={{ fontFamily: MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "rgba(255,255,255,0.45)", margin: "0 0 12px" }}>
+                  <code style={{ color: "rgba(255,255,255,0.6)" }}>npx -y skopos-mcp</code> — an MCP server wrapping the same call. Works in Claude Desktop, Cursor, Zero, or any MCP client.
+                </p>
+                <a
+                  href="https://www.npmjs.com/package/skopos-mcp"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontFamily: MONO, fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.04em",
+                    textTransform: "uppercase", color: "#000000", background: YELLOW,
+                    borderRadius: 8, padding: "9px 14px", textDecoration: "none",
+                    textAlign: "center", marginTop: "auto",
+                  }}
+                >
+                  View on npm →
+                </a>
               </div>
             </div>
           </div>
