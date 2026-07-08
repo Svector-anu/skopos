@@ -32,7 +32,7 @@ type QuoteResult = {
     from: { chain: string; chainId: number; token: string; amount: string };
     to: { chain: string; chainId: number; token: string; receiver?: string };
   };
-  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null };
+  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null; etaSec?: number | null };
   approval: ApprovalInfo;
   calldata: { to: string; value: string; data: string } | null;
   analysis?: string;
@@ -1806,6 +1806,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   const recipient = intent.to.receiver ?? connectedAddress;
   const summaryRows: { label: string; value: string }[] = [
     { label: "Via",           value: route.tool },
+    ...(route.etaSec ? [{ label: "Est. time", value: route.etaSec >= 60 ? `~${Math.round(route.etaSec / 60)} min` : `~${Math.round(route.etaSec)} sec` }] : []),
     { label: "Min. received", value: `~${minReceived} ${intent.to.token}` },
     ...(route.feesUSD ? [{ label: "Network fee", value: `~$${Number(route.feesUSD).toFixed(2)}` }] : []),
     ...(recipient ? [{ label: "Recipient", value: shortAddr(recipient) }] : []),

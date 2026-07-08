@@ -105,6 +105,8 @@ export interface DeloraQuote {
     outputValidation?: string;
     reason?: string;
   };
+  estimatedTimeSec?: number; // bridge completion ETA — present only on cross-chain routes
+  approvalAddress?: string;  // spender to approve for EVM-origin routes
   [key: string]: unknown;
 }
 
