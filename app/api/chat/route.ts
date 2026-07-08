@@ -979,6 +979,30 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // ── Token deep-dive — "deep dive on $X" / "$X deep dive". Must run before the
+  // price fast-path: classifyIntent has no "deep dive" signal, so a bare mention
+  // of a known token (pepe, eth, doge…) classifies as "price" via its last-resort
+  // fallback and would otherwise never reach a deep-dive check. Reuses the same
+  // grounded scan (price/liquidity/volume/flags + directional take), not a new
+  // prompt — this is the verdict-first read, not a separate feature.
+  const DEEP_DIVE_RE = /\bdeep\s*-?\s*dive\b/i;
+  if (DEEP_DIVE_RE.test(trimmed)) {
+    const deepDiveMatch = trimmed.match(/deep\s*-?\s*dive\s*(?:on|for)?\s+(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})/i)
+      ?? trimmed.match(/(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})\s+deep\s*-?\s*dive/i);
+    const raw = deepDiveMatch?.[1];
+    // Only trust a bare (non-$/non-0x) capture when it's an already-recognized
+    // token, so "deep dive on the quarterly report" isn't mistaken for a ticker.
+    if (raw && (raw.startsWith("$") || raw.startsWith("0x") || PRICE_TOKEN_RE.test(raw))) {
+      const query = raw.replace(/^\$/, "");
+      const risk = await scanToken(query);
+      if (risk) {
+        const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta);
+        await recordSmart();
+        return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
+      }
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // PRICE FAST-PATH
   // Runs before structural checks — a classified "price" query must never fall
@@ -1668,27 +1692,17 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── token risk scanner ────────────────────────────────────────────────────
+  // "deep dive" phrasing is handled earlier (before the price fast-path, since
+  // classifyIntent has no signal for it) — not duplicated here.
   const riskMatch = trimmed.match(
     /(?:scan|analyze|check|risk\s+of|is\s+(?:it\s+)?safe|rug(?:pull)?)\s+(?:token\s+)?(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})/i
   ) ?? trimmed.match(
     // "is PEPE safe to buy?" / "is SHIB legit?" — token comes BETWEEN "is" and the qualifier
     /\bis\s+(\$?[a-z0-9]{2,20})\s+(?:safe|legit|good|risky|a\s+rug)/i
   ) ?? trimmed.match(
-    // "deep dive on $AERO" / "deep dive pepe"
-    /deep\s*-?\s*dive\s*(?:on|for)?\s+(\$?[a-z0-9]{2,20})/i
-  ) ?? trimmed.match(
-    // "$AERO deep dive" / "pepe deep dive" — token BEFORE the phrase
-    /(\$?[a-z0-9]{2,20})\s+deep\s*-?\s*dive/i
-  ) ?? trimmed.match(
     /(?:^|\s)(\$[a-z]{2,10}|0x[0-9a-f]{40})(?:\s|$)/i
   );
-  const hasSafeGateWord = /\b(scan|risk|safe|rug|analyze|legit)\b/i.test(trimmed);
-  const hasDeepDive = /\bdeep\s*-?\s*dive\b/i.test(trimmed);
-  // "deep dive" is generic wording (unlike scan/rug/analyze/legit) — only trust a
-  // bare (non-$) capture from it when the token is already recognized, so "deep
-  // dive on the quarterly report" can't be mistaken for a ticker.
-  const deepDiveTokenLooksReal = (sym: string) => sym.startsWith("$") || sym.startsWith("0x") || PRICE_TOKEN_RE.test(sym);
-  if (riskMatch && (hasSafeGateWord || (hasDeepDive && deepDiveTokenLooksReal(riskMatch[1])))) {
+  if (riskMatch && /\b(scan|risk|safe|rug|analyze|legit)\b/i.test(trimmed)) {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
     if (risk) {
