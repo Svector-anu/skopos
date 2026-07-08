@@ -1674,9 +1674,21 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     // "is PEPE safe to buy?" / "is SHIB legit?" — token comes BETWEEN "is" and the qualifier
     /\bis\s+(\$?[a-z0-9]{2,20})\s+(?:safe|legit|good|risky|a\s+rug)/i
   ) ?? trimmed.match(
+    // "deep dive on $AERO" / "deep dive pepe"
+    /deep\s*-?\s*dive\s*(?:on|for)?\s+(\$?[a-z0-9]{2,20})/i
+  ) ?? trimmed.match(
+    // "$AERO deep dive" / "pepe deep dive" — token BEFORE the phrase
+    /(\$?[a-z0-9]{2,20})\s+deep\s*-?\s*dive/i
+  ) ?? trimmed.match(
     /(?:^|\s)(\$[a-z]{2,10}|0x[0-9a-f]{40})(?:\s|$)/i
   );
-  if (riskMatch && /\b(scan|risk|safe|rug|analyze|legit|deep\s*-?\s*dive)\b/i.test(trimmed)) {
+  const hasSafeGateWord = /\b(scan|risk|safe|rug|analyze|legit)\b/i.test(trimmed);
+  const hasDeepDive = /\bdeep\s*-?\s*dive\b/i.test(trimmed);
+  // "deep dive" is generic wording (unlike scan/rug/analyze/legit) — only trust a
+  // bare (non-$) capture from it when the token is already recognized, so "deep
+  // dive on the quarterly report" can't be mistaken for a ticker.
+  const deepDiveTokenLooksReal = (sym: string) => sym.startsWith("$") || sym.startsWith("0x") || PRICE_TOKEN_RE.test(sym);
+  if (riskMatch && (hasSafeGateWord || (hasDeepDive && deepDiveTokenLooksReal(riskMatch[1])))) {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
     if (risk) {
