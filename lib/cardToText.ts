@@ -221,7 +221,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
   if (!card || typeof card !== "object") return `Open Skopos: ${SITE}`;
   const c = card as Card;
 
-  if (typeof c.text === "string" && c.text.trim()) return c.text.trim();
+  if (typeof c.text === "string" && c.text.trim()) return c.text.trim().replace(/\*\*(.+?)\*\*/g, "$1"); // strip bold markers — headless renders plain
   if (typeof c.error === "string" && c.error.trim()) return c.error.trim();
   if (typeof c.summary === "string" && c.summary.trim()) return c.summary.trim(); // address, tx
 

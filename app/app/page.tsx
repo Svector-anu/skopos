@@ -1203,9 +1203,7 @@ export default function AppPage() {
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "text" && (
-                      <p style={{ ...MONO, fontSize: "0.875rem", lineHeight: 1.75, color: T.textMuted, margin: 0 }}>
-                        {msg.result.text}
-                      </p>
+                      <AeonMarkdown text={msg.result.text} accent="#F5B800" />
                     )}
                     {msg.result.type === "error" && (
                       /wallet|reconnect/i.test(msg.result.text) ? (
@@ -3078,7 +3076,7 @@ function inlineNodes(s: string, keyBase: string): React.ReactNode[] {
 
 // Markdown-lite renderer for the agent read: title, numbered sections, bullets,
 // inline labels, bold, and colored calls.
-function AeonMarkdown({ text }: { text: string }) {
+function AeonMarkdown({ text, accent = AEON_VIOLET }: { text: string; accent?: string }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const BODY: React.CSSProperties = { ...MONO, fontSize: "0.76rem", lineHeight: 1.72, color: "var(--card-text, #ffffff)", margin: 0 };
   const lines = text.replace(/\r/g, "").split("\n");
@@ -3102,7 +3100,7 @@ function AeonMarkdown({ text }: { text: string }) {
         if (num) {
           return (
             <p key={i} style={{ ...MONO, fontSize: "0.78rem", fontWeight: 700, color: "var(--card-text, #fff)", margin: "9px 0 1px", lineHeight: 1.5 }}>
-              <span style={{ color: AEON_VIOLET }}>{num[1]}.</span> {inlineNodes(num[2], `l${i}`)}
+              <span style={{ color: accent }}>{num[1]}.</span> {inlineNodes(num[2], `l${i}`)}
             </p>
           );
         }
@@ -3111,7 +3109,7 @@ function AeonMarkdown({ text }: { text: string }) {
         if (bul) {
           return (
             <div key={i} style={{ display: "flex", gap: 8, paddingLeft: 2 }}>
-              <span style={{ ...MONO, color: AEON_VIOLET, fontSize: "0.76rem", lineHeight: 1.72 }}>·</span>
+              <span style={{ ...MONO, color: accent, fontSize: "0.76rem", lineHeight: 1.72 }}>·</span>
               <span style={BODY}>{inlineNodes(bul[1], `l${i}`)}</span>
             </div>
           );
