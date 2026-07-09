@@ -281,7 +281,19 @@ export async function lookupAddress(address: string): Promise<AddressData> {
     return { ...b, usdPrice: price, usdValue };
   });
 
+  // Major stablecoins skip the generic DexScreener-by-address lookup entirely.
+  // That lookup has no chain filter, and the same contract address can belong
+  // to a completely different (often illiquid) token on another chain — found
+  // this exact collision live: Ethereum USDC's address priced at $0.0006 via
+  // whatever unrelated pool DexScreener matched globally. A stablecoin is
+  // reasonably ~$1 by design; assuming that here is safer than a lookup that
+  // can silently substitute the wrong asset's price.
+  const KNOWN_STABLE_SYMBOLS = new Set(["USDC", "USDT", "DAI"]);
+
   const enrichedTokenBalances = tokenBalances.map(t => {
+    if (KNOWN_STABLE_SYMBOLS.has(t.symbol)) {
+      return { ...t, usdPrice: 1, usdValue: parseFloat(t.balance), priceChange24h: undefined };
+    }
     const data = tokenPriceMap.get(t.contractAddress.toLowerCase());
     const price = data?.price;
     const usdValue = price != null ? parseFloat(t.balance) * price : undefined;
