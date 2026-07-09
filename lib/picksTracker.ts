@@ -22,6 +22,8 @@ export interface StoredPick {
   symbol: string;
   name: string;
   entryPriceUsd: number | null;
+  chainId: string | null;
+  pairAddress: string | null;
   ts: number;
 }
 
@@ -32,6 +34,8 @@ export async function recordPick(risk: TokenRisk): Promise<void> {
     symbol: risk.symbol,
     name: risk.name,
     entryPriceUsd: risk.priceUsd ? Number(risk.priceUsd) : null,
+    chainId: risk.topPair?.chainId ?? null,
+    pairAddress: risk.topPair?.pairAddress ?? null,
     ts: Date.now(),
   };
   try {

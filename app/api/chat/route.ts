@@ -22,7 +22,7 @@ import { looksLikePay, buildPayIntent } from "@/lib/pay";
 import { getMemoPayments } from "@/lib/payments";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
-import { scanToken, resolveTokenTarget, getTrendingCandidates, type TokenRisk } from "@/lib/dexscreener";
+import { scanToken, resolveTokenTarget, getTrendingCandidates, getPairPrice, type TokenRisk } from "@/lib/dexscreener";
 import { recordPick, getRecentPicks } from "@/lib/picksTracker";
 import { toNansenChain } from "@/lib/nansen";
 import { getTopYields, type YieldPool } from "@/lib/defillama";
@@ -1041,13 +1041,19 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       return json({ type: "text", text: "No picks recorded yet — ask for a token pick first." });
     }
     const lines = await Promise.all(stored.map(async (p) => {
-      const live = await getPrice(p.symbol);
-      if (!live || p.entryPriceUsd == null || p.entryPriceUsd === 0) {
+      // Re-check the exact pool recorded at pick time, not a fresh symbol
+      // search — a generic ticker (e.g. a memecoin name reused across chains)
+      // can resolve to a different token entirely on a second bare-symbol
+      // lookup, which would compare two unrelated prices as if one moved.
+      const livePrice = p.chainId && p.pairAddress
+        ? await getPairPrice(p.chainId, p.pairAddress)
+        : (await getPrice(p.symbol))?.price ?? null;
+      if (livePrice == null || p.entryPriceUsd == null || p.entryPriceUsd === 0) {
         return `• ${p.symbol} — entry $${p.entryPriceUsd ?? "?"}, live price unavailable`;
       }
-      const pct = ((live.price - p.entryPriceUsd) / p.entryPriceUsd) * 100;
+      const pct = ((livePrice - p.entryPriceUsd) / p.entryPriceUsd) * 100;
       const sign = pct >= 0 ? "+" : "";
-      return `• ${p.symbol} — entry $${p.entryPriceUsd} → now $${live.price} (${sign}${pct.toFixed(1)}%)`;
+      return `• ${p.symbol} — entry $${p.entryPriceUsd} → now $${livePrice} (${sign}${pct.toFixed(1)}%)`;
     }));
     return json({ type: "text", text: `**Picks tracker** (last ${stored.length}):\n\n${lines.join("\n")}\n\nNot financial advice.` });
   }
