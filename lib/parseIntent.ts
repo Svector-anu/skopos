@@ -650,6 +650,9 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
 export async function generateAddressSummary(data: import("./alchemy").AddressData): Promise<string> {
   const groq = getGroq();
   if (!groq) return "";
+  const totalUsd = data.totalUsdValue
+    ? `$${data.totalUsdValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+    : "unknown";
   const nativeBalances = data.balances.length > 0
     ? data.balances.map(b => `${b.native} ${b.nativeSymbol} on ${b.chainName}`).join(", ")
     : "none";
@@ -659,14 +662,14 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
   const recent = data.recentTransfers.slice(0, 5)
     .map(t => `${t.direction === "out" ? "sent" : "received"} ${t.value} ${t.asset}`)
     .join(", ");
-  const prompt = `Address: ${data.address}\nNative balances: ${nativeBalances}\nToken balances: ${tokenBalances}\nRecent: ${recent || "none"}`;
+  const prompt = `Address: ${data.address}\nTotal portfolio value: ${totalUsd}\nNative balances: ${nativeBalances}\nToken balances: ${tokenBalances}\nRecent: ${recent || "none"}`;
   try {
     const completion = await groq.chat.completions.create({
       model: modelFor("fast"),
       max_tokens: 80,
       temperature: 0.1,
       messages: [
-        { role: "system", content: "You are a blockchain wallet analyst. In 1 sentence, summarise what this wallet holds. If there are actionable options (swap, bridge), mention one concisely. Use only the data provided. Never invent details." },
+        { role: "system", content: "You are a blockchain wallet analyst. In 1 sentence, summarise what this wallet holds. Always lead with the total portfolio value in dollars if one is given. If there are actionable options (swap, bridge), mention one concisely. Use only the data provided. Never invent details." },
         { role: "user", content: prompt },
       ],
     });
