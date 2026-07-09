@@ -98,7 +98,7 @@ const ENTRIES: Entry[] = [
       "Tagged, on-chain memos via Base's native B20 standard — the agentic-commerce primitive.",
       "Self-reconciling: \"show my payments\" surfaces incoming tagged payments matched to their reference (order-1024 → paid). No middleman, no database.",
       "Pay by token symbol or address. B20 tokens carry the memo; plain ERC-20s send a normal transfer.",
-      "Live on Base Sepolia to test today, and activates on Base mainnet with the Beryl upgrade.",
+      "Live on Base mainnet — Beryl activated June 25, 2026 — and on Base Sepolia for testing.",
     ],
   },
   {
