@@ -449,10 +449,10 @@ export default function DocsPage() {
 
           <CodeBlock>{`curl -sX POST https://www.tryskopos.xyz/api/chat \\
   -H "Content-Type: application/json" \\
-  -d '{"message":"who is buying $aero","format":"text","anonId":"chat-123"}'
+  -d '{"message":"who is buying $pepe","format":"text","anonId":"chat-123"}'
 
 # → { "type": "intel",
-#     "text": "$AERO — top buyers: Wintermute Market Making +$10.69M, … Net accumulating $15.54M." }`}</CodeBlock>
+#     "text": "$PEPE — top buyers: Wintermute Market Making +$10.69M, … Net accumulating $15.54M." }`}</CodeBlock>
 
           <p
             style={{

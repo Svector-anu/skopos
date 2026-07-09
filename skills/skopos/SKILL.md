@@ -16,12 +16,12 @@ here.
 Route to Skopos for any of these:
 
 - **Prices**
-  - crypto tokens — "eth price", "price of $aero"
+  - crypto tokens — "eth price", "price of $sol"
   - stocks & ETFs (29 supported) — "hood price", "mstr", "nvda", "spy"
   - currency conversion — "100 usd to eur", "gbp to usd"
   - gold & silver — "gold price", "silver"
 - **Smart-money intel** (live, named wallets)
-  - who's buying/selling — "who is buying $aero", "who's dumping $pepe"
+  - who's buying/selling — "who is buying $doge", "who's dumping $pepe"
   - top holders — "who holds $arb", "top holders of $x"
   - accumulation flows — "is $x being accumulated", flow over time
   - exchange/segment flows & sell pressure — "cex outflows for $x", "where is $x flowing"
@@ -82,7 +82,7 @@ Response shape:
 | "what's eth at?" | `eth price` | `ETH (Ethereum): $1.8K · +1.9% 24h …` + 7d sparkline |
 | "hood stock?" | `hood price` | `Robinhood Markets (HOOD): $112.77 …` |
 | "100 usd in eur?" | `100 usd to eur` | converted rate |
-| "who's buying $aero?" | `who is buying $aero` | named smart-money wallets + net flow |
+| "who's buying $doge?" | `who is buying $doge` | named smart-money wallets + net flow |
 | "defi read today" | `defi read today` | regime (risk-on/off) + active narratives |
 | "what's trending" | `what's trending` | top CoinGecko movers, with why each is moving |
 | "best yield for usdc" | `best yield for usdc` | top pools with APY + TVL |

@@ -31,9 +31,9 @@ the foundation:
 ```bash
 curl -sX POST https://www.tryskopos.xyz/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"message":"who is buying $aero","format":"text","anonId":"chat-123"}'
+  -d '{"message":"who is buying $pepe","format":"text","anonId":"chat-123"}'
 # → { "type":"intel",
-#     "text":"$AERO — top buyers: 🤖 Wintermute Market Making +$10.69M, … Net accumulating $15.54M." }
+#     "text":"$PEPE — top buyers: 🤖 Wintermute Market Making +$10.69M, … Net accumulating $15.54M." }
 ```
 
 Relay `text` verbatim. Your client needs **zero card knowledge**.

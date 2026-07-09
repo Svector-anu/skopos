@@ -42,7 +42,7 @@ zero mcp add skopos -- npx -y skopos-mcp
 Then just ask your agent things like:
 
 - `what's the price of eth?`
-- `who is buying $aero?`
+- `who is buying $pepe?`
 - `give me a token pick`
 - `treasury of uniswap`
 - `best yield for usdc`

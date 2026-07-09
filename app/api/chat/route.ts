@@ -581,7 +581,7 @@ a{color:#F5B800;text-decoration:none}
     <p>you can't read the smart money by staring at a url. this endpoint only speaks POST. talk to it:</p>
 <pre>curl -sX POST https://www.tryskopos.xyz/api/chat \\
   -H 'content-type: application/json' \\
-  -d '{"message":"who is buying $aero","format":"text"}'</pre>
+  -d '{"message":"who is buying $pepe","format":"text"}'</pre>
     <div class="dim">&rarr; named wallets, in plain text.</div>
     <p class="dim" style="margin-top:16px">built for bots, agents &amp; blue bubbles.<br>say it, it executes &middot; <a href="https://www.tryskopos.xyz">tryskopos.xyz</a></p>
   </div>
