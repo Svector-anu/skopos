@@ -303,7 +303,10 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       const rawKind = str(c.kind);
       const kind: AeonKind = (["defi", "narrative", "trending", "protocols", "fear", "x402"].includes(rawKind) ? rawKind : "defi") as AeonKind;
       const read = await getAeonRead(kind);
-      if (read) return read;
+      // getAeonRead's markdown (**bold**, "- " bullets) targets the app's card
+      // renderer — strip it here the same way the c.text shortcut above does,
+      // plus dash-bullets, so headless clients don't see literal asterisks/dashes.
+      if (read) return read.replace(/\*\*(.+?)\*\*/g, "$1").replace(/^-\s+/gm, "• ");
       const label = { defi: "DeFi read", narrative: "narrative map", trending: "trending list", protocols: "top protocols", fear: "fear-divergence read", x402: "x402 pulse" }[kind];
       return `Open Skopos for the ${label}: ${SITE}`;
     }
