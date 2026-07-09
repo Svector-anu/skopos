@@ -403,6 +403,52 @@ async function fetchAnkrBalances(address: string): Promise<TokenBalance[]> {
   }
 }
 
+// Verified addresses only — a wrong entry here would misreport a real balance.
+// Scoped to Ethereum mainnet, where the highest-value spam-crowding cases show
+// up (major DAO treasuries, exchange wallets); extend per-chain as needed.
+const MAJOR_STABLECOINS: Partial<Record<number, Array<{ address: string; symbol: string; name: string; decimals: number }>>> = {
+  1: [
+    { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: "USDC", name: "USD Coin", decimals: 6 },
+    { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", symbol: "USDT", name: "Tether USD", decimals: 6 },
+    { address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", symbol: "DAI", name: "Dai Stablecoin", decimals: 18 },
+  ],
+};
+
+// Direct balanceOf() calls for known-major tokens, bypassing Alchemy's
+// arbitrary (not value-sorted) token list entirely — a guaranteed check so a
+// real, high-value stablecoin holding can never be silently buried behind
+// spam-airdropped tokens, regardless of how many an address has accumulated.
+async function fetchKnownStablecoinBalances(address: string, chainId: number): Promise<TokenBalance[]> {
+  const chain = ALCHEMY_CHAINS[chainId];
+  const tokens = MAJOR_STABLECOINS[chainId];
+  if (!chain || !tokens) return [];
+
+  const paddedAddress = address.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  const calldata = `0x70a08231${paddedAddress}`;
+
+  const results = await Promise.allSettled(
+    tokens.map(t => rpc<string>(chain.rpc, "eth_call", [{ to: t.address, data: calldata }, "latest"]))
+  );
+
+  const out: TokenBalance[] = [];
+  tokens.forEach((t, i) => {
+    const r = results[i];
+    if (r.status !== "fulfilled" || !r.value || r.value === "0x") return;
+    const balance = hexBalanceToFloat(r.value, t.decimals);
+    if (balance <= 0) return;
+    out.push({
+      contractAddress: t.address,
+      symbol: t.symbol,
+      name: t.name,
+      decimals: t.decimals,
+      balance: balance.toFixed(4),
+      chainId,
+      chainName: chain.name,
+    });
+  });
+  return out;
+}
+
 async function fetchErc20Balances(address: string, chainId: number): Promise<TokenBalance[]> {
   const chain = ALCHEMY_CHAINS[chainId];
   if (!chain || !chain.alchemyErc20) return [];
@@ -451,5 +497,15 @@ async function fetchErc20Balances(address: string, chainId: number): Promise<Tok
   // symbol/name field as an ad) before it can crowd out real holdings in the
   // final top-N the caller displays.
   const SPAM_PATTERN = /https?:\/\/|www\.|\.(?:com|org|io|xyz|net|app)\b|claim|reward|airdrop/i;
-  return out.filter(t => !SPAM_PATTERN.test(t.symbol) && !SPAM_PATTERN.test(t.name));
+  const filtered = out.filter(t => !SPAM_PATTERN.test(t.symbol) && !SPAM_PATTERN.test(t.name));
+
+  // Guaranteed check for major stablecoins — even 20 candidates can be entirely
+  // spam on a heavily-airdropped address (verified against a real DAO treasury
+  // during testing: USDC was missing at 20, not just at 8). Merge in, deduped.
+  const known = await fetchKnownStablecoinBalances(address, chainId);
+  const seen = new Set(filtered.map(t => t.contractAddress.toLowerCase()));
+  for (const t of known) {
+    if (!seen.has(t.contractAddress.toLowerCase())) filtered.push(t);
+  }
+  return filtered;
 }
