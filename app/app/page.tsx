@@ -57,6 +57,7 @@ type TokenRiskResult = {
     sparkline?: number[];
   };
   analysis?: string;
+  pick?: boolean;
 };
 
 type YieldPool = {

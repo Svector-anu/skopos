@@ -259,7 +259,8 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       const risk = c.risk as { symbol?: string; label?: string; score?: number; priceUsd?: string; flags?: string[] } | undefined;
       const flagList = Array.isArray(risk?.flags) ? risk!.flags.map((f) => RISK_FLAG_LABELS[f] ?? f) : [];
       const flags = flagList.length ? ` Flags: ${flagList.join(", ")}.` : "";
-      return `${str(risk?.symbol)} risk: ${str(risk?.label)} (${risk?.score ?? "?"}/4).${risk?.priceUsd ? ` $${risk.priceUsd}.` : ""}${flags}`;
+      const prefix = c.pick ? "Today's pick — not financial advice. " : "";
+      return `${prefix}${str(risk?.symbol)} risk: ${str(risk?.label)} (${risk?.score ?? "?"}/4).${risk?.priceUsd ? ` $${risk.priceUsd}.` : ""}${flags}`;
     }
 
     case "yield_pools": {

@@ -22,7 +22,8 @@ import { looksLikePay, buildPayIntent } from "@/lib/pay";
 import { getMemoPayments } from "@/lib/payments";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
-import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
+import { scanToken, resolveTokenTarget, getTrendingCandidates, type TokenRisk } from "@/lib/dexscreener";
+import { recordPick, getRecentPicks } from "@/lib/picksTracker";
 import { toNansenChain } from "@/lib/nansen";
 import { getTopYields, type YieldPool } from "@/lib/defillama";
 import { getTopMarkets, PolymarketEvent } from "@/lib/polymarket";
@@ -110,6 +111,10 @@ function buildTokenAnalysisPrompt(risk: TokenRisk): string {
     `\nUse ONLY the figures above — never state a price, market cap, volume, or percentage not listed here.`,
     `Give a directional take: who does this setup favor — buyers, sellers, or neither? What is the key risk?`,
   ].filter(Boolean).join("\n");
+}
+
+function buildPickAnalysisPrompt(risk: TokenRisk): string {
+  return `${buildTokenAnalysisPrompt(risk)}\n\nFrame this as today's pick from a safety-filtered trending scan: open with "Today's pick" and close with an explicit "Not financial advice" note. Do not claim certainty about future price.`;
 }
 
 function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
@@ -1001,6 +1006,50 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
       }
     }
+  }
+
+  // ── Token pick — "pick a token" / "give me a token pick" / "what should I
+  // buy". No token named (unlike deep-dive/scan) — the user wants US to name
+  // one. Candidates come from CoinGecko's organic trending-search, not
+  // DexScreener's paid "boosts" (that would make a pick a paid placement in
+  // disguise), then run through the existing scanToken safety pipeline; first
+  // candidate at LOW/MEDIUM risk with no honeypot flag wins. Must run before
+  // the price fast-path for the same classifyIntent-precedence reason as
+  // deep-dive above — "pick" has no signal there either.
+  const TOKEN_PICK_RE = /\b(?:token\s*-?\s*pick|pick\s+(?:me\s+)?a\s+token|what\s+(?:token\s+)?should\s+i\s+buy|give\s+me\s+a\s+pick|any\s+(?:good\s+)?picks?(?:\s+(?:today|right\s+now))?|recommend\s+a\s+token)\b/i;
+  if (TOKEN_PICK_RE.test(trimmed)) {
+    const candidates = await getTrendingCandidates(10);
+    for (const c of candidates) {
+      const risk = await scanToken(c.symbol);
+      if (risk && risk.score <= 2 && !risk.flags.includes("POSSIBLE_HONEYPOT")) {
+        const analysis = await generateDecisionAnalysis(buildPickAnalysisPrompt(risk), tier, meterMeta);
+        await recordSmart();
+        await recordPick(risk);
+        return json({ type: "token_risk", risk, pick: true, ...(analysis && { analysis }) });
+      }
+    }
+    return json({ type: "error", text: "No trending token cleared the safety bar right now — try again in a bit." });
+  }
+
+  // ── Picks tracker — scorecard for past token-pick calls (depends on the
+  // block above having recorded at least one). Plain text, not a new card —
+  // fastest safe shape given the entry format is just symbol + entry price.
+  const PICKS_TRACKER_RE = /\b(?:picks?\s+tracker|how\s+(?:are|did)\s+(?:my|the|your)\s+picks?\s+(?:doing|do|perform(?:ing)?)|track\s+record|pick\s+history|past\s+picks?)\b/i;
+  if (PICKS_TRACKER_RE.test(trimmed)) {
+    const stored = await getRecentPicks(10);
+    if (!stored.length) {
+      return json({ type: "text", text: "No picks recorded yet — ask for a token pick first." });
+    }
+    const lines = await Promise.all(stored.map(async (p) => {
+      const live = await getPrice(p.symbol);
+      if (!live || p.entryPriceUsd == null || p.entryPriceUsd === 0) {
+        return `• ${p.symbol} — entry $${p.entryPriceUsd ?? "?"}, live price unavailable`;
+      }
+      const pct = ((live.price - p.entryPriceUsd) / p.entryPriceUsd) * 100;
+      const sign = pct >= 0 ? "+" : "";
+      return `• ${p.symbol} — entry $${p.entryPriceUsd} → now $${live.price} (${sign}${pct.toFixed(1)}%)`;
+    }));
+    return json({ type: "text", text: `**Picks tracker** (last ${stored.length}):\n\n${lines.join("\n")}\n\nNot financial advice.` });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

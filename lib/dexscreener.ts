@@ -161,6 +161,27 @@ export async function resolveTokenTarget(query: string): Promise<TokenTarget | n
   };
 }
 
+export interface TrendingCandidate { symbol: string; name: string }
+
+// CoinGecko's free trending-search endpoint — organic search-volume trending,
+// deliberately not DexScreener's "boosts" endpoint (that's pay-to-appear, which
+// would make a "pick" a paid placement wearing a recommendation's clothes).
+export async function getTrendingCandidates(limit = 10): Promise<TrendingCandidate[]> {
+  try {
+    const res = await fetchWithTimeout("https://api.coingecko.com/api/v3/search/trending");
+    if (!res.ok) return [];
+    const data = await res.json();
+    const coins: unknown[] = Array.isArray(data?.coins) ? data.coins : [];
+    return coins
+      .map((c) => (c as { item?: { symbol?: string; name?: string } }).item)
+      .filter((item): item is { symbol: string; name: string } => !!item?.symbol && !!item?.name)
+      .slice(0, limit)
+      .map((item) => ({ symbol: item.symbol.toUpperCase(), name: item.name }));
+  } catch {
+    return [];
+  }
+}
+
 export async function scanToken(query: string): Promise<TokenRisk | null> {
   const isAddress = /^0x[0-9a-fA-F]{40}$/.test(query.trim());
   const url = isAddress
