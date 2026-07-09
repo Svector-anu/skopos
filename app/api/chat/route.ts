@@ -59,6 +59,18 @@ const TOKEN_NAME_TO_SYMBOL: Record<string, string> = {
   synthetix: "SNX", megeth: "MEGA",    megaeth: "MEGA",
 };
 
+// Curated DAO treasury addresses (#17) — deliberately small and verified, not
+// scraped. Each address confirmed by hand against its Etherscan/Arbiscan label
+// (e.g. "ENS: DAO Wallet") before being added — a wrong entry here would just
+// report the wrong treasury's numbers with total confidence. lookupAddress
+// already scans all 10 chains Skopos supports per address, so one address per
+// DAO is enough even though the underlying assets may span chains.
+const DAO_TREASURIES: Record<string, { label: string; address: string }> = {
+  uniswap: { label: "Uniswap", address: "0x1a9C8182C09F50C8318d769245beA52c32BE35BC" },
+  ens:     { label: "ENS",     address: "0xFe89cc7aBB2C4183683ab71653C4cdc9B02D44b7" },
+  arbitrum: { label: "Arbitrum", address: "0xf3fc178157fb3c87548baa86f9d24ba38e649b58" },
+};
+
 // Live-data grounding for the Smart informational path. Pulls the current price
 // for the primary recognized token in a free-form question so Smart can reason
 // over real numbers instead of refusing. Returns null when no token is named or
@@ -1168,6 +1180,33 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       return json({ type: "error", text: "Alerts aren't available right now — try again in a bit." });
     }
     return json({ type: "text", text: `Watching ${watchAddress} — I'll notify you on new activity.` });
+  }
+
+  // ── DAO treasury lookup (#17) — "treasury of X" / "X's treasury" / "X DAO
+  // treasury" / "how big is X's treasury". Native, no Aeon relay, no Dune,
+  // no DeFiLlama Pro — reuses lookupAddress (already multi-chain, already
+  // computes totalUsdValue) against a small hand-verified address map above.
+  // Deliberately curated, not scraped: a wrong address here reports the
+  // wrong treasury's numbers with total confidence, so scope stays small
+  // until each entry is verified against its Etherscan/Arbiscan label.
+  const TREASURY_STOPWORDS = new Set(["a", "an", "the", "what", "my", "this", "that", "which", "whose", "your"]);
+  const treasuryMatch =
+    trimmed.match(/\btreasury\s+of\s+(?:the\s+)?(\w+)/i) ??
+    trimmed.match(/\bhow\s+big\s+is\s+(?:the\s+)?(\w+)(?:'s)?\s+(?:dao\s+)?treasury/i) ??
+    trimmed.match(/\b(\w+)(?:'s)?\s+(?:dao\s+)?treasury\b/i);
+  if (treasuryMatch && !TREASURY_STOPWORDS.has(treasuryMatch[1].toLowerCase())) {
+    const name = treasuryMatch[1].toLowerCase();
+    const dao = DAO_TREASURIES[name];
+    if (!dao) {
+      const supported = Object.values(DAO_TREASURIES).map(d => d.label).join(", ");
+      return json({
+        type: "error",
+        text: `I don't have "${treasuryMatch[1]}" in the curated treasury list yet — currently supporting: ${supported}.`,
+      });
+    }
+    const data = await lookupAddress(dao.address);
+    const summary = await generateAddressSummary(data);
+    return json({ type: "address", data, summary: `${dao.label} DAO treasury:\n\n${summary}` });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
