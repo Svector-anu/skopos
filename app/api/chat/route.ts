@@ -145,20 +145,24 @@ function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
   return `${symbol} yield opportunities:\n${lines}\n\nUse ONLY the APY and TVL figures above — never state a rate or amount not listed here. Classify each as sustainable real yield or an emission-funded coordination game. Give a directional take on which pool structurally favors LPs vs. which extracts from them.`;
 }
 
-const SKOPOS_HELP = `Skopos is a non-custodial cross-chain DeFi copilot — tell it what you want in plain English, it builds the route, and you sign in your own wallet. It never holds or moves your funds.
+const SKOPOS_HELP = `Skopos is a non-custodial crypto copilot — live at tryskopos.xyz, and embeddable anywhere else via API, Agent Skill, or MCP. Tell it what you want in plain English, it builds the route or pulls the data, and you sign in your own wallet. It never holds or moves your funds.
 
 What you can do:
 • Swap or bridge across 25+ chains (EVM + Solana) — e.g. "bridge 0.1 ETH from ethereum to base"
 • Rebalance across chains — e.g. "split 1 ETH from ethereum across base and arbitrum"
 • Live token price + 7-day chart — e.g. "ETH price"
 • Find the best DeFi yield — e.g. "find highest yield for USDC"
-• Scan a token's risk — e.g. "scan PEPE risk"
+• Scan or deep-dive a token's risk — e.g. "scan PEPE risk" or "deep dive on pepe"
+• Get a token pick or check the scorecard — "give me a token pick" or "picks tracker"
+• Look up a DAO treasury — e.g. "treasury of uniswap"
+• Aeon market reads — e.g. "defi read", "what's trending", "fear and greed divergence", "x402 pulse"
+• Set standing alerts — e.g. "alert me when eth hits $5000", "monitor polymarket X", "watch 0x... for activity"
 • Check a wallet's portfolio — "show my portfolio" or paste an address
-• Prediction market odds — e.g. "odds on Bitcoin hitting $100k"
+• Prediction market odds or pulse — e.g. "odds on Bitcoin hitting $100k" or "pm pulse"
 • FX, gold, equities — e.g. "USD to EUR", "gold price"
 • Look up any tx, ENS name, or address — just paste it
 
-Not live yet: whale tracking, recurring/DCA, limit orders, off-ramp to bank/card.
+Not live yet: recurring/DCA, limit orders, off-ramp to bank/card.
 
 Just type what you want to do.`;
 

@@ -6,7 +6,7 @@ import { HeaderIcons } from "@/components/landing/HeaderIcons";
 export const metadata: Metadata = {
   title: "Changelog — Skopos",
   description:
-    "What's shipping on Skopos: B20 memo payments, the $skopos holder perk, and safer execution across the cross-chain DeFi copilot.",
+    "What's shipping on Skopos: market alerts, Aeon intelligence reads, DAO treasury lookups, B20 memo payments, and safer execution — the non-custodial crypto copilot, everywhere you already work.",
 };
 
 const MONO = "var(--font-jetbrains-mono), monospace";
@@ -328,8 +328,8 @@ export default function ChangelogPage() {
               maxWidth: 620,
             }}
           >
-            Notable updates to Skopos, newest first. Building the cross-chain DeFi copilot toward an
-            agentic payment rail on Base.
+            Notable updates to Skopos, newest first. Building the non-custodial crypto copilot toward
+            an agentic payment rail on Base.
           </p>
         </section>
 
@@ -383,7 +383,7 @@ export default function ChangelogPage() {
             }}
           >
             <span style={{ fontFamily: MONO, fontSize: "0.7rem", color: "rgba(255,255,255,0.3)" }}>
-              Skopos — cross-chain DeFi copilot
+              Skopos — non-custodial crypto copilot
             </span>
             <Link
               href="/app"

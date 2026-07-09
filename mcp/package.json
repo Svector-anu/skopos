@@ -1,7 +1,7 @@
 {
   "name": "skopos-mcp",
   "version": "0.1.0",
-  "description": "MCP server for Skopos — the cross-chain DeFi copilot (prices, smart-money intel, swaps, bridges) as an installable agent skill.",
+  "description": "MCP server for Skopos — the non-custodial crypto copilot (prices, smart-money intel, market reads, token picks, treasury lookups, alerts, swaps, bridges) as an installable agent skill.",
   "type": "module",
   "bin": {
     "skopos-mcp": "index.js"

@@ -6,8 +6,9 @@ other agents that follow the standard — only the install directory differs.
 
 Available skills:
 
-- **`skopos/`** — the Skopos DeFi copilot (prices, smart-money intel, yields,
-  swaps, payments, lookups) over Skopos's headless API.
+- **`skopos/`** — the Skopos crypto copilot (prices, smart-money intel, market
+  reads, token picks, treasury lookups, alerts, yields, swaps, payments,
+  lookups) over Skopos's headless API.
 
 ## Install
 

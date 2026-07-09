@@ -1,12 +1,13 @@
 # skopos-mcp
 
-Skopos — the cross-chain DeFi copilot — as an installable **agent skill** over MCP.
+Skopos — the non-custodial crypto copilot — as an installable **agent skill** over MCP.
 
 One tool, `skopos_ask`, lets any MCP-compatible agent (Claude, Cursor, Zero, Aeon…)
 ask Skopos in plain English and get a text answer back: token/stock prices, live
-smart-money intel (who's buying/holding/dumping), yields, and market reads. Swaps,
-bridges and payments come back as a **link to sign in the Skopos app** — execution
-stays non-custodial; no wallet or keys touch the agent.
+smart-money intel (who's buying/holding/dumping), Aeon market reads, token picks,
+DAO treasury lookups, standing alerts, and yields. Swaps, bridges and payments
+come back as a **link to sign in the Skopos app** — execution stays non-custodial;
+no wallet or keys touch the agent.
 
 It's a thin wrapper over Skopos's headless API (`POST /api/chat` with
 `format:"text"`).
@@ -42,6 +43,8 @@ Then just ask your agent things like:
 
 - `what's the price of eth?`
 - `who is buying $aero?`
+- `give me a token pick`
+- `treasury of uniswap`
 - `best yield for usdc`
 - `swap 1 eth to usdc on base` → returns a link to sign in Skopos
 

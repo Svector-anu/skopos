@@ -30,7 +30,7 @@ const SECTIONS: Section[] = [
   {
     id: "overview",
     title: "What Skopos is",
-    lede: "Skopos is a cross-chain DeFi copilot. You type what you want in plain English and it figures out the route, pulls live data, and hands your wallet a transaction to sign. It never holds your funds or your keys.",
+    lede: "Skopos is a non-custodial crypto copilot — live at tryskopos.xyz, and embeddable anywhere else you work via one API, an Agent Skill, or MCP. Type what you want in plain English: prices, smart-money intel, market reads, alerts, token safety, prediction markets, or a swap/bridge/payment — Skopos pulls live data or hands your wallet a transaction to sign. It never holds your funds or your keys.",
     note: "Open the app, connect a wallet, and type into the chat. No forms, no chain pickers — just describe the move.",
   },
   {
@@ -669,7 +669,7 @@ mkdir -p ~/.claude/skills/skopos && mv SKILL.md ~/.claude/skills/skopos/`}</Code
           }}
         >
           <span style={{ fontFamily: MONO, fontSize: "0.7rem", color: "rgba(255,255,255,0.3)" }}>
-            Skopos — cross-chain DeFi copilot
+            Skopos — non-custodial crypto copilot
           </span>
           <Link
             href="/app"

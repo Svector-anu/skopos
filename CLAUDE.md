@@ -20,7 +20,7 @@ No test suite — verification is manual against the chat UI.
 
 ## Architecture
 
-**Skopos** is a cross-chain DeFi copilot deployed at https://www.tryskopos.xyz (Vercel, auto-deploys from `main`).
+**Skopos** is a non-custodial crypto copilot deployed at https://www.tryskopos.xyz (Vercel, auto-deploys from `main`). Beyond cross-chain swaps/bridges/payments, it covers live prices/FX/metals/equities, smart-money intel, Aeon market-intelligence reads, token safety/deep-dives, token picks, DAO treasury lookups, standing price/market/onchain alerts, and prediction markets — and is embeddable via a headless API, an Agent Skill (`SKILL.md`), and an MCP server (`skopos-mcp` on npm), not just the web app.
 
 ### LLM stack
 
