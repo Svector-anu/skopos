@@ -1105,16 +1105,14 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     if (!identity) {
       return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
     }
-    const subscription = await getSubscription(identity);
-    if (!subscription) {
-      return json({ type: "error", text: "Enable browser notifications first so I can actually alert you, then ask again." });
-    }
 
     const watcher = await registerWatcher("price", identity, { symbol, targetPrice, direction });
     if (!watcher) {
       return json({ type: "error", text: "Alerts aren't available right now — try again in a bit." });
     }
-    return json({ type: "text", text: `Alert set — I'll notify you when ${symbol} goes ${direction} $${targetPrice.toLocaleString()}.` });
+    const subscription = await getSubscription(identity);
+    const note = subscription ? "" : " Open tryskopos.xyz/app once and enable notifications with this same wallet so it can actually reach you.";
+    return json({ type: "text", text: `Alert set — I'll notify you when ${symbol} goes ${direction} $${targetPrice.toLocaleString()}.${note}` });
   }
 
   // ── Monitor Polymarket — "monitor polymarket <topic>" / "watch <topic> on
@@ -1147,16 +1145,14 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     if (!identity) {
       return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
     }
-    const subscription = await getSubscription(identity);
-    if (!subscription) {
-      return json({ type: "error", text: "Enable browser notifications first so I can actually alert you, then ask again." });
-    }
 
     const watcher = await registerWatcher("polymarket", identity, { slug: market.slug, title: market.title, baselineVolume: market.volume });
     if (!watcher) {
       return json({ type: "error", text: "Alerts aren't available right now — try again in a bit." });
     }
-    return json({ type: "text", text: `Watching "${market.title}" on Polymarket — I'll notify you if volume moves significantly.` });
+    const subscription = await getSubscription(identity);
+    const note = subscription ? "" : " Open tryskopos.xyz/app once and enable notifications with this same wallet so it can actually reach you.";
+    return json({ type: "text", text: `Watching "${market.title}" on Polymarket — I'll notify you if volume moves significantly.${note}` });
   }
 
   // ── Onchain monitor — "watch 0x123... for activity" / "monitor address
@@ -1171,10 +1167,6 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     if (!identity) {
       return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
     }
-    const subscription = await getSubscription(identity);
-    if (!subscription) {
-      return json({ type: "error", text: "Enable browser notifications first so I can actually alert you, then ask again." });
-    }
 
     const data = await lookupAddress(watchAddress);
     const lastSeenTxHash = data.recentTransfers[0]?.hash ?? null;
@@ -1183,7 +1175,9 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     if (!watcher) {
       return json({ type: "error", text: "Alerts aren't available right now — try again in a bit." });
     }
-    return json({ type: "text", text: `Watching ${watchAddress} — I'll notify you on new activity.` });
+    const subscription = await getSubscription(identity);
+    const note = subscription ? "" : " Open tryskopos.xyz/app once and enable notifications with this same wallet so it can actually reach you.";
+    return json({ type: "text", text: `Watching ${watchAddress} — I'll notify you on new activity.${note}` });
   }
 
   // ── DAO treasury lookup (#17) — "treasury of X" / "X's treasury" / "X DAO
