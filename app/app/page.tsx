@@ -237,6 +237,16 @@ const FEATURE_SLIDES: FeatureCard[][] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function shortAddr(addr: string) { return `${addr.slice(0, 6)}…${addr.slice(-4)}`; }
+
+// Web Push wants the VAPID key as a Uint8Array, browsers hand it out as base64url.
+function urlBase64ToUint8Array(base64Url: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
+  const base64 = (base64Url + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
 function loadJson<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; } catch { return fallback; }
 }
@@ -348,6 +358,47 @@ export default function AppPage() {
         login();
       }
     : login;
+  const [pushLoading, setPushLoading]          = useState(false);
+  // Web Push subscription, keyed by the SAME identity /api/chat uses for the
+  // sender (wallet if connected, else the persisted anonId) — a watcher
+  // registered under that identity looks up this same key to alert.
+  const subscribeToPush = useCallback(async (): Promise<boolean> => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidKey) return false;
+    setPushLoading(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return false;
+
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+
+      const existing = await registration.pushManager.getSubscription();
+      const subscription = existing ?? await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        // lib.dom's PushSubscriptionOptionsInit wants Uint8Array<ArrayBuffer> specifically;
+        // Uint8Array's own constructor is typed Uint8Array<ArrayBufferLike> as of TS 5.7's
+        // stricter BufferSource types. The value is a plain heap-allocated ArrayBuffer at
+        // runtime (never SharedArrayBuffer) — this narrows the type, not the behavior.
+        applicationServerKey: urlBase64ToUint8Array(vapidKey) as Uint8Array<ArrayBuffer>,
+      });
+
+      const identity = (connectedAddress ?? anonId).toLowerCase();
+      const res = await fetch("/api/notifications/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identity, subscription: subscription.toJSON() }),
+      });
+      const data = await res.json();
+      return !!data.ok;
+    } catch (e) {
+      console.error("[push] subscribe failed:", e);
+      return false;
+    } finally {
+      setPushLoading(false);
+    }
+  }, [connectedAddress, anonId]);
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
   const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
@@ -1251,7 +1302,33 @@ export default function AppPage() {
                       <AeonMarkdown text={msg.result.text} accent="#F5B800" />
                     )}
                     {msg.result.type === "error" && (
-                      /wallet|reconnect/i.test(msg.result.text) ? (
+                      /enable.*(?:alerts|notifications)/i.test(msg.result.text) ? (
+                        <div style={{ background: isDark ? "rgba(245,184,0,0.04)" : "rgba(245,184,0,0.07)", border: "1px solid rgba(245,184,0,0.18)", borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 360 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(245,184,0,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(245,184,0,0.85)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                              </svg>
+                            </div>
+                            <div>
+                              <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.07em", margin: "0 0 5px" }}>ALERTS</p>
+                              <p style={{ ...MONO, fontSize: "0.82rem", color: T.textMuted, margin: 0, lineHeight: 1.55 }}>{msg.result.text}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const ok = await subscribeToPush();
+                              setMessages(prev => [...prev, {
+                                role: "assistant",
+                                result: { type: "text", text: ok ? "Alerts enabled — ask for your alert again and it'll register." : "Couldn't enable alerts — check your browser's notification permission and try again." },
+                              }]);
+                            }}
+                            style={{ ...MONO, width: "100%", padding: "9px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.04em", color: "#000", background: "#F5B800", border: "none", borderRadius: 9, cursor: "pointer" }}
+                          >
+                            {pushLoading ? "Enabling…" : "Enable Alerts"}
+                          </button>
+                        </div>
+                      ) : /wallet|reconnect/i.test(msg.result.text) ? (
                         <div style={{ background: isDark ? "rgba(245,184,0,0.04)" : "rgba(245,184,0,0.07)", border: "1px solid rgba(245,184,0,0.18)", borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 360 }}>
                           <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                             <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(245,184,0,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>

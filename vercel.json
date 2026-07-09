@@ -3,6 +3,9 @@
   "buildCommand": "pnpm build",
   "installCommand": "pnpm install",
   "outputDirectory": ".next",
+  "crons": [
+    { "path": "/api/cron/watchers", "schedule": "0 13 * * *" }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

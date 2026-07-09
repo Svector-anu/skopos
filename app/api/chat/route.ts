@@ -24,6 +24,8 @@ import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
 import { scanToken, resolveTokenTarget, getTrendingCandidates, getPairPrice, type TokenRisk } from "@/lib/dexscreener";
 import { recordPick, getRecentPicks } from "@/lib/picksTracker";
+import { getSubscription } from "@/lib/notifications";
+import { registerWatcher } from "@/lib/watchers";
 import { toNansenChain } from "@/lib/nansen";
 import { getTopYields, type YieldPool } from "@/lib/defillama";
 import { getTopMarkets, PolymarketEvent } from "@/lib/polymarket";
@@ -1056,6 +1058,47 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       return `• ${p.symbol} — entry $${p.entryPriceUsd} → now $${livePrice} (${sign}${pct.toFixed(1)}%)`;
     }));
     return json({ type: "text", text: `**Picks tracker** (last ${stored.length}):\n\n${lines.join("\n")}\n\nNot financial advice.` });
+  }
+
+  // ── Price alert — "alert me when eth hits $5000" / "notify me when btc
+  // drops below $90000". First of the standing-watch trio (onchain-monitor,
+  // price-alert, monitor-polymarket) — needs a push subscription to already
+  // exist (lib/notifications.ts), since Skopos has no other way to reach a
+  // user outside a request-response chat turn. Evaluated by the Vercel cron
+  // at /api/cron/watchers, not here — this block only registers the watcher.
+  const PRICE_ALERT_TRIGGER_RE = /\b(?:alert\s+me|notify\s+me|price\s+alert)\b/i;
+  if (PRICE_ALERT_TRIGGER_RE.test(trimmed)) {
+    const parsed = trimmed.match(
+      /(\$?[a-z0-9]{2,10})\s+(hits|reaches|crosses|goes\s+above|is\s+above|is\s+over|above|over|drops?\s+below|goes\s+below|falls?\s+below|is\s+below|is\s+under|below|under)\s+\$?([\d,]+(?:\.\d+)?)/i
+    );
+    if (!parsed) {
+      return json({
+        type: "error",
+        text: 'Specify a token and target price — e.g. "alert me when eth hits $5000" or "notify me when btc drops below $90000".',
+      });
+    }
+    const rawToken     = parsed[1].replace(/^\$/, "").toLowerCase();
+    const symbol       = TOKEN_NAME_TO_SYMBOL[rawToken] ?? rawToken.toUpperCase();
+    const direction: "above" | "below" = /below|under|drop|fall/i.test(parsed[2]) ? "below" : "above";
+    const targetPrice  = Number(parsed[3].replace(/,/g, ""));
+    if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
+      return json({ type: "error", text: 'That target price doesn\'t look right — try again with a number, e.g. "alert me when eth hits $5000".' });
+    }
+
+    const identity = (senderAddress ?? anonId ?? "").toLowerCase();
+    if (!identity) {
+      return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
+    }
+    const subscription = await getSubscription(identity);
+    if (!subscription) {
+      return json({ type: "error", text: "Enable browser notifications first so I can actually alert you, then ask again." });
+    }
+
+    const watcher = await registerWatcher("price", identity, { symbol, targetPrice, direction });
+    if (!watcher) {
+      return json({ type: "error", text: "Alerts aren't available right now — try again in a bit." });
+    }
+    return json({ type: "text", text: `Alert set — I'll notify you when ${symbol} goes ${direction} $${targetPrice.toLocaleString()}.` });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
