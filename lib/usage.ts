@@ -30,11 +30,6 @@ const AGENT_HANDLE_DAILY_CAP = envCap("SMART_AGENT_HANDLE_DAILY_CAP", 50);
 // rest of this module — Redis trouble lets reads through rather than breaking.
 const INTEL_AGENT_DAILY_CAP  = envCap("SMART_MONEY_AGENT_DAILY_CAP", 200);
 
-// Aeon reads (Bankr Agent API) budget. Each read spends from the agent's Bankr
-// wallet/credits, so a global daily ceiling guards it. Same soft, fail-open
-// contract as the rest of this module.
-const AEON_AGENT_DAILY_CAP   = envCap("AEON_AGENT_DAILY_CAP", 200);
-
 // Headless text-mode intel reads (format:"text") spend x402 inline, so they get a
 // per-anonId daily cap ON TOP of the global cap. Unlike the rest of this module,
 // this one FAILS CLOSED — no anonId or Redis down → deny, so a headless caller can
@@ -167,20 +162,23 @@ function intelGlobalKey(day: string): string {
   return `intel:agent:${day}`;
 }
 
-// Read-only: never increments. Fail-open — if Redis is down the read is allowed
-// and the budget simply isn't enforced, rather than the request breaking.
+// Read-only: never increments. Fail-closed — these routes are unauthenticated
+// and spend Skopos's own wallet on a real x402 payment per successful call, so
+// an unenforceable budget (Redis down/unconfigured) must block the spend, not
+// allow it. Unlike most fail-open reads in this file, availability is not the
+// higher-value tradeoff here.
 export async function checkIntelBudget(): Promise<boolean> {
   const redis = getRedis();
   if (!redis) {
-    console.warn("[usage] Upstash not configured — intel budget disabled (fail-open)");
-    return true;
+    console.error("[usage] Upstash not configured — intel budget cannot be enforced, failing closed");
+    return false;
   }
   try {
     const used = Number((await redis.get<number>(intelGlobalKey(utcDay()))) ?? 0);
     return used < INTEL_AGENT_DAILY_CAP;
   } catch (err) {
-    console.error("[usage] intel budget check failed — fail-open:", err instanceof Error ? err.message : err);
-    return true;
+    console.error("[usage] intel budget check failed — failing closed:", err instanceof Error ? err.message : err);
+    return false;
   }
 }
 
@@ -193,37 +191,6 @@ export async function incrIntel(): Promise<void> {
     if (count === 1) await redis.expire(intelGlobalKey(day), TTL_SECONDS);
   } catch (err) {
     console.error("[usage] intel incr failed:", err instanceof Error ? err.message : err);
-  }
-}
-
-function aeonGlobalKey(day: string): string {
-  return `aeon:agent:${day}`;
-}
-
-export async function checkAeonBudget(): Promise<boolean> {
-  const redis = getRedis();
-  if (!redis) {
-    console.warn("[usage] Upstash not configured — aeon budget disabled (fail-open)");
-    return true;
-  }
-  try {
-    const used = Number((await redis.get<number>(aeonGlobalKey(utcDay()))) ?? 0);
-    return used < AEON_AGENT_DAILY_CAP;
-  } catch (err) {
-    console.error("[usage] aeon budget check failed — fail-open:", err instanceof Error ? err.message : err);
-    return true;
-  }
-}
-
-export async function incrAeon(): Promise<void> {
-  const redis = getRedis();
-  if (!redis) return;
-  const day = utcDay();
-  try {
-    const count = await redis.incr(aeonGlobalKey(day));
-    if (count === 1) await redis.expire(aeonGlobalKey(day), TTL_SECONDS);
-  } catch (err) {
-    console.error("[usage] aeon incr failed:", err instanceof Error ? err.message : err);
   }
 }
 

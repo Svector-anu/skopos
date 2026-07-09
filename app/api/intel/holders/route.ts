@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { fetchHoldersServer, agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { checkIntelBudget, incrIntel } from "@/lib/usage";
+import { isValidTokenTarget } from "@/lib/nansen";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: false, error: "Invalid request body." }, { status: 400 });
   }
 
-  if (!token.address || !token.chain) {
+  if (!token.address || !token.chain || !isValidTokenTarget(token.address, token.chain)) {
     return Response.json({ ok: false, error: "Couldn't locate this token on a supported chain." }, { status: 400 });
   }
 

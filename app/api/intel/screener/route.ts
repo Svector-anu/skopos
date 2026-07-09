@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { fetchScreenerServer, agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { checkIntelBudget, incrIntel } from "@/lib/usage";
 import { isTimeframe, type Timeframe } from "@/lib/timeframe";
+import { toNansenChain } from "@/lib/nansen";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ export async function POST(req: NextRequest) {
     timeframe = isTimeframe(body?.timeframe) ? body.timeframe : undefined;
   } catch {
     // empty body is fine — the screen is cross-chain by default
+  }
+
+  if (chain && !toNansenChain(chain)) {
+    return Response.json({ ok: false, error: "Unsupported chain." }, { status: 400 });
   }
 
   if (!(await checkIntelBudget())) {
