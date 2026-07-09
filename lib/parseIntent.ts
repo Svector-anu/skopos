@@ -650,26 +650,29 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
 export async function generateAddressSummary(data: import("./alchemy").AddressData): Promise<string> {
   const groq = getGroq();
   if (!groq) return "";
-  const totalUsd = data.totalUsdValue
-    ? `$${data.totalUsdValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-    : "unknown";
+  const fmtUsd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const totalUsd = data.totalUsdValue ? fmtUsd(data.totalUsdValue) : "unknown";
+  // Show a $ value per holding only where one is actually known (tokenBalances is
+  // already sorted by usdValue desc) — otherwise the model has nothing but a raw
+  // token-amount count to work with and will invent a dollar figure from it, which
+  // produces a per-holding breakdown that doesn't sum to totalUsd.
   const nativeBalances = data.balances.length > 0
-    ? data.balances.map(b => `${b.native} ${b.nativeSymbol} on ${b.chainName}`).join(", ")
+    ? data.balances.map(b => `${b.native} ${b.nativeSymbol} on ${b.chainName}${b.usdValue ? ` (${fmtUsd(b.usdValue)})` : ""}`).join(", ")
     : "none";
   const tokenBalances = data.tokenBalances.length > 0
-    ? data.tokenBalances.slice(0, 8).map(t => `${t.balance} ${t.symbol} on ${t.chainName}`).join(", ")
+    ? data.tokenBalances.slice(0, 8).map(t => t.usdValue ? `${t.symbol} on ${t.chainName} (${fmtUsd(t.usdValue)})` : `${t.balance} ${t.symbol} on ${t.chainName}`).join(", ")
     : "none";
   const recent = data.recentTransfers.slice(0, 5)
     .map(t => `${t.direction === "out" ? "sent" : "received"} ${t.value} ${t.asset}`)
     .join(", ");
-  const prompt = `Address: ${data.address}\nTotal portfolio value: ${totalUsd}\nNative balances: ${nativeBalances}\nToken balances: ${tokenBalances}\nRecent: ${recent || "none"}`;
+  const prompt = `Address: ${data.address}\nTotal portfolio value: ${totalUsd}\nNative balances: ${nativeBalances}\nToken balances (sorted by value, $ shown only where known): ${tokenBalances}\nRecent: ${recent || "none"}`;
   try {
     const completion = await groq.chat.completions.create({
       model: modelFor("fast"),
       max_tokens: 80,
       temperature: 0.1,
       messages: [
-        { role: "system", content: "You are a blockchain wallet analyst. In 1 sentence, summarise what this wallet holds. Always lead with the total portfolio value in dollars if one is given. If there are actionable options (swap, bridge), mention one concisely. Use only the data provided. Never invent details." },
+        { role: "system", content: "You are a blockchain wallet analyst. In 1 sentence, summarise what this wallet holds. Lead with the total portfolio value in dollars if one is given, then name the top 2-3 holdings by symbol. Only state a dollar figure for a specific holding if one was explicitly given for it in the data — never calculate, estimate, or invent a per-holding dollar figure. If there are actionable options (swap, bridge), mention one concisely. Use only the data provided. Never invent details." },
         { role: "user", content: prompt },
       ],
     });
