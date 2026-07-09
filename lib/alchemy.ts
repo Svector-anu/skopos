@@ -417,8 +417,13 @@ async function fetchErc20Balances(address: string, chainId: number): Promise<Tok
     (t: any) => t.tokenBalance && t.tokenBalance !== "0x0000000000000000000000000000000000000000000000000000000000000000"
   );
 
-  // Fetch metadata for up to 8 tokens in parallel to keep latency reasonable
-  const top = nonZero.slice(0, 8);
+  // Fetch metadata for up to 20 tokens in parallel to keep latency reasonable.
+  // Alchemy's order here is arbitrary, not USD-value-sorted — a high-profile
+  // address (a DAO treasury, an exchange hot wallet) accumulates hundreds of
+  // spam-airdropped tokens over time, which can bury a real, high-value
+  // holding past position 8. 20 plus the spam filter below catches real
+  // holdings far more reliably without fetching metadata for everything.
+  const top = nonZero.slice(0, 20);
   const metaResults = await Promise.allSettled(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     top.map((t: any) => rpc<any>(chain.rpc, "alchemy_getTokenMetadata", [t.contractAddress]))
@@ -442,5 +447,9 @@ async function fetchErc20Balances(address: string, chainId: number): Promise<Tok
       chainName: chain.name,
     });
   }
-  return out;
+  // Filter obvious airdrop spam (fake "claim your reward" tokens abusing the
+  // symbol/name field as an ad) before it can crowd out real holdings in the
+  // final top-N the caller displays.
+  const SPAM_PATTERN = /https?:\/\/|www\.|\.(?:com|org|io|xyz|net|app)\b|claim|reward|airdrop/i;
+  return out.filter(t => !SPAM_PATTERN.test(t.symbol) && !SPAM_PATTERN.test(t.name));
 }
