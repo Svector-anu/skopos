@@ -1,6 +1,6 @@
 # skopos-mcp
 
-Skopos — the non-custodial crypto copilot — as an installable **agent skill** over MCP.
+Skopos — the non-custodial, cross-chain crypto copilot — as an installable **agent skill** over MCP.
 
 One tool, `skopos_ask`, lets any MCP-compatible agent (Claude, Cursor, Zero, Aeon…)
 ask Skopos in plain English and get a text answer back: token/stock prices, live

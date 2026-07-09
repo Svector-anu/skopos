@@ -1412,7 +1412,7 @@ export default function AppPage() {
                 <p style={{ ...MONO, fontSize: "0.95rem", color: T.textMuted, lineHeight: 1.65, margin: 0, maxWidth: 440 }}>
                   Hey, I&apos;m{" "}
                   <span style={{ color: "#F5B800", fontWeight: 600 }}>Skopos</span>
-                  , your non-custodial crypto copilot.
+                  , your non-custodial, cross-chain crypto copilot.
                 </p>
                 <p style={{ ...MONO, fontSize: "0.82rem", color: T.textDim, marginTop: 10, marginBottom: 0 }}>
                   What can I help you with today?

@@ -8,7 +8,7 @@
 
 ## 1. What Skopos Is
 
-A non-custodial crypto copilot — live at tryskopos.xyz, and embeddable anywhere else via a headless API, an Agent Skill, or MCP. Users type natural language ("bridge 0.1 ETH from ethereum to base") and the system classifies intent, fetches a live quote from the Delora aggregator, and presents a signed-ready transaction. It also handles price queries (crypto/FX/metals/equities), portfolio lookups, yield scanning, token risk analysis and deep-dives, token picks, DAO treasury lookups, live Aeon market-intelligence reads, standing price/market/onchain alerts, and prediction markets.
+A non-custodial, cross-chain crypto copilot — live at tryskopos.xyz, and embeddable anywhere else via a headless API, an Agent Skill, or MCP. Users type natural language ("bridge 0.1 ETH from ethereum to base") and the system classifies intent, fetches a live quote from the Delora aggregator, and presents a signed-ready transaction. It also handles price queries (crypto/FX/metals/equities), portfolio lookups, yield scanning, token risk analysis and deep-dives, token picks, DAO treasury lookups, live Aeon market-intelligence reads, standing price/market/onchain alerts, and prediction markets.
 
 Note: this positioning summary is current as of 2026-07-09; the rest of this document (architecture, data sources) was last verified 2026-05-04 and may not reflect everything shipped since — cross-check against CLAUDE.md and recent git history before relying on details below.
 

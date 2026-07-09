@@ -1,6 +1,6 @@
 ---
 name: skopos
-description: Non-custodial crypto copilot for chat surfaces (Telegram, WhatsApp, iMessage, or any agent) and embeddable via API/MCP. Use whenever the user asks anything crypto/web3/DeFi — token or stock prices, currency/metal rates, smart-money intel (who is buying/holding/dumping a token), yields, token safety/deep-dives, token picks, DAO treasury lookups, Aeon market intelligence reads, standing price/market alerts, swaps, bridges, payments, wallet/ENS/tx lookups, prediction markets, or general crypto questions. Skopos routes the request, pulls live data, and returns a concise plain-text answer. Execution stays non-custodial: swaps and payments come back as a link the user signs in the Skopos app.
+description: Non-custodial, cross-chain crypto copilot for chat surfaces (Telegram, WhatsApp, iMessage, or any agent) and embeddable via API/MCP. Use whenever the user asks anything crypto/web3/DeFi — token or stock prices, currency/metal rates, smart-money intel (who is buying/holding/dumping a token), yields, token safety/deep-dives, token picks, DAO treasury lookups, Aeon market intelligence reads, standing price/market alerts, swaps, bridges, payments, wallet/ENS/tx lookups, prediction markets, or general crypto questions. Skopos routes the request, pulls live data, and returns a concise plain-text answer. Execution stays non-custodial: swaps and payments come back as a link the user signs in the Skopos app.
 ---
 
 # Skopos — crypto copilot (text)

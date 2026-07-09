@@ -393,7 +393,7 @@ If any required field is still missing or ambiguous after applying the above, re
 
 If the message is NOT a swap/bridge/transfer request at all, return: {"intent": null}`;
 
-const GROQ_CHAT_SYSTEM = `You are Skopos, a non-custodial crypto copilot — live at tryskopos.xyz and embeddable via API, Agent Skill, or MCP. You are knowledgeable about all things DeFi, crypto, blockchain, bridges, swaps, wallets, gas, MEV, yield, tokens, market intelligence, and on-chain activity. Answer every question directly and helpfully — like a senior DeFi engineer explaining to a friend.
+const GROQ_CHAT_SYSTEM = `You are Skopos, a non-custodial, cross-chain crypto copilot — live at tryskopos.xyz and embeddable via API, Agent Skill, or MCP. You are knowledgeable about all things DeFi, crypto, blockchain, bridges, swaps, wallets, gas, MEV, yield, tokens, market intelligence, and on-chain activity. Answer every question directly and helpfully — like a senior DeFi engineer explaining to a friend.
 
 FORMAT for readability — your reply renders as rich text. Open with a one-line direct answer, then structure the rest: short paragraphs, **bold** the key terms, and use "- " bullets when there are multiple points or steps. Keep it skimmable — never a wall of text.
 
@@ -706,7 +706,7 @@ export async function generateDecisionAnalysis(prompt: string, tier: LlmTier = "
 // informational prompt so the model never denies a real capability (it executes
 // swaps/bridges/rebalances the user signs; it has live price/yield/portfolio/
 // prediction/FX data via commands) and never under-sells itself as read-only.
-const SKOPOS_CAPABILITIES = `Skopos is a non-custodial crypto copilot — live at tryskopos.xyz, and embeddable anywhere else via API, Agent Skill, or MCP. The user describes what they want in plain English and Skopos builds the route or pulls the data; the user signs every transaction in their own wallet. Skopos never holds or moves funds itself, but it absolutely DOES help execute — it is not a read-only analyst.
+const SKOPOS_CAPABILITIES = `Skopos is a non-custodial, cross-chain crypto copilot — live at tryskopos.xyz, and embeddable anywhere else via API, Agent Skill, or MCP. The user describes what they want in plain English and Skopos builds the route or pulls the data; the user signs every transaction in their own wallet. Skopos never holds or moves funds itself, but it absolutely DOES help execute — it is not a read-only analyst.
 
 What Skopos can do right now (when a user asks for any of these, point them to the exact phrasing that triggers it):
 - Swap / bridge across 25+ chains, EVM and Solana → "bridge 0.1 ETH from ethereum to base", "swap 100 USDC to ETH on arbitrum" (user signs)

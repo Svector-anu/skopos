@@ -145,7 +145,7 @@ function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
   return `${symbol} yield opportunities:\n${lines}\n\nUse ONLY the APY and TVL figures above — never state a rate or amount not listed here. Classify each as sustainable real yield or an emission-funded coordination game. Give a directional take on which pool structurally favors LPs vs. which extracts from them.`;
 }
 
-const SKOPOS_HELP = `Skopos is a non-custodial crypto copilot — live at tryskopos.xyz, and embeddable anywhere else via API, Agent Skill, or MCP. Tell it what you want in plain English, it builds the route or pulls the data, and you sign in your own wallet. It never holds or moves your funds.
+const SKOPOS_HELP = `Skopos is a non-custodial, cross-chain crypto copilot — live at tryskopos.xyz, and embeddable anywhere else via API, Agent Skill, or MCP. Tell it what you want in plain English, it builds the route or pulls the data, and you sign in your own wallet. It never holds or moves your funds.
 
 What you can do:
 • Swap or bridge across 25+ chains (EVM + Solana) — e.g. "bridge 0.1 ETH from ethereum to base"
