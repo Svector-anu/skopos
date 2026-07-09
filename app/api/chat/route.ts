@@ -1101,6 +1101,75 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ type: "text", text: `Alert set — I'll notify you when ${symbol} goes ${direction} $${targetPrice.toLocaleString()}.` });
   }
 
+  // ── Monitor Polymarket — "monitor polymarket <topic>" / "watch <topic> on
+  // polymarket". Second of the standing-watch trio. Unlike price-alert this is
+  // a RECURRING watch (matches the "watch over time" framing in the original
+  // ask) — the cron re-arms with a refreshed baseline after each notable move
+  // instead of deleting the watcher.
+  // Two phrasings: "monitor polymarket <topic>" (verb+platform first) and
+  // "watch <topic> market on polymarket" (topic first, platform named last).
+  const monitorPolyMatch =
+    trimmed.match(/\b(?:monitor\s+polymarket|watch\s+(?:this\s+|the\s+)?polymarket)\s+(?:market\s+)?(?:for\s+|on\s+)?(.+)$/i) ??
+    trimmed.match(/\bwatch\s+(?:this\s+|the\s+)?(.+?)\s+(?:market\s+)?on\s+polymarket\b/i);
+  if (monitorPolyMatch) {
+    const topic = monitorPolyMatch[1].trim();
+    if (!topic) {
+      return json({ type: "error", text: 'Specify a market — e.g. "monitor polymarket trump 2028" or "watch the fed rate market on polymarket".' });
+    }
+    let markets: PolymarketEvent[];
+    try {
+      markets = await getTopMarkets(topic, 1);
+    } catch {
+      return json({ type: "error", text: "Prediction market data is unavailable right now. Try again in a moment." });
+    }
+    const market = markets[0];
+    if (!market) {
+      return json({ type: "error", text: `Couldn't find a Polymarket market matching "${topic}".` });
+    }
+
+    const identity = (senderAddress ?? anonId ?? "").toLowerCase();
+    if (!identity) {
+      return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
+    }
+    const subscription = await getSubscription(identity);
+    if (!subscription) {
+      return json({ type: "error", text: "Enable browser notifications first so I can actually alert you, then ask again." });
+    }
+
+    const watcher = await registerWatcher("polymarket", identity, { slug: market.slug, title: market.title, baselineVolume: market.volume });
+    if (!watcher) {
+      return json({ type: "error", text: "Alerts aren't available right now — try again in a bit." });
+    }
+    return json({ type: "text", text: `Watching "${market.title}" on Polymarket — I'll notify you if volume moves significantly.` });
+  }
+
+  // ── Onchain monitor — "watch 0x123... for activity" / "monitor address
+  // 0x123...". Third of the standing-watch trio. Reuses lookupAddress's
+  // recentTransfers (already built for the address-lookup card) as the
+  // activity signal — no new data source. Recurring, same reasoning as
+  // monitor-polymarket above.
+  const onchainMatch = trimmed.match(/\b(?:watch|monitor)\b.*\b(0x[0-9a-fA-F]{40})\b/i);
+  if (onchainMatch) {
+    const watchAddress = onchainMatch[1];
+    const identity = (senderAddress ?? anonId ?? "").toLowerCase();
+    if (!identity) {
+      return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
+    }
+    const subscription = await getSubscription(identity);
+    if (!subscription) {
+      return json({ type: "error", text: "Enable browser notifications first so I can actually alert you, then ask again." });
+    }
+
+    const data = await lookupAddress(watchAddress);
+    const lastSeenTxHash = data.recentTransfers[0]?.hash ?? null;
+
+    const watcher = await registerWatcher("onchain", identity, { address: watchAddress, chainId: 1, lastSeenTxHash });
+    if (!watcher) {
+      return json({ type: "error", text: "Alerts aren't available right now — try again in a bit." });
+    }
+    return json({ type: "text", text: `Watching ${watchAddress} — I'll notify you on new activity.` });
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // PRICE FAST-PATH
   // Runs before structural checks — a classified "price" query must never fall
