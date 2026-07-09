@@ -255,6 +255,12 @@ export async function lookupAddress(address: string): Promise<AddressData> {
     ...balances.filter(b => ALCHEMY_CHAINS[b.chainId]?.alchemyErc20).map(b => b.chainId),
     1,    // always include Ethereum
     8453, // and Base
+    // Always include chains with a GUARANTEED_TOKENS entry — otherwise a
+    // treasury holding only ARB with zero native ETH sitting on Arbitrum
+    // never gets scanned for tokens there at all (found live: this exact
+    // case silently skipped chainId 42161 entirely, guaranteed-check code
+    // included, since it never ran).
+    ...Object.keys(GUARANTEED_TOKENS).map(Number),
   ]);
 
   const [tokenResults, ankrTokens] = await Promise.all([
