@@ -10,6 +10,11 @@ import { lookupAddress } from "@/lib/alchemy";
 
 export const dynamic = "force-dynamic";
 
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error("[/api/cron/watchers] CRON_SECRET is not set — all requests will be rejected with 401");
+}
+
 // Vercel Cron target for the standing-watch trio. price-alert is a one-shot
 // (a crossed threshold is done, fired watcher removed); monitor-polymarket
 // and onchain-monitor are recurring (removed then re-registered with a
@@ -18,7 +23,7 @@ export const dynamic = "force-dynamic";
 // watch itself should keep going.
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!CRON_SECRET || auth !== `Bearer ${CRON_SECRET}`) {
     return Response.json({ ok: false, error: "Unauthorized." }, { status: 401 });
   }
 
