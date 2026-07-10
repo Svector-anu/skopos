@@ -77,10 +77,6 @@ body {
   --landing-terminal-border:  rgba(255,255,255,0.06);
   --landing-terminal-header:  rgba(255,255,255,0.04);
   --landing-terminal-text:    rgba(255,255,255,0.45);
-  --landing-btn-text:         rgba(255,255,255,0.7);
-  --landing-btn-border:       rgba(255,255,255,0.2);
-  --landing-btn-hover-text:   #ffffff;
-  --landing-btn-hover-border: rgba(255,255,255,0.4);
   /* Drawer / sidebar */
   --drawer-label:        rgba(255,255,255,0.18);
   --drawer-action:       rgba(255,255,255,0.32);

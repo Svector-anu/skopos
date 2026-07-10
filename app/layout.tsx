@@ -80,16 +80,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${sourceSerif.variable} ${sourceSans.variable} ${jetbrainsMono.variable} h-full`}
     >
-      <head>
-        {/* Plain server-rendered inline script: emitted into the SSR'd <head> and
-            runs once before hydration. Avoids next/script's beforeInteractive path,
-            which renders a React-managed <script> that React 19 flags on the client. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{localStorage.removeItem('skopos-theme');}catch(e){}`,
-          }}
-        />
-      </head>
       <body className="h-full antialiased">
         <PageTransitionWrapper>{children}</PageTransitionWrapper>
         <Script src="/_vercel/insights/script.js" strategy="afterInteractive" />
