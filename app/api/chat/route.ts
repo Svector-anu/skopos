@@ -65,7 +65,7 @@ const TOKEN_NAME_TO_SYMBOL: Record<string, string> = {
 // report the wrong treasury's numbers with total confidence. lookupAddress
 // already scans all 10 chains Skopos supports per address, so one address per
 // DAO is enough even though the underlying assets may span chains.
-const DAO_TREASURIES: Record<string, { label: string; address: string }> = {
+export const DAO_TREASURIES: Record<string, { label: string; address: string }> = {
   uniswap: { label: "Uniswap", address: "0x1a9C8182C09F50C8318d769245beA52c32BE35BC" },
   ens:     { label: "ENS",     address: "0xFe89cc7aBB2C4183683ab71653C4cdc9B02D44b7" },
   arbitrum: { label: "Arbitrum", address: "0xf3fc178157fb3c87548baa86f9d24ba38e649b58" },
@@ -230,7 +230,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 300): P
 
 // ── shared leg resolver ───────────────────────────────────────────────────────
 
-type LegOk = {
+export type LegOk = {
   ok: true;
   intent: {
     from: { chain: string; chainId: number; token: string; amount: string };
@@ -242,7 +242,7 @@ type LegOk = {
   raw: unknown;
 };
 
-type LegErr = { ok: false; text: string };
+export type LegErr = { ok: false; text: string };
 
 const SOLANA_CHAIN_ID = 1000000001;
 
@@ -265,7 +265,7 @@ function preferredBtcSymbol(symbol: string, chainId: number, explicitWbtc: boole
   return CHAIN_PREFERRED_BTC[chainId] ?? symbol;
 }
 
-async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage?: number, solanaAddress?: string, rawMessage?: string): Promise<LegOk | LegErr> {
+export async function resolveLeg(intent: ParsedIntent, senderAddress?: string, slippage?: number, solanaAddress?: string, rawMessage?: string): Promise<LegOk | LegErr> {
   const parsedAmount = parseFloat(intent.amount);
   if (!isFinite(parsedAmount) || parsedAmount <= 0) {
     return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };

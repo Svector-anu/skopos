@@ -9,9 +9,9 @@ import { createRouterFromEnv } from "@agentcash/router";
 // BASE_URL / EVM_PAYEE_ADDRESS / CDP_API_KEY_ID / CDP_API_KEY_SECRET are set.
 export const router = createRouterFromEnv({
   title: "Skopos",
-  description: "Non-custodial, cross-chain crypto copilot — live token prices, FX, smart-money intel, token safety, swaps, and more.",
-  guidance: "POST /api/price with { symbol: string } (e.g. \"ETH\") to get a live spot price and 24h change.",
+  description: "Non-custodial, cross-chain crypto copilot — live prices, swap/bridge quotes, token safety, smart-money intel, DeFi yield, prediction markets, DAO treasuries, and Aeon-powered market reads.",
+  guidance: "See /openapi.json for the full route list. Quick start: POST /api/price with { symbol: string } for a live spot price.",
   serviceName: "Skopos",
-  tags: ["crypto", "defi", "price"],
+  tags: ["crypto", "defi", "price", "swap", "intel"],
   strictRoutes: true,
 });

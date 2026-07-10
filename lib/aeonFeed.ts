@@ -202,3 +202,10 @@ export async function getAeonRead(kind: AeonKind): Promise<string | null> {
   if (kind === "protocols") return extractProtocols(md);
   return null;
 }
+
+// The markdown extractors above target the app's card renderer (**bold**,
+// "- " bullets). Plain-text consumers (headless text-mode, the paid API)
+// strip it the same way — shared here so both stay in sync.
+export function stripMarkdown(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/g, "$1").replace(/^-\s+/gm, "• ");
+}

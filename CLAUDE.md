@@ -166,7 +166,20 @@ RELAY_SECRET             # required to authenticate /api/vara (the relay/ Vara b
 
 ## Agent-payable API (x402 merchant)
 
-`lib/agentcashRouter.ts` + `app/api/price/route.ts` expose Skopos as a **paid** API for other agents via `@agentcash/router` (agentcash.dev) — `POST /api/price` at $0.01/call, x402 payment required. This is the opposite direction from every other x402 usage in this repo (`lib/smartMoneyClient.ts`, `lib/subscribeClient.ts`, `x402/skopos-subscribe/`), which all have Skopos or its users *paying* someone else. Discovery docs at `/openapi.json` and `/llms.txt` (`lib/agentcashRoutesBarrel.ts` eager-imports every paid route so cold starts populate the registry). New paid routes must be added to the barrel or they won't appear in discovery until first hit. Config comes entirely from env (`BASE_URL`, `EVM_PAYEE_ADDRESS`, `CDP_API_KEY_ID`/`SECRET`, `KV_REST_API_URL`/`TOKEN` — the last two alias the same Upstash instance `UPSTASH_REDIS_REST_URL`/`TOKEN` points at, not a separate database) — missing or mismatched values throw at module load and fail `next build`, so all of them must be set together, never partially.
+`lib/agentcashRouter.ts` exposes Skopos as a **paid** API for other agents via `@agentcash/router` (agentcash.dev), x402 payment required. This is the opposite direction from every other x402 usage in this repo (`lib/smartMoneyClient.ts`, `lib/subscribeClient.ts`, `x402/skopos-subscribe/`), which all have Skopos or its users *paying* someone else. Every paid route reuses the same lib/ function its free `/api/chat` equivalent calls — never duplicated logic, never a second implementation to drift out of sync.
+
+| Route | Price | Reuses |
+|---|---|---|
+| `POST /api/price` | $0.01 | `getPrice()` — `lib/priceCache.ts` |
+| `POST /api/quote` | $0.02 | `resolveLeg()` — `app/api/chat/route.ts` (exported) |
+| `POST /api/risk` | $0.02 | `scanToken()` — `lib/dexscreener.ts` |
+| `POST /api/smart-money` | $0.05 | `fetchSmartMoneyServer()` — `lib/smartMoneyServer.ts`. Priced above the internal Nansen x402 cost this path already pays per call — an estimate, check against real Nansen billing and adjust |
+| `POST /api/yield` | $0.01 | `getTopYields()` — `lib/defillama.ts` |
+| `POST /api/polymarket` | $0.01 | `getTopMarkets()` — `lib/polymarket.ts` |
+| `POST /api/market-read` | $0.01 | `getAeonRead()` — `lib/aeonFeed.ts` (not `/api/aeon`, which is the existing free app-reveal endpoint) |
+| `POST /api/treasury` | $0.01 | `lookupAddress()` + `DAO_TREASURIES` — `app/api/chat/route.ts` (exported) |
+
+`/api/quote` returns a route summary + sign-in link, never raw calldata — same non-custodial contract as the rest of Skopos (SKILL.md: agents get a link, never a signable payload). Discovery docs at `/openapi.json` and `/llms.txt` — `lib/agentcashRoutesBarrel.ts` eager-imports every paid route so cold starts populate the registry; a new paid route not added there won't appear in discovery until its first real hit. `router.route({ path })` requires the object form, not a bare string — `strictRoutes: true` throws at build time otherwise. Config comes entirely from env (`BASE_URL`, `EVM_PAYEE_ADDRESS`, `CDP_API_KEY_ID`/`SECRET`, `KV_REST_API_URL`/`TOKEN` — the last two alias the same Upstash instance `UPSTASH_REDIS_REST_URL`/`TOKEN` points at, not a separate database) — missing or mismatched values throw at module load and fail `next build`, so all of them must be set together, never partially.
 
 ---
 
