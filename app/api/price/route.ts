@@ -7,7 +7,7 @@ import { getPrice } from "@/lib/priceCache";
 // getPrice() the free /api/chat price fast-path calls (priceCache.ts), so this
 // route never duplicates the CoinGecko/DexScreener fetch logic or its cache.
 export const POST = router
-  .route("price")
+  .route({ path: "price" })
   .paid("0.01")
   .body(z.object({ symbol: z.string().min(1).max(20) }))
   .inputExample({ symbol: "ETH" })
