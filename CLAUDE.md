@@ -122,12 +122,6 @@ Ghost session (authenticated but no EVM address): `logout().then(() => login())`
 
 ---
 
-## Orphaned exports
-
-`lib/commands.ts` and the `buildSuggestions` / `streamSuggestion` / `getSuggestion` functions in `lib/parseIntent.ts` are exported but not called anywhere in the current codebase. Do not add calls without understanding the intent.
-
----
-
 ## Environment Variables
 
 ```
@@ -155,6 +149,8 @@ SMART_AGENT_DAILY_CAP    # optional — global daily cap on agent Smart messages
 SMART_AGENT_HANDLE_DAILY_CAP # optional — per-VAN-handle daily cap on agent Smart messages before degrading to Fast (default 50)
 NEXT_PUBLIC_SUBSCRIBE_URL # optional — Bankr x402 Cloud subscribe endpoint URL; absent → paywall Subscribe inert. Price set in bankr.x402.json
 AGENT_TEXT_INTEL_DAILY_CAP # optional — per-anonId daily cap on headless text-mode (format:"text") intel reads, which spend x402 inline (default 15). FAILS CLOSED — no anonId / Upstash down → the read is refused, not spent
+CRON_SECRET              # required to authenticate /api/cron/watchers — unset → all requests rejected with 401 (fails closed)
+RELAY_SECRET             # required to authenticate /api/vara (the relay/ Vara bridge's inbound webhook) — unset → all requests rejected with 401 (fails closed)
 ```
 
 ---
