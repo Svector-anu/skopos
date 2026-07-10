@@ -222,7 +222,6 @@ export async function getPrices(
         const entry: CacheEntry = { ...data, fetchedAt: now, source: "coingecko" };
         priceCache.set(sym, entry);
         result[sym] = { symbol: sym, price: data.price, change24h: data.change24h, source: "coingecko" };
-        console.log(`[price] ${sym}=$${data.price} source=coingecko`);
       }
     }
   }
@@ -236,7 +235,6 @@ export async function getPrices(
         const entry: CacheEntry = { ...data, fetchedAt: now, source: "dexscreener" };
         priceCache.set(sym, entry);
         result[sym] = { symbol: sym, price: data.price, change24h: data.change24h, source: "dexscreener" };
-        console.log(`[price] ${sym}=$${data.price} source=dexscreener`);
       } else {
         console.warn(`[price] ${sym} - all sources failed`);
       }

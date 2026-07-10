@@ -80,8 +80,5 @@ export async function POST(req: NextRequest) {
   if (upstream.status === 402 && hasPayment) {
     console.error("[nansen-proxy] paid request rejected:", new TextDecoder().decode(payload).slice(0, 400));
   }
-  if (upstream.ok) {
-    console.log("[nansen-proxy] response body:", new TextDecoder().decode(payload).slice(0, 1200));
-  }
   return new Response(payload, { status: upstream.status, headers: responseHeaders });
 }
