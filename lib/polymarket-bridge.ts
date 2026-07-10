@@ -38,7 +38,7 @@ export async function generateDepositAddress(walletAddress: string): Promise<Dep
   }
 }
 
-export type DepositStatus =
+type DepositStatus =
   | "pending"
   | "processing"
   | "complete"

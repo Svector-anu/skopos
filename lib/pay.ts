@@ -8,20 +8,6 @@ import { getToken } from "./delora";
 // call; the user signs it client-side (non-custodial). Reads use a base-reth RPC
 // (the public Base RPC is fine post-Beryl).
 
-export const TRANSFER_WITH_MEMO_ABI = [
-  {
-    name: "transferWithMemo",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "to", type: "address" },
-      { name: "amount", type: "uint256" },
-      { name: "memo", type: "bytes32" },
-    ],
-    outputs: [{ type: "bool" }],
-  },
-] as const;
-
 const ERC20_META_ABI = [
   { name: "decimals", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
   { name: "symbol", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },

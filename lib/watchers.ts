@@ -81,8 +81,3 @@ export async function removeWatcher(kind: WatcherKind, id: string): Promise<void
   if (!redis) return;
   await redis.hdel(`${WATCHER_HASH_PREFIX}${kind}`, id);
 }
-
-export async function countWatchers(kind: WatcherKind, identity: string): Promise<number> {
-  const all = await listWatchers(kind);
-  return all.filter((w) => w.identity === identity).length;
-}

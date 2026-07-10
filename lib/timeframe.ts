@@ -54,7 +54,3 @@ const FLOW_INTEL_ENUM: Record<Timeframe, string> = {
 export function toFlowIntelTimeframe(tf: Timeframe): string {
   return FLOW_INTEL_ENUM[tf];
 }
-
-export function timeframeLabel(tf: Timeframe): string {
-  return tf.toUpperCase();
-}

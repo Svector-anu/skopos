@@ -63,23 +63,3 @@ export async function launchToken(params: LaunchTokenParams): Promise<LaunchedTo
   const data = await res.json();
   return (data.token ?? data) as LaunchedToken;
 }
-
-export interface CreatorFees {
-  wallet: string;
-  claimableWeth?: string;
-  claimedWeth?: string;
-  tokens?: number;
-  [key: string]: unknown;
-}
-
-// Endpoint path inferred from the CLI's `bankr fees` flow; confirm against the
-// Partner API reference once the org key is provisioned before wiring to a route.
-export async function getCreatorFees(address: string): Promise<CreatorFees | null> {
-  if (!PARTNER_KEY) return null;
-  const res = await fetchWithTimeout(`${BASE}/token-launches/fees?address=${encodeURIComponent(address)}`);
-  if (!res.ok) {
-    console.error(`[bankr] fees error ${res.status}`);
-    return null;
-  }
-  return res.json();
-}
