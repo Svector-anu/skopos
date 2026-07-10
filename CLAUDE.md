@@ -159,9 +159,14 @@ RELAY_SECRET             # required to authenticate /api/vara (the relay/ Vara b
 
 - `classifyIntent` and `regexParse` — **no LLM, pure regex**
 - `groqParseIntent` — JSON mode, temp=0, guarded by `chainMentioned` sanity check
-- `getGroqInformationalReply` / `getGroqReply` — guarded by `redactLiveNumbers`
-- `streamSuggestion` — streaming fallback, **no** `redactLiveNumbers` (known gap)
+- `getInformationalReply` — guarded by `redactLiveNumbers`, except in grounded mode (real fetched numbers were handed in, so the model cites them instead of having them redacted)
 - Prompt builders live in `route.ts`; Groq calls must stay in `lib/parseIntent.ts`
+
+---
+
+## Agent-payable API (x402 merchant)
+
+`lib/agentcashRouter.ts` + `app/api/price/route.ts` expose Skopos as a **paid** API for other agents via `@agentcash/router` (agentcash.dev) — `POST /api/price` at $0.01/call, x402 payment required. This is the opposite direction from every other x402 usage in this repo (`lib/smartMoneyClient.ts`, `lib/subscribeClient.ts`, `x402/skopos-subscribe/`), which all have Skopos or its users *paying* someone else. Discovery docs at `/openapi.json` and `/llms.txt` (`lib/agentcashRoutesBarrel.ts` eager-imports every paid route so cold starts populate the registry). New paid routes must be added to the barrel or they won't appear in discovery until first hit. Config comes entirely from env (`BASE_URL`, `EVM_PAYEE_ADDRESS`, `CDP_API_KEY_ID`/`SECRET`, `KV_REST_API_URL`/`TOKEN` — the last two alias the same Upstash instance `UPSTASH_REDIS_REST_URL`/`TOKEN` points at, not a separate database) — missing or mismatched values throw at module load and fail `next build`, so all of them must be set together, never partially.
 
 ---
 
