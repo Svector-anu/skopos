@@ -188,9 +188,18 @@ function extractX402Monitor(md: string): string | null {
 // uses Telegram-style *single-asterisk* bold inline, not necessarily whole-line,
 // so upgrade every occurrence rather than just whole-line matches. A genuine
 // "no data" run (all sources failed) is surfaced as a miss, not fabricated text.
+//
+// token-pick sends a SECOND, separate ./notify after its real pick (a "want a
+// deeper report?" offer) — the fork's generic per-skill capture grabs whichever
+// notify call was still in /tmp/skill-result.txt when the run ended, which is
+// that follow-up offer, not the pick itself (confirmed live 2026-07-11: a run
+// that spent 14,887 output tokens on a real, well-scored pick still captured a
+// 91-byte "want a deeper report on a token?" teaser). Every real token-pick
+// output — pick or honest skip — always opens with "Daily Pick"; anything else
+// is that mis-captured teaser, so treat it as not-ready rather than show it.
 function extractTokenPick(md: string): string | null {
   const body = md.trim();
-  if (!body || /TOKEN_PICK_NO_DATA/i.test(body)) return null;
+  if (!body || /TOKEN_PICK_NO_DATA/i.test(body) || !/Daily Pick/i.test(body)) return null;
   const structured = body
     .split("\n")
     .map((line) => line.replace(/\*([^*\n]+)\*/g, "**$1**"))
