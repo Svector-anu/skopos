@@ -3,7 +3,7 @@ import { getAeonRead, type AeonKind } from "@/lib/aeonFeed";
 
 export const dynamic = "force-dynamic";
 
-const AEON_KINDS = new Set(["defi", "narrative", "trending", "protocols", "fear", "x402"]);
+const AEON_KINDS = new Set(["defi", "narrative", "trending", "protocols", "fear", "x402", "tokenpick", "pickstracker"]);
 
 // Serves the self-hosted Aeon fork's cached read (lib/aeonFeed.ts) — instant,
 // free, no Bankr Agent dependency. A miss (fork hasn't produced this read yet,

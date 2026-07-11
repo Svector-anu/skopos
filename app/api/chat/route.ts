@@ -22,8 +22,7 @@ import { looksLikePay, buildPayIntent } from "@/lib/pay";
 import { getMemoPayments } from "@/lib/payments";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
-import { scanToken, resolveTokenTarget, getTrendingCandidates, getPairPrice, type TokenRisk } from "@/lib/dexscreener";
-import { recordPick, getRecentPicks } from "@/lib/picksTracker";
+import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
 import { getSubscription } from "@/lib/notifications";
 import { registerWatcher } from "@/lib/watchers";
 import { toNansenChain } from "@/lib/nansen";
@@ -35,6 +34,7 @@ import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/py
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { getRecentRobinhoodLaunches, robinhoodFeedEnabled } from "@/lib/robinhoodLaunches";
+import { discoverX402Endpoint } from "@/lib/x402Discover";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
 
@@ -126,10 +126,6 @@ function buildTokenAnalysisPrompt(risk: TokenRisk): string {
     `\nUse ONLY the figures above — never state a price, market cap, volume, or percentage not listed here.`,
     `Give a directional take: who does this setup favor — buyers, sellers, or neither? What is the key risk?`,
   ].filter(Boolean).join("\n");
-}
-
-function buildPickAnalysisPrompt(risk: TokenRisk): string {
-  return `${buildTokenAnalysisPrompt(risk)}\n\nFrame this as today's pick from a safety-filtered trending scan: open with "Today's pick" and close with an explicit "Not financial advice" note. Do not claim certainty about future price.`;
 }
 
 function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
@@ -627,7 +623,12 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ error: "No message provided" }, { status: 400, headers: corsHeaders });
   }
 
-  const trimmed = message.trim();
+  // Smart-quote normalization — iOS/macOS autocorrect turns a typed "'" into a
+  // curly ’ (U+2019), which every apostrophe-tolerant trigger regex below
+  // (what's trending, what's the narrative, how's defi, etc.) only matches as
+  // a literal straight quote. Without this, those messages fall through all
+  // the way to the generic Groq fallback instead of hitting their real card.
+  const trimmed = message.trim().replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
 
   // Length check runs before any regex to prevent adversarial ReDoS inputs
   if (trimmed.length > 2000) {
@@ -671,13 +672,34 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   const queryType = classifyIntent(trimmed);
   console.log(`[chat] ip=${ip} type=${queryType} len=${trimmed.length}`);
 
-  // ── Embedded URL → free web-context intel card (Jina Reader) ──────────────
+  // ── Embedded URL → x402 check, or free web-context intel card (Jina Reader) ─
   // A URL is the strongest structural signal, so this runs before the price /
   // intent fast-paths — otherwise a link containing a token-name substring
   // (e.g. docs.uniswap.org) gets hijacked into a price card. Distinct surface,
   // not merged into other cards. Falls through on failure so the message still
   // gets a normal answer.
+  //
+  // "check/call/query/hit <url>" tries x402 discovery FIRST (lib/x402Discover.ts
+  // — free probe only, SSRF-guarded: no private/internal addresses, no redirects
+  // followed). Genuinely paid endpoints are the whole point of this verb — the
+  // reader below would only ever show their raw 402 JSON body as page text,
+  // never the actual price. If discovery finds nothing paid there (a normal
+  // page, or an address explicitly blocked for safety), it falls through to the
+  // same free reader every other embedded URL gets — "check <url>" on an
+  // ordinary article must keep behaving exactly as it did before this existed.
+  // The paid call itself always happens client-side with the USER'S OWN wallet
+  // (lib/x402GenericClient.ts, X402CheckDisplay) — never Skopos's agent wallet,
+  // since an arbitrary user-named endpoint isn't something Skopos vetted.
   const intelUrl = extractUrl(trimmed);
+  // https only, matching discoverX402Endpoint's own scheme requirement — a
+  // "check http://..." page is never an x402 challenge, so don't even try;
+  // let it fall straight through to the free reader like it always did.
+  if (intelUrl?.startsWith("https://") && /\b(?:check|call|query|hit)\s+https:\/\//i.test(trimmed)) {
+    const discovery = await discoverX402Endpoint(intelUrl);
+    if (discovery.ok || /private or internal address/.test(discovery.error ?? "")) {
+      return json({ type: "x402check", url: intelUrl, method: "GET", discovery });
+    }
+  }
   if (intelUrl) {
     const context = await fetchWebContext(intelUrl);
     if (context) {
@@ -1028,53 +1050,36 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Token pick — "pick a token" / "give me a token pick" / "what should I
-  // buy". No token named (unlike deep-dive/scan) — the user wants US to name
-  // one. Candidates come from CoinGecko's organic trending-search, not
-  // DexScreener's paid "boosts" (that would make a pick a paid placement in
-  // disguise), then run through the existing scanToken safety pipeline; first
-  // candidate at LOW/MEDIUM risk with no honeypot flag wins. Must run before
+  // buy". Served from the Aeon fork's real token-pick skill (lib/aeonFeed.ts) —
+  // a 7-day dedup gate + 0-10 multi-signal scoring + HIGH/MEDIUM/SKIP conviction,
+  // replacing Skopos's former homemade version (live CoinGecko fetch, first
+  // candidate that cleared a bare risk score, no dedup — the exact reason a
+  // single trending coin could get re-served on every call). Must run before
   // the price fast-path for the same classifyIntent-precedence reason as
   // deep-dive above — "pick" has no signal there either.
   const TOKEN_PICK_RE = /\b(?:token\s*-?\s*pick|pick\s+(?:me\s+)?a\s+token|what\s+(?:token\s+)?should\s+i\s+buy|give\s+me\s+a\s+pick|any\s+(?:good\s+)?picks?(?:\s+(?:today|right\s+now))?|recommend\s+a\s+token)\b/i;
   if (TOKEN_PICK_RE.test(trimmed)) {
-    const candidates = await getTrendingCandidates(10);
-    for (const c of candidates) {
-      const risk = await scanToken(c.symbol);
-      if (risk && risk.score <= 2 && !risk.flags.includes("POSSIBLE_HONEYPOT")) {
-        const analysis = await generateDecisionAnalysis(buildPickAnalysisPrompt(risk), tier, meterMeta);
-        await recordSmart();
-        await recordPick(risk);
-        return json({ type: "token_risk", risk, pick: true, ...(analysis && { analysis }) });
-      }
-    }
-    return json({ type: "error", text: "No trending token cleared the safety bar right now — try again in a bit." });
+    return json({
+      type: "aeon",
+      kind: "tokenpick",
+      title: "Today's token pick",
+      subtitle: "One dedup-gated, scored pick a day — or an honest skip when nothing clears the bar.",
+      premium: { available: true, label: "Get the read", note: "Free · powered by Aeon" },
+    });
   }
 
-  // ── Picks tracker — scorecard for past token-pick calls (depends on the
-  // block above having recorded at least one). Plain text, not a new card —
-  // fastest safe shape given the entry format is just symbol + entry price.
+  // ── Picks tracker — scorecard for past token-pick calls. Served from Aeon's
+  // real picks-tracker skill (win/hold/loss classification + hit rate, weekly),
+  // replacing Skopos's former bare Redis list of raw % change.
   const PICKS_TRACKER_RE = /\b(?:picks?\s+tracker|how\s+(?:are|did)\s+(?:my|the|your)\s+picks?\s+(?:doing|do|perform(?:ing)?)|track\s+record|pick\s+history|past\s+picks?)\b/i;
   if (PICKS_TRACKER_RE.test(trimmed)) {
-    const stored = await getRecentPicks(10);
-    if (!stored.length) {
-      return json({ type: "text", text: "No picks recorded yet — ask for a token pick first." });
-    }
-    const lines = await Promise.all(stored.map(async (p) => {
-      // Re-check the exact pool recorded at pick time, not a fresh symbol
-      // search — a generic ticker (e.g. a memecoin name reused across chains)
-      // can resolve to a different token entirely on a second bare-symbol
-      // lookup, which would compare two unrelated prices as if one moved.
-      const livePrice = p.chainId && p.pairAddress
-        ? await getPairPrice(p.chainId, p.pairAddress)
-        : (await getPrice(p.symbol))?.price ?? null;
-      if (livePrice == null || p.entryPriceUsd == null || p.entryPriceUsd === 0) {
-        return `• ${p.symbol} — entry $${p.entryPriceUsd ?? "?"}, live price unavailable`;
-      }
-      const pct = ((livePrice - p.entryPriceUsd) / p.entryPriceUsd) * 100;
-      const sign = pct >= 0 ? "+" : "";
-      return `• ${p.symbol} — entry $${p.entryPriceUsd} → now $${livePrice} (${sign}${pct.toFixed(1)}%)`;
-    }));
-    return json({ type: "text", text: `**Picks tracker** (last ${stored.length}):\n\n${lines.join("\n")}\n\nNot financial advice.` });
+    return json({
+      type: "aeon",
+      kind: "pickstracker",
+      title: "Picks scorecard",
+      subtitle: "Win/hold/loss on every past pick, updated weekly. No cherry-picking dates.",
+      premium: { available: true, label: "Get the read", note: "Free · powered by Aeon" },
+    });
   }
 
   // ── Price alert — "alert me when eth hits $5000" / "notify me when btc

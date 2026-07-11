@@ -10,6 +10,7 @@ useAccount, useBalance, useChainId, useSwitchChain,
   useWaitForTransactionReceipt, useWalletClient,
 } from "wagmi";
 import { fetchSmartMoney } from "@/lib/smartMoneyClient";
+import { callX402Endpoint } from "@/lib/x402GenericClient";
 import { subscribe } from "@/lib/subscribeClient";
 import {
   useWallet as useSolanaWallet,
@@ -98,9 +99,12 @@ type PayResult = { type: "pay"; token: string; tokenSymbol: string; decimals: nu
 type MemoPaymentItem = { chainId: number; chainName: string; token: string; tokenSymbol: string; amount: string; from: string; memo: string; memoText: string; txHash: string; timestamp: number | null };
 type PaymentsResult = { type: "payments"; address: string; payments: MemoPaymentItem[] };
 
-type AeonResult = { type: "aeon"; kind: "narrative" | "defi" | "onchain" | "trending" | "protocols" | "fear" | "x402"; title: string; subtitle: string; premium?: { available: boolean; label: string; note: string } };
+type AeonResult = { type: "aeon"; kind: "narrative" | "defi" | "onchain" | "trending" | "protocols" | "fear" | "x402" | "tokenpick" | "pickstracker"; title: string; subtitle: string; premium?: { available: boolean; label: string; note: string } };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult;
+type X402Discovery = { ok: boolean; description?: string; network?: string; priceUsd?: string; asset?: string; payTo?: string; error?: string };
+type X402CheckResult = { type: "x402check"; url: string; method: "GET" | "POST"; discovery: X402Discovery };
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1282,6 +1286,11 @@ export default function AppPage() {
                     {msg.result.type === "aeon" && (
                       <ErrorBoundary label="Aeon card failed to render.">
                         <AeonDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "x402check" && (
+                      <ErrorBoundary label="Endpoint check failed to render.">
+                        <X402CheckDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "paywall" && (
@@ -3291,7 +3300,7 @@ function AeonDisplay({ result }: { result: AeonResult }) {
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /><circle cx="12" cy="12" r="3.2" />
         </svg>
-        <span style={{ ...MONO, fontSize: "0.56rem", fontWeight: 700, letterSpacing: "0.13em", color: ACCENT }}>{({ defi: "DEFI READ", narrative: "NARRATIVE", trending: "TRENDING", protocols: "TOP TVL", onchain: "ONCHAIN", fear: "FEAR DIVERGENCE", x402: "X402 PULSE" } as Record<string, string>)[kind] ?? "READ"}</span>
+        <span style={{ ...MONO, fontSize: "0.56rem", fontWeight: 700, letterSpacing: "0.13em", color: ACCENT }}>{({ defi: "DEFI READ", narrative: "NARRATIVE", trending: "TRENDING", protocols: "TOP TVL", onchain: "ONCHAIN", fear: "FEAR DIVERGENCE", x402: "X402 PULSE", tokenpick: "TOKEN PICK", pickstracker: "PICKS TRACKER" } as Record<string, string>)[kind] ?? "READ"}</span>
         <span style={{ ...MONO, fontSize: "0.54rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>daily · skopos</span>
       </div>
 
@@ -3539,6 +3548,120 @@ function IntelDisplay({ result }: { result: IntelResult }) {
         : read === "flow-intel" ? <FlowIntelPanel data={smData} tf={timeframe ?? undefined} />
         : read === "screener" ? <ScreenerPanel data={smData} tf={timeframe ?? undefined} />
         : <SmartMoneyPanel data={smData} chain={token?.chain ?? null} tf={timeframe ?? undefined} />
+      )}
+    </div>
+  );
+}
+
+function X402CheckDisplay({ result }: { result: X402CheckResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const ACCENT = "#38bdf8";
+  const { url, method, discovery } = result;
+  const host = (() => { try { return new URL(url).hostname; } catch { return url; } })();
+
+  const { data: walletClient } = useWalletClient();
+  const activeChainId = useChainId();
+  const { wallets } = useWallets();
+  const { login, logout, authenticated } = usePrivy();
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const [data, setData] = useState<unknown>(null);
+
+  async function handlePay() {
+    if (!discovery.ok) return;
+    if (!walletClient) {
+      // This endpoint is unknown to Skopos — the user's own wallet pays, never
+      // Skopos's agent wallet (docs/paid-data-sources.md draws that line on
+      // purpose). Reuses the same reconnect-ghost-session pattern as IntelDisplay.
+      setState("idle");
+      setMessage(`Connect your wallet, then tap again to pay $${discovery.priceUsd ?? "?"}.`);
+      if (authenticated) await logout().catch(() => {});
+      login();
+      return;
+    }
+    if (activeChainId !== 8453) {
+      const evm = wallets.find(w => w.address?.startsWith("0x"));
+      if (!evm) { setMessage("Connect an EVM wallet first."); return; }
+      setState("loading");
+      try {
+        await evm.switchChain(8453);
+      } catch (e) {
+        setState("error");
+        setMessage(e instanceof Error ? `Couldn't switch to Base: ${e.message.slice(0, 90)}` : "Couldn't switch to Base.");
+        return;
+      }
+      setState("idle");
+      setMessage("Switched to Base. Tap again to pay.");
+      return;
+    }
+    setState("loading");
+    setMessage(null);
+    try {
+      const res = await callX402Endpoint(walletClient, url, method);
+      if (res.ok) {
+        setData(res.data);
+        setState("done");
+        setMessage(null);
+      } else {
+        setState("error");
+        setMessage(res.error ?? "Request failed.");
+      }
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "Payment failed.");
+    }
+  }
+
+  return (
+    <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
+      <div style={{ padding: "12px 18px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+        <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>x402 ENDPOINT</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>{host}</span>
+      </div>
+
+      <div style={{ padding: "0 18px 14px" }}>
+        <p style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.3, wordBreak: "break-word" }}>
+          {discovery.ok ? (discovery.description ?? "Paid endpoint") : "Couldn't reach this endpoint"}
+        </p>
+        <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+          {discovery.ok
+            ? "This isn't a Skopos-run source — it's a third-party x402 endpoint you named. Paying it uses your own connected wallet, not Skopos's."
+            : (discovery.error ?? "Unknown error.")}
+        </p>
+      </div>
+
+      {discovery.ok && (
+        <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--card-surface)" }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>
+              ${discovery.priceUsd ?? "?"} · {discovery.network ?? "base"}
+            </p>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
+              {message ?? "Paid per call, from your wallet."}
+            </p>
+          </div>
+          <button
+            onClick={handlePay}
+            disabled={state === "loading"}
+            style={{
+              ...MONO, fontSize: "0.66rem", fontWeight: 700,
+              color: ACCENT, background: `${ACCENT}18`, border: `1px solid ${ACCENT}40`,
+              borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
+              cursor: state !== "loading" ? "pointer" : "default",
+            }}
+          >
+            {state === "loading" ? "…" : state === "done" ? "✓" : !walletClient ? "Connect" : `Pay $${discovery.priceUsd ?? "?"}`}
+          </button>
+        </div>
+      )}
+
+      {state === "done" && data != null && (
+        <pre style={{ ...MONO, fontSize: "0.68rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.6))", margin: 0, padding: "12px 18px 16px", borderTop: "1px solid var(--card-border-faint)", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {JSON.stringify(data, null, 2)}
+        </pre>
       )}
     </div>
   );
