@@ -301,10 +301,10 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
 
     case "aeon": {
       const rawKind = str(c.kind);
-      const kind: AeonKind = (["defi", "narrative", "trending", "protocols", "fear", "x402"].includes(rawKind) ? rawKind : "defi") as AeonKind;
+      const kind: AeonKind = (["defi", "narrative", "trending", "protocols", "fear", "x402", "tokenpick", "pickstracker"].includes(rawKind) ? rawKind : "defi") as AeonKind;
       const read = await getAeonRead(kind);
       if (read) return stripMarkdown(read);
-      const label = { defi: "DeFi read", narrative: "narrative map", trending: "trending list", protocols: "top protocols", fear: "fear-divergence read", x402: "x402 pulse" }[kind];
+      const label = { defi: "DeFi read", narrative: "narrative map", trending: "trending list", protocols: "top protocols", fear: "fear-divergence read", x402: "x402 pulse", tokenpick: "token pick", pickstracker: "picks scorecard" }[kind];
       return `Open Skopos for the ${label}: ${SITE}`;
     }
 

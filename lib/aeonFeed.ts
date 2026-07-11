@@ -21,8 +21,10 @@ const MARKET_CONTEXT = "memory/topics/market-context.md";
 const NARRATIVE = "output/.chains/narrative-tracker.md";
 const FEAR_DIVERGENCE = "output/.chains/fear-divergence.md";
 const X402_MONITOR = "output/.chains/x402-monitor.md";
+const TOKEN_PICK = "output/.chains/token-pick.md";
+const PICKS_TRACKER = "output/.chains/picks-tracker.md";
 
-export type AeonKind = "defi" | "narrative" | "trending" | "protocols" | "fear" | "x402";
+export type AeonKind = "defi" | "narrative" | "trending" | "protocols" | "fear" | "x402" | "tokenpick" | "pickstracker";
 
 interface RawEntry {
   text: string | null;
@@ -180,6 +182,36 @@ function extractX402Monitor(md: string): string | null {
   return `${structured}\n— powered by Aeon`;
 }
 
+// token-pick's committed output is Aeon's real skill (dedup gate, 0-10 signal
+// scoring, HIGH/MEDIUM/SKIP conviction) — replaces Skopos's own former token-pick
+// implementation (live CoinGecko fetch, no dedup, no scoring). Its notify body
+// uses Telegram-style *single-asterisk* bold inline, not necessarily whole-line,
+// so upgrade every occurrence rather than just whole-line matches. A genuine
+// "no data" run (all sources failed) is surfaced as a miss, not fabricated text.
+function extractTokenPick(md: string): string | null {
+  const body = md.trim();
+  if (!body || /TOKEN_PICK_NO_DATA/i.test(body)) return null;
+  const structured = body
+    .split("\n")
+    .map((line) => line.replace(/\*([^*\n]+)\*/g, "**$1**"))
+    .join("\n");
+  return `${structured}\n— powered by Aeon`;
+}
+
+// picks-tracker is Aeon's real scorecard skill (win/hold/loss classification,
+// hit rate, weekly) — replaces Skopos's own former picks-tracker (a bare Redis
+// list of raw % change with no win/loss framing). Same Telegram-bold upgrade as
+// token-pick. A "no picks in the last 30 days yet" run is a legitimate miss.
+function extractPicksTracker(md: string): string | null {
+  const body = md.trim();
+  if (!body || /PICKS_TRACKER_SKIP/i.test(body)) return null;
+  const structured = body
+    .split("\n")
+    .map((line) => line.replace(/\*([^*\n]+)\*/g, "**$1**"))
+    .join("\n");
+  return `${structured}\n— powered by Aeon`;
+}
+
 // Returns the concise read for a kind, or null when the fork hasn't produced one
 // yet (callers fall back to their existing behavior).
 export async function getAeonRead(kind: AeonKind): Promise<string | null> {
@@ -194,6 +226,14 @@ export async function getAeonRead(kind: AeonKind): Promise<string | null> {
   if (kind === "x402") {
     const md = await fetchRaw(X402_MONITOR);
     return md ? extractX402Monitor(md) : null;
+  }
+  if (kind === "tokenpick") {
+    const md = await fetchRaw(TOKEN_PICK);
+    return md ? extractTokenPick(md) : null;
+  }
+  if (kind === "pickstracker") {
+    const md = await fetchRaw(PICKS_TRACKER);
+    return md ? extractPicksTracker(md) : null;
   }
   const md = await fetchRaw(MARKET_CONTEXT);
   if (!md) return null;

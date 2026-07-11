@@ -161,43 +161,6 @@ export async function resolveTokenTarget(query: string): Promise<TokenTarget | n
   };
 }
 
-export interface TrendingCandidate { symbol: string; name: string }
-
-// CoinGecko's free trending-search endpoint — organic search-volume trending,
-// deliberately not DexScreener's "boosts" endpoint (that's pay-to-appear, which
-// would make a "pick" a paid placement wearing a recommendation's clothes).
-export async function getTrendingCandidates(limit = 10): Promise<TrendingCandidate[]> {
-  try {
-    const res = await fetchWithTimeout("https://api.coingecko.com/api/v3/search/trending");
-    if (!res.ok) return [];
-    const data = await res.json();
-    const coins: unknown[] = Array.isArray(data?.coins) ? data.coins : [];
-    return coins
-      .map((c) => (c as { item?: { symbol?: string; name?: string } }).item)
-      .filter((item): item is { symbol: string; name: string } => !!item?.symbol && !!item?.name)
-      .slice(0, limit)
-      .map((item) => ({ symbol: item.symbol.toUpperCase(), name: item.name }));
-  } catch {
-    return [];
-  }
-}
-
-// Fetches one exact pool by chain+address — not a symbol search. Used to
-// re-check a price against the SAME pool scanned earlier (e.g. picks tracker),
-// since a fresh bare-symbol search can land on a different token entirely for
-// a generic ticker (DexScreener has no global uniqueness on symbols).
-export async function getPairPrice(chainId: string, pairAddress: string): Promise<number | null> {
-  try {
-    const res = await fetchWithTimeout(`${BASE}/latest/dex/pairs/${chainId}/${pairAddress}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const pair: DexPair | undefined = data?.pairs?.[0] ?? data?.pair;
-    const price = pair?.priceUsd ? Number(pair.priceUsd) : null;
-    return price != null && Number.isFinite(price) ? price : null;
-  } catch {
-    return null;
-  }
-}
 
 export async function scanToken(query: string): Promise<TokenRisk | null> {
   const isAddress = /^0x[0-9a-fA-F]{40}$/.test(query.trim());
