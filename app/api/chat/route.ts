@@ -627,7 +627,12 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ error: "No message provided" }, { status: 400, headers: corsHeaders });
   }
 
-  const trimmed = message.trim();
+  // Smart-quote normalization — iOS/macOS autocorrect turns a typed "'" into a
+  // curly ’ (U+2019), which every apostrophe-tolerant trigger regex below
+  // (what's trending, what's the narrative, how's defi, etc.) only matches as
+  // a literal straight quote. Without this, those messages fall through all
+  // the way to the generic Groq fallback instead of hitting their real card.
+  const trimmed = message.trim().replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
 
   // Length check runs before any regex to prevent adversarial ReDoS inputs
   if (trimmed.length > 2000) {
