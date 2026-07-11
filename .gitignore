@@ -48,3 +48,4 @@ docs/vara-mvp-prd.md
 # internal research / notes (never commit)
 /internal/
 .env*.local
+.gstack/
