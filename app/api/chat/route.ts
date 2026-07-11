@@ -35,6 +35,7 @@ import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/py
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
 import { getRecentRobinhoodLaunches, robinhoodFeedEnabled } from "@/lib/robinhoodLaunches";
+import { discoverX402Endpoint } from "@/lib/x402Discover";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
 
@@ -676,13 +677,34 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   const queryType = classifyIntent(trimmed);
   console.log(`[chat] ip=${ip} type=${queryType} len=${trimmed.length}`);
 
-  // ── Embedded URL → free web-context intel card (Jina Reader) ──────────────
+  // ── Embedded URL → x402 check, or free web-context intel card (Jina Reader) ─
   // A URL is the strongest structural signal, so this runs before the price /
   // intent fast-paths — otherwise a link containing a token-name substring
   // (e.g. docs.uniswap.org) gets hijacked into a price card. Distinct surface,
   // not merged into other cards. Falls through on failure so the message still
   // gets a normal answer.
+  //
+  // "check/call/query/hit <url>" tries x402 discovery FIRST (lib/x402Discover.ts
+  // — free probe only, SSRF-guarded: no private/internal addresses, no redirects
+  // followed). Genuinely paid endpoints are the whole point of this verb — the
+  // reader below would only ever show their raw 402 JSON body as page text,
+  // never the actual price. If discovery finds nothing paid there (a normal
+  // page, or an address explicitly blocked for safety), it falls through to the
+  // same free reader every other embedded URL gets — "check <url>" on an
+  // ordinary article must keep behaving exactly as it did before this existed.
+  // The paid call itself always happens client-side with the USER'S OWN wallet
+  // (lib/x402GenericClient.ts, X402CheckDisplay) — never Skopos's agent wallet,
+  // since an arbitrary user-named endpoint isn't something Skopos vetted.
   const intelUrl = extractUrl(trimmed);
+  // https only, matching discoverX402Endpoint's own scheme requirement — a
+  // "check http://..." page is never an x402 challenge, so don't even try;
+  // let it fall straight through to the free reader like it always did.
+  if (intelUrl?.startsWith("https://") && /\b(?:check|call|query|hit)\s+https:\/\//i.test(trimmed)) {
+    const discovery = await discoverX402Endpoint(intelUrl);
+    if (discovery.ok || /private or internal address/.test(discovery.error ?? "")) {
+      return json({ type: "x402check", url: intelUrl, method: "GET", discovery });
+    }
+  }
   if (intelUrl) {
     const context = await fetchWebContext(intelUrl);
     if (context) {
