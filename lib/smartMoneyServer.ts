@@ -1,16 +1,14 @@
-import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
-import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
-import { privateKeyToAccount } from "viem/accounts";
+import { agentPaidEnabled, getAgentPayFetch } from "./x402Agent";
 import { type Timeframe, timeframeMs, toScreenerTimeframe, toFlowIntelTimeframe } from "./timeframe";
 
 // Server-signed x402 settlement for Nansen Token God Mode reads. Skopos's own Base
 // wallet fronts the ~$0.01 USDC micropayment, so the browser needs no wallet, no
 // chain switch, and no signature — the user just asks and gets the answer. Gated on
-// SKOPOS_X402_PRIVATE_KEY; unset falls back to the user-signed path in
-// lib/smartMoneyClient.ts. The wallet pays in USDC only (EIP-3009 is gasless for
-// the payer — the facilitator submits), so it needs USDC on Base, no ETH.
+// SKOPOS_X402_PRIVATE_KEY (lib/x402Agent.ts); unset falls back to the user-signed
+// path in lib/smartMoneyClient.ts.
 
-const BASE_NETWORK = "eip155:8453";
+export { agentPaidEnabled };
+
 const NANSEN_BASE = "https://api.nansen.ai/api/v1";
 const LOOKBACK_DAYS = 30;
 const SETTLEMENT_TIMEOUT_MS = 60_000;
@@ -21,17 +19,6 @@ export interface SmartMoneyResponse {
   error?: string;
 }
 
-function agentKey(): `0x${string}` | null {
-  const raw = process.env.SKOPOS_X402_PRIVATE_KEY?.trim();
-  if (!raw) return null;
-  const key = raw.startsWith("0x") ? raw : `0x${raw}`;
-  return /^0x[0-9a-fA-F]{64}$/.test(key) ? (key as `0x${string}`) : null;
-}
-
-export function agentPaidEnabled(): boolean {
-  return agentKey() !== null;
-}
-
 function isoNoMillis(date: Date): string {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
@@ -40,23 +27,8 @@ function isoNoMillis(date: Date): string {
 // endpoint. Every TGM read is x402-priced with the same auth, so callers only vary
 // the endpoint path and body.
 async function paidTgmFetch(endpoint: string, body: Record<string, unknown>): Promise<SmartMoneyResponse> {
-  const key = agentKey();
-  if (!key) return { ok: false, error: "Agent payments are not configured." };
-
-  const account = privateKeyToAccount(key);
-  const signer = toClientEvmSigner({
-    address: account.address,
-    signTypedData: (message) =>
-      account.signTypedData({
-        domain: message.domain,
-        types: message.types,
-        primaryType: message.primaryType,
-        message: message.message,
-      } as Parameters<typeof account.signTypedData>[0]),
-  });
-
-  const client = new x402Client().register(BASE_NETWORK, new ExactEvmScheme(signer));
-  const payFetch = wrapFetchWithPayment(globalThis.fetch, client);
+  const payFetch = getAgentPayFetch();
+  if (!payFetch) return { ok: false, error: "Agent payments are not configured." };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SETTLEMENT_TIMEOUT_MS);
