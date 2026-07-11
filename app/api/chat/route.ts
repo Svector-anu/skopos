@@ -34,6 +34,7 @@ import { getPrice, getPriceChart, type PriceResult } from "@/lib/priceCache";
 import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
+import { getRecentRobinhoodLaunches, robinhoodFeedEnabled } from "@/lib/robinhoodLaunches";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
 
@@ -1205,6 +1206,35 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     const data = await lookupAddress(dao.address);
     const summary = await generateAddressSummary(data);
     return json({ type: "address", data, summary: `${dao.label} DAO treasury:\n\n${summary}` });
+  }
+
+  // ── Robinhood Chain launch feed (paid, x402) — "robinhood chain launches" /
+  // "what's launching on robinhood". Skopos's own wallet pays $0.001/call
+  // (lib/robinhoodLaunches.ts, docs/paid-data-sources.md) — no user wallet
+  // needed. Surfaces the creator's repeat-launch count as the safety signal;
+  // DexScreener doesn't index this chain yet so there's no honeypot/liquidity
+  // check to run on top of it.
+  if (/\brobinhood\s+chain\s+launch(?:es)?\b|\blaunch(?:es|ing)?\s+on\s+robinhood(?:\s+chain)?\b|\bwhat'?s?\s+launching\s+on\s+robinhood\b/i.test(trimmed)) {
+    if (!robinhoodFeedEnabled()) {
+      return json({ type: "error", text: "Robinhood Chain launch reads aren't configured right now." });
+    }
+    const launches = await getRecentRobinhoodLaunches(5);
+    if (!launches || launches.length === 0) {
+      return json({ type: "error", text: "Couldn't fetch Robinhood Chain launches right now — try again shortly." });
+    }
+    const lines = launches.map(l => {
+      const repeat = l.creator.repeatLaunchCount > 1
+        ? ` ⚠️ ${l.creator.repeatLaunchCount} launches from this wallet in the current feed`
+        : "";
+      const mcap = l.marketCapUsd > 0
+        ? `$${l.marketCapUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} mcap`
+        : "no trades yet";
+      return `${l.symbol} (${l.name}) — ${l.ageMinutes}m old, ${mcap}, by @${l.creator.xUsername ?? "unknown"}${repeat}`;
+    });
+    return json({
+      type: "text",
+      text: `Recent Robinhood Chain launches:\n\n${lines.join("\n")}\n\nNo liquidity/honeypot data yet — DexScreener hasn't indexed this chain. Repeat-launch count is the only safety signal available right now.`,
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
