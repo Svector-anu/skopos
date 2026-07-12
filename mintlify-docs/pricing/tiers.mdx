@@ -1,0 +1,30 @@
+---
+title: "Fast vs Smart"
+description: "Two model tiers — a free always-on tier, and a smarter tier with a daily allowance."
+---
+
+Skopos runs on two LLM tiers, switchable from the composer in the app.
+
+## Fast
+
+The default tier. Fast, free, and always available — no daily cap, no wallet required. It's a lighter model, tuned for quick, direct answers: prices, lookups, straightforward swaps.
+
+## Smart
+
+A more capable model for reasoning-heavy questions — comparing routes, explaining tradeoffs, or answering an open-ended "should I..." question with real context instead of a canned line.
+
+Smart has a daily message allowance:
+
+| Wallet state | Daily Smart messages |
+| --- | --- |
+| No wallet connected | A small teaser allowance, then a connect-wallet prompt |
+| Wallet connected, no `$skopos` held | A free daily cap |
+| `$skopos` held | A higher cap — see [Token Utility](/pricing/token-utility) |
+
+## What happens at the limit
+
+Hitting the Smart cap doesn't break anything — Skopos degrades gracefully back to Fast rather than refusing to answer. You can also subscribe for uncapped Smart access.
+
+## Why there's a cap at all
+
+Smart runs through a paid LLM gateway, unlike Fast. The cap exists so a free tier can exist at all without unlimited inference cost — it's a cost boundary, not an artificial scarcity gimmick.

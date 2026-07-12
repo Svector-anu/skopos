@@ -1,0 +1,29 @@
+---
+title: "$SKOPOS Token Utility"
+description: "Holding $SKOPOS raises your daily Smart-tier message cap through ascending tiers."
+---
+
+Holding `$SKOPOS` (the token, on Base) gives your wallet a higher daily [Smart-tier](/pricing/tiers) message allowance. It's a utility gate, not a paywall bypass you buy outright — it's tied to what your wallet actually holds, checked live.
+
+## How it's checked
+
+- A direct `balanceOf` read against the `$SKOPOS` contract on Base, via a public RPC — no API key, no third-party dependency that can go down independently of the chain itself.
+- Cached for 5 minutes, so it's not re-checked on every single message.
+- If the check fails for any reason (RPC hiccup, network issue), your wallet falls back to the standard free cap rather than blocking you — a failed check never locks you out.
+
+## Tiers
+
+Three ascending tiers, each unlocked by holding at least a configured amount of `$SKOPOS`. The exact holding thresholds are configured server-side; the tiers themselves work like this:
+
+| Tier | Default daily Smart cap |
+| --- | --- |
+| Base (no `$SKOPOS`) | 20 messages |
+| Tier 1 | 100 messages |
+| Tier 2 | 250 messages |
+| Tier 3 | 1,000 messages |
+
+Higher tiers require holding more `$SKOPOS`. A subscription (see [Fast vs Smart](/pricing/tiers)) still gets you uncapped access regardless of what you hold — the token tiers are for people who'd rather hold than subscribe.
+
+## What counts as "holding"
+
+The check is a spot wallet balance — whatever `$SKOPOS` sits directly in your connected wallet address at the moment of the check. It does not currently count `$SKOPOS` held in liquidity positions (like a Uniswap v4 LP) — only a direct wallet balance.

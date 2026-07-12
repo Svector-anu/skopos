@@ -1,0 +1,23 @@
+---
+title: "Supported Chains"
+description: "25 EVM networks plus Solana — with a few features scoped to a smaller set."
+---
+
+## Execution (swap, bridge, buy/sell)
+
+25 EVM networks are wired in for wallet signing, plus Solana for cross-chain routes:
+
+Ethereum · Optimism · Cronos · BNB Chain · Gnosis · Unichain · Polygon · Monad · Sonic · World Chain · Metis · Soneium · Mantle · Base · Plasma · Arbitrum · Celo · Avalanche · Ink · Linea · Berachain · Blast · Scroll · HyperEVM · MegaETH · **Solana**
+
+## Feature-specific coverage
+
+Not every feature covers all 26. A few are deliberately scoped narrower because the underlying data source doesn't cover more yet:
+
+| Feature | Coverage |
+| --- | --- |
+| Swap / bridge / buy / sell | All 25 EVM chains + Solana |
+| Address & transaction lookup | 10 chains — Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, zkSync, Linea, Gnosis |
+| Smart-money reads (Nansen) | Ethereum, Base, Solana, Arbitrum, Polygon |
+| Memo payments (B20) | Base, Base Sepolia |
+
+If you ask for something outside a feature's coverage, Skopos tells you the chain isn't supported for that specific capability rather than silently returning nothing or wrong data.

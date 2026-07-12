@@ -1,0 +1,58 @@
+---
+title: "Quickstart"
+description: "Your first swap, price check, and risk scan in under two minutes."
+---
+
+## 1. Open the app
+
+Go to [tryskopos.xyz/app](https://www.tryskopos.xyz/app). No sign-up wall, no forms — there's a chat box and that's it.
+
+## 2. Ask something that doesn't need a wallet
+
+Prices, risk scans, and market reads work before you connect anything:
+
+```
+> price of eth
+> deep dive on pepe
+> what's trending
+> who's buying $pepe
+```
+
+Each of these pulls live data — CoinGecko/DexScreener for prices, DexScreener for risk flags, Nansen for smart-money — and answers directly. Nothing here touches a wallet.
+
+## 3. Connect a wallet
+
+Click **Connect Wallet**. Sign in with email, Google, X, Discord, or bring your own wallet via Privy — see [Connect Wallet](/get-started/connect-wallet) for the full list. Skopos supports both embedded wallets (created on the spot from a social login) and external wallets (MetaMask, Rabby, Phantom, etc.), plus Solana for cross-chain routes.
+
+## 4. Make your first swap
+
+```
+> swap 0.1 eth to usdc on base
+```
+
+Skopos finds the route, shows you the quote — output amount, fees, gas — and builds the transaction. Nothing executes until you tap **Sign** and approve it in your own wallet. Skopos never holds the funds at any point.
+
+## 5. Try a cross-chain move
+
+```
+> bridge 0.1 eth from ethereum to base
+```
+
+Same pattern: Skopos compares bridges, picks the cheapest path, and returns a transaction for you to sign.
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Swap & Bridge" icon="repeat" href="/features/swap-bridge">
+    All the execution commands, same-chain and cross-chain.
+  </Card>
+  <Card title="Token Safety" icon="shield-check" href="/features/token-safety">
+    Risk-scan a token before you touch it.
+  </Card>
+  <Card title="Smart Money" icon="chart-line" href="/features/smart-money">
+    See what wallets Nansen tags as "smart money" are buying or selling.
+  </Card>
+  <Card title="Build on Skopos" icon="code" href="/build/api-overview">
+    Wire the same copilot into your own bot or app.
+  </Card>
+</CardGroup>

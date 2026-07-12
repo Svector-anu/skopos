@@ -1,0 +1,36 @@
+---
+title: "Agent-Payable Routes"
+description: "8 Skopos data reads, payable directly by other agents via x402 — no account, no API key."
+---
+
+Skopos exposes 8 of its own data reads as **paid** endpoints, priced in USDC via the [x402](https://www.x402.org) protocol. Any agent with an x402-capable wallet can pay per call — no signup, no API key, no subscription.
+
+This is the opposite direction from the API in [API Overview](/build/api-overview): there, *you* call Skopos for free. Here, *your agent* pays Skopos a few cents for a specific data read.
+
+## Routes
+
+| Route | Price | What it returns |
+| --- | --- | --- |
+| `POST /api/price` | $0.01 | Live spot price for a token |
+| `POST /api/quote` | $0.02 | A swap/bridge route summary + a sign-in link (never raw calldata) |
+| `POST /api/risk` | $0.02 | Token safety scan — liquidity, honeypot flags, risk score |
+| `POST /api/smart-money` | $0.05 | Nansen smart-money read for a token |
+| `POST /api/yield` | $0.01 | Top yield pools for a token |
+| `POST /api/polymarket` | $0.01 | Top prediction markets |
+| `POST /api/market-read` | $0.01 | An Aeon market-intelligence read (defi/narrative/trending/etc) |
+| `POST /api/treasury` | $0.01 | A curated DAO treasury balance lookup |
+
+Each route reuses the exact same underlying function its free, chat-facing equivalent calls — there's one implementation of "get a price" or "scan a token," not two that can drift apart.
+
+## Why `/api/quote` never returns calldata
+
+Every execution path in Skopos is non-custodial — an agent calling this endpoint gets a route summary and a link back to the Skopos app to actually sign, never a directly-executable payload. An agent can't use this endpoint to move funds on a user's behalf; it can only use it to *research* a route.
+
+## Discovery
+
+- `/openapi.json` — machine-readable schema for all 8 routes.
+- `/llms.txt` — a plain-text summary for LLM agents discovering what Skopos offers.
+
+## Payment
+
+Standard x402: your agent's wallet needs to speak the x402 payment protocol (USDC on Base). Point an x402-aware HTTP client at any route above; it will receive a 402 challenge, pay, and get the data back in the same request/response cycle.

@@ -1,0 +1,58 @@
+---
+title: "Swap & Bridge"
+description: "Trade or move tokens across 25+ chains — Skopos quotes the route, your wallet signs it."
+---
+
+## Swap
+
+Trade one token for another on the same chain. Skopos quotes the route and returns calldata your wallet signs.
+
+```
+> swap 0.1 eth to usdc on base
+> swap 100 usdc to eth on arbitrum
+```
+
+## Bridge
+
+Move a token from one chain to another. Skopos compares bridges and picks the cheapest path, then returns the transaction.
+
+```
+> bridge 0.1 eth from ethereum to base
+> bridge 100 usdc from base to polygon
+```
+
+## Buy & sell
+
+Shorthand for an execution. Skopos asks for the amount, then builds the quote.
+
+```
+> buy eth on base
+> sell eth
+```
+
+If you say "buy" or "sell" without an amount, Skopos prompts you for one instead of guessing.
+
+## Rebalance across chains
+
+Split a single move across multiple chains in one request:
+
+```
+> split 1 eth across base and arbitrum
+> rebalance my portfolio into 50% base, 50% arbitrum
+```
+
+Skopos divides the amount across legs, resolves each leg independently, and shows every leg's quote before you sign anything.
+
+## Before you sign
+
+Every quote is re-simulated immediately before signing — if the route would revert (slippage moved, liquidity changed), Skopos rejects it and tells you instead of letting a bad transaction through. This applies to single-leg swaps, every leg of a rebalance, and Solana routes.
+
+## What you're signing
+
+Skopos never signs on your behalf. Every command above returns:
+
+- The quote — output amount, fees, gas, ETA for cross-chain routes.
+- An approval step, if the source token needs one.
+- Unsigned calldata for the actual transaction.
+
+You review it and tap to sign in your own connected wallet. If you don't have funds on the destination chain, Skopos offers to fund it rather than failing silently.

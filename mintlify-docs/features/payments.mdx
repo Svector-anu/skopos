@@ -1,0 +1,33 @@
+---
+title: "Payments"
+description: "Send a token with a machine-readable memo attached — an invoice number, an order id."
+---
+
+## Send a payment with a reference
+
+```
+> pay 10 usdc to 0x... for invoice-42 on base
+```
+
+Skopos builds a transfer for you to sign — non-custodial, same as every other execution path. What makes this different from a plain transfer is the memo: `invoice-42` travels on-chain attached to the transfer, so whoever receives it can reconcile the payment automatically instead of matching amounts and timestamps by hand.
+
+## How the memo actually attaches
+
+- If the token is a **B20** token (Base's memo-native token standard, detected by its `0xb200…` address prefix), Skopos uses `transferWithMemo` — the memo is emitted as part of the same on-chain `Memo` event as the transfer.
+- If it's a regular ERC-20, Skopos falls back to a plain `transfer()` and tells you the memo couldn't be attached on-chain. The payment still goes through — you just lose the automatic reconciliation.
+
+## Resolving the token
+
+You can name a token by symbol (Skopos checks a verified map first, then Delora's broader token list) or paste a contract address directly.
+
+## Check payments you've received
+
+```
+> show payments to my address
+```
+
+Looks up incoming transfers tagged with a memo, across both Base mainnet and Base Sepolia.
+
+## Chain support
+
+Payments with memo support currently work on **Base** and **Base Sepolia**. Other chains can receive a plain transfer, just without the on-chain memo.

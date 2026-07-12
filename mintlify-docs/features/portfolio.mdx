@@ -1,0 +1,45 @@
+---
+title: "Portfolio & Lookups"
+description: "Check balances, resolve ENS names, and inspect any address or transaction."
+---
+
+## Your portfolio
+
+```
+> show my portfolio
+> what's my wallet looking like
+```
+
+Returns token balances and recent activity across every chain your connected wallet holds a position on.
+
+## Any address
+
+Paste a wallet address or an ENS name and Skopos resolves it to a full balance/activity card:
+
+```
+> vitalik.eth
+> 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+```
+
+## Any transaction
+
+Paste a transaction hash and Skopos looks up its status and decodes what it did:
+
+```
+> 0x... (a transaction hash)
+```
+
+If the transaction includes an `approve()` call granting an unlimited allowance, Skopos flags it — see [Token Safety](/features/token-safety).
+
+## DAO treasuries
+
+A small, hand-verified set of DAO treasury addresses can be looked up by name:
+
+```
+> uniswap treasury
+> ens dao treasury
+```
+
+## Coverage
+
+Address and transaction lookups span 10 chains: Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, zkSync, Linea, and Gnosis.

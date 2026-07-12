@@ -1,0 +1,42 @@
+---
+title: "Prices"
+description: "Live crypto, FX, metals, and equity prices — never a made-up number."
+---
+
+## Crypto
+
+Spot prices come from CoinGecko, with a DexScreener fallback for tokens CoinGecko doesn't index. Every reply includes a 7-day sparkline.
+
+```
+> price of eth
+> what's sol looking like right now
+```
+
+## FX
+
+```
+> usd to eur
+> convert 100 gbp to jpy
+```
+
+FX conversions are powered by Pyth's live feeds.
+
+## Metals
+
+```
+> gold price
+> silver price
+```
+
+## Equities
+
+```
+> aapl price
+> what's tesla trading at
+```
+
+Equity prices also come from Pyth, for the set of tickers Skopos has a verified feed ID for (major names like AAPL, TSLA, NVDA, GOOGL, AMZN, COIN, and others).
+
+## The rule: no invented numbers
+
+The model is fenced off from making up a price. If a live source can't be reached, Skopos says so — it does not fall back to a guess, a stale cached number presented as current, or "roughly $X" from training data.

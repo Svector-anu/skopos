@@ -1,0 +1,39 @@
+---
+title: "Alerts"
+description: "Standing price, market, and on-chain watches that notify you when something moves."
+---
+
+Skopos can watch something for you and push a notification when it fires — no need to keep the chat open.
+
+## Price alerts
+
+```
+> alert me when eth hits $5000
+> notify me when btc drops below $90000
+```
+
+A price alert is one-shot: once the target is crossed, Skopos notifies you and the watcher is removed. Set a new one if you want to keep watching.
+
+## Prediction-market alerts
+
+```
+> alert me if this polymarket moves
+```
+
+Recurring — Skopos re-checks the market's volume against a baseline and notifies you when it moves more than 20% from where you started watching, then keeps watching with a refreshed baseline.
+
+## On-chain activity alerts
+
+```
+> alert me on activity for 0x...
+```
+
+Recurring — notifies you when new activity appears on an address, then keeps watching for the next new transaction.
+
+## How delivery works
+
+Alerts are delivered as web push notifications. You'll need to allow notifications in your browser the first time you set one up — without an active push subscription, Skopos has no way to reach you outside of an open chat session.
+
+## Checking cadence
+
+Watchers are evaluated on a schedule (a few times a minute), not instantly on every price tick. A fast-moving target might cross your threshold slightly before the notification arrives — this is a polling system, not a millisecond-latency trigger.
