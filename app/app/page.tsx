@@ -104,7 +104,17 @@ type AeonResult = { type: "aeon"; kind: "narrative" | "defi" | "onchain" | "tren
 type X402Discovery = { ok: boolean; description?: string; network?: string; priceUsd?: string; asset?: string; payTo?: string; error?: string };
 type X402CheckResult = { type: "x402check"; url: string; method: "GET" | "POST"; discovery: X402Discovery };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult;
+type PrebuyResult = {
+  type: "prebuy";
+  query: string;
+  risk: TokenRiskResult["risk"];
+  smartMoney: { buyerCount: number; totalBoughtUsd: number } | null;
+  quote: QuoteResult | null;
+  quoteUnavailable: string | null;
+  analysis?: string;
+};
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1264,6 +1274,11 @@ export default function AppPage() {
                     {msg.result.type === "token_risk" && (
                       <ErrorBoundary label="Risk scan failed to render.">
                         <TokenRiskDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "prebuy" && (
+                      <ErrorBoundary label="Pre-buy research failed to render.">
+                        <PrebuyDisplay result={msg.result} connectedAddress={connectedAddress} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "yield_pools" && (
@@ -4180,6 +4195,67 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
         <div style={{ padding: "12px 18px 14px", borderTop: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
           <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))", lineHeight: 1.7, margin: 0 }}>
             {result.analysis}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PrebuyDisplay ────────────────────────────────────────────────────────────
+// Composes three existing cards into one glance-able pre-buy read, rather than
+// reimplementing price/risk or swap-execution UI: TokenRiskDisplay already
+// covers price+chart+risk (scanToken backs both "price" and "risk" slots in
+// one call server-side), and QuoteDisplay is nested exactly like the covering
+// swap in X402CheckDisplay — same non-custodial contract, the user signs it
+// themselves. Smart money and the entry route are both allowed to come back
+// empty (new/thin chains, no wallet connected) — this card shows what's
+// available and says plainly what isn't, never blocking on either slot.
+
+function PrebuyDisplay({ result, connectedAddress }: { result: PrebuyResult; connectedAddress: string | null }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { risk, smartMoney, quote, quoteUnavailable, analysis } = result;
+
+  const fmtUsd = (n: number) =>
+    n >= 1_000_000_000 ? `$${(n / 1_000_000_000).toFixed(2)}B`
+    : n >= 1_000_000   ? `$${(n / 1_000_000).toFixed(2)}M`
+    : n >= 1_000       ? `$${(n / 1_000).toFixed(1)}K`
+    : `$${n.toFixed(2)}`;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <TokenRiskDisplay result={{ type: "token_risk", risk, analysis }} />
+
+      <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
+        <div style={{ padding: "10px 18px", borderBottom: "1px solid var(--card-border-faint)" }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+            SMART MONEY · 30D
+          </p>
+        </div>
+        <div style={{ padding: "13px 18px" }}>
+          {smartMoney ? (
+            <p style={{ ...MONO, fontSize: "0.78rem", color: "var(--card-text, #ffffff)", margin: 0, lineHeight: 1.6 }}>
+              {smartMoney.buyerCount} smart-money {smartMoney.buyerCount === 1 ? "wallet" : "wallets"} bought {fmtUsd(smartMoney.totalBoughtUsd)} worth
+            </p>
+          ) : (
+            <p style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+              No smart-money data available for this token yet.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {quote ? (
+        <div>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 6px 2px" }}>
+            ENTRY ROUTE · $100 REFERENCE
+          </p>
+          <QuoteDisplay result={quote} connectedAddress={connectedAddress} />
+        </div>
+      ) : (
+        <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, padding: "13px 18px", background: "var(--card-container-bg, #0D0D0D)" }}>
+          <p style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+            {quoteUnavailable ?? "No entry route available right now."}
           </p>
         </div>
       )}
