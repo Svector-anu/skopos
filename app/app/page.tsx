@@ -3563,9 +3563,99 @@ function X402CheckDisplay({ result }: { result: X402CheckResult }) {
   const activeChainId = useChainId();
   const { wallets } = useWallets();
   const { login, logout, authenticated } = usePrivy();
+  const { fundWallet } = useFundWallet();
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [data, setData] = useState<unknown>(null);
+
+  const address = walletClient?.account?.address;
+  const onBase  = activeChainId === 8453;
+  const priceUsd = discovery.ok ? Number(discovery.priceUsd ?? "0") : 0;
+
+  // Live balance reads, polled while connected on Base — this is how the funding
+  // panel below knows to disappear the moment a covering swap actually confirms
+  // on-chain, with no callback threaded through the nested QuoteDisplay for it.
+  // USDC is an ERC-20 read (this wagmi build's useBalance has no `token` option,
+  // same reason the wallet-status panel above reads it via useReadContract).
+  const { data: usdcRaw } = useReadContract({
+    address: USDC_ADDRESSES[8453], abi: ERC20_ABI, functionName: "balanceOf",
+    args: address ? [address] : undefined, chainId: 8453,
+    query: { enabled: !!address && onBase, refetchInterval: 4000 },
+  });
+  const { data: ethBal } = useBalance({
+    address, chainId: 8453,
+    query: { enabled: !!address && onBase, refetchInterval: 4000 },
+  });
+
+  const usdcHeld   = usdcRaw != null ? Number(usdcRaw as bigint) / 1e6 : 0;
+  const shortfall  = discovery.ok && address && onBase ? Math.max(0, priceUsd - usdcHeld) : 0;
+  const needsCover = shortfall > 0;
+  const hasEth     = !!ethBal && ethBal.value > BigInt(0);
+
+  const [swapQuote, setSwapQuote]       = useState<QuoteResult | null>(null);
+  const [swapFetching, setSwapFetching] = useState(false);
+  const [swapError, setSwapError]       = useState<string | null>(null);
+  const fetchedForRef = useRef<string | null>(null);
+
+  // A stale offer (from a resolved shortfall, or a wallet/chain change) shouldn't
+  // linger — clearing it lets the next real shortfall fetch a fresh one.
+  useEffect(() => {
+    if (!needsCover) { setSwapQuote(null); setSwapError(null); fetchedForRef.current = null; }
+  }, [needsCover]);
+
+  // Fetching a quote signs nothing and moves no funds, so this runs automatically
+  // the moment a real shortfall + a coverable ETH balance are both true — the
+  // user still explicitly reviews and signs the swap itself, via the nested
+  // QuoteDisplay below. Keyed on (address, shortfall) so it only fires once per
+  // distinct gap, not on every balance-poll tick.
+  useEffect(() => {
+    const key = `${address}:${shortfall.toFixed(6)}`;
+    if (needsCover && hasEth && !swapFetching && fetchedForRef.current !== key) {
+      fetchedForRef.current = key;
+      void fetchCoverSwap();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsCover, hasEth, address, shortfall]);
+
+  // Reuses the exact same swap pipeline as the main chat (classifyIntent →
+  // parseIntent → resolveLeg) via /api/chat — no separate quote code path to
+  // drift out of sync. Needs a live ETH price first since the swap message
+  // takes a token amount, not a dollar target; +25% buffer absorbs the swap's
+  // own price impact/slippage so the shortfall doesn't come up short again
+  // right after this one lands.
+  async function fetchCoverSwap() {
+    if (!address || shortfall <= 0) return;
+    setSwapFetching(true);
+    setSwapError(null);
+    try {
+      const priceRes = await fetch("/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "eth price" }),
+      });
+      const priceCard = await priceRes.json();
+      const ethUsd = typeof priceCard?.price === "number" ? priceCard.price : null;
+      if (!ethUsd || ethUsd <= 0) throw new Error("Couldn't price ETH right now.");
+
+      const ethNeeded = (shortfall * 1.25) / ethUsd;
+      const quoteRes = await fetch("/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: `swap ${ethNeeded.toFixed(8)} ETH to USDC on base`, senderAddress: address }),
+      });
+      const quoteCard = await quoteRes.json();
+      if (quoteCard?.type === "quote" && quoteCard.calldata) {
+        setSwapQuote(quoteCard as QuoteResult);
+      } else {
+        setSwapError(quoteCard?.text ?? "Couldn't find a swap to cover this right now.");
+      }
+    } catch (err) {
+      setSwapError(err instanceof Error ? err.message : "Couldn't get a covering swap quote.");
+    } finally {
+      setSwapFetching(false);
+    }
+  }
+
+  const swapFeeUsd    = swapQuote?.route.feesUSD ? Number(swapQuote.route.feesUSD) : 0;
+  const totalCostUsd  = priceUsd + (swapQuote ? swapFeeUsd : 0);
 
   async function handlePay() {
     if (!discovery.ok) return;
@@ -3655,6 +3745,50 @@ function X402CheckDisplay({ result }: { result: X402CheckResult }) {
           >
             {state === "loading" ? "…" : state === "done" ? "✓" : !walletClient ? "Connect" : `Pay $${discovery.priceUsd ?? "?"}`}
           </button>
+        </div>
+      )}
+
+      {discovery.ok && needsCover && (
+        <div style={{ padding: "12px 18px 16px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
+          <p style={{ ...MONO, fontSize: "0.66rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 8px" }}>
+            You're ${shortfall.toFixed(2)} short of the ${priceUsd.toFixed(2)} USDC needed on Base.
+          </p>
+
+          {swapFetching && (
+            <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
+              Checking if your ETH can cover it…
+            </p>
+          )}
+
+          {swapError && !swapFetching && (
+            <p style={{ ...MONO, fontSize: "0.62rem", color: "#ef4444", margin: 0 }}>{swapError}</p>
+          )}
+
+          {swapQuote && !swapFetching && (
+            <>
+              <p style={{ ...MONO, fontSize: "0.62rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 8px" }}>
+                Total to proceed: ~${totalCostUsd.toFixed(2)} — ${priceUsd.toFixed(2)} payment + ~${swapFeeUsd.toFixed(2)} swap fee to cover the gap.
+              </p>
+              <QuoteDisplay
+                result={swapQuote}
+                connectedAddress={address ?? null}
+                onRefresh={async () => { fetchedForRef.current = null; await fetchCoverSwap(); }}
+              />
+            </>
+          )}
+
+          {!swapFetching && !swapQuote && !hasEth && (
+            <button
+              onClick={() => address && fundWallet({ address })}
+              style={{
+                ...MONO, fontSize: "0.62rem", fontWeight: 700,
+                color: ACCENT, background: `${ACCENT}18`, border: `1px solid ${ACCENT}40`,
+                borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+              }}
+            >
+              No ETH to cover it — fund wallet →
+            </button>
+          )}
         </div>
       )}
 
