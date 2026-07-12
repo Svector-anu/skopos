@@ -22,6 +22,58 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   {
+    date: "Jul 11, 2026",
+    title: "Pay any x402 endpoint yourself",
+    lede:
+      "Paste \"check <url>\" on anything behind an x402 paywall — not just sources Skopos already knows — and see the price before you decide. If you want it, your own wallet pays directly.",
+    highlights: [
+      "Works on any x402 endpoint — a free, safety-checked probe finds the price first, so you never pay blind.",
+      "Your own wallet signs, not Skopos's — the one payment path where you're paying a third party directly, not us fronting it.",
+    ],
+  },
+  {
+    date: "Jul 11, 2026",
+    title: "Token pick and picks tracker, now on Aeon's real engine",
+    lede:
+      "The daily token pick and its scorecard now run on Aeon's actual skill — a 7-day dedup gate and real signal scoring, so the same trending coin can't get re-served every day, and a skip means nothing genuinely cleared the bar.",
+    highlights: [
+      "Real conviction levels — HIGH, MEDIUM, or an honest SKIP.",
+      "\"picks tracker\" grades every past pick — win, hold, or loss, weekly, no cherry-picked dates.",
+    ],
+  },
+  {
+    date: "Jul 10, 2026",
+    title: "Other agents can now pay Skopos directly",
+    lede:
+      "Skopos is now a paid, agent-discoverable API — 8 endpoints for price, swap quotes, token risk, whale activity, yield, prediction markets, market reads, and DAO treasuries, each settled with a real x402 micropayment. Listed on x402scan.",
+    highlights: [
+      "Same brain, agent-priced — every paid route reuses the exact function its free chat command already calls.",
+      "Discoverable via /openapi.json and /llms.txt, so any agent can find and call it with no human in the loop.",
+    ],
+  },
+  {
+    date: "Jul 9, 2026",
+    title: "Skopos now watches, not just answers",
+    lede:
+      "Set a standing watch and Skopos reaches back out on its own — \"alert me when eth hits $5000\", \"monitor polymarket trump 2028\", \"watch 0x… for activity\" — delivered by push notification.",
+    highlights: [
+      "Three watch types: price alerts (one-shot), Polymarket volume moves, and on-chain wallet activity (both recurring).",
+      "No new account needed — push notifications work the moment you grant permission in the app.",
+    ],
+  },
+  {
+    date: "Jul 9, 2026",
+    title: "A treasury lookup for real DAOs",
+    lede:
+      "Ask \"treasury of uniswap\" and get the real, live, multi-chain number — computed on the spot from actual on-chain holdings, not a stale dashboard. Uniswap, ENS, and Arbitrum today.",
+  },
+  {
+    date: "Jul 8, 2026",
+    title: "Two more daily reads: fear divergence and the x402 pulse",
+    lede:
+      "\"Fear and greed divergence\" surfaces what's holding up while the rest of the market is scared — or an honest \"nothing today\" when there's genuinely no signal. \"x402 pulse\" tracks weekly adoption in the agentic-payments protocol Skopos itself settles through.",
+  },
+  {
     date: "Jul 7, 2026",
     title: "Spot a drainer before you sign",
     lede:
