@@ -1,0 +1,26 @@
+---
+title: "Prediction Markets"
+description: "Live Polymarket odds — read and deposit only, Skopos never places an order for you."
+---
+
+## Read odds
+
+```
+> what are people betting on
+> odds eth hits $5k this year
+> top prediction markets
+```
+
+Returns live markets and odds from [Polymarket](https://polymarket.com), optionally scoped to a topic you name.
+
+## Deposit
+
+```
+> deposit into polymarket
+```
+
+Skopos can generate a deposit address so you can fund a Polymarket position.
+
+## Why there's no order placement
+
+This is a deliberate boundary, not a missing feature. Placing or canceling an order on Polymarket requires custody of a key that can act on your behalf — exactly what Skopos's non-custodial design rules out. Read the odds, deposit if you want to, then place the actual bet yourself on Polymarket.

@@ -1,0 +1,35 @@
+---
+title: "Robinhood Chain Launches"
+description: "Live feed of new token launches on Robinhood Chain, ranked and risk-scanned."
+---
+
+Robinhood Chain is a brand-new chain, and new tokens launch on it constantly — roughly one every 1–2 minutes at peak. Skopos surfaces the feed with real safety signals attached, not just a raw list.
+
+## See what's launching
+
+```
+> what's launching on robinhood chain
+> robinhood chain launches
+```
+
+Returns the 5 most active recent launches, ranked by **volume-to-market-cap ratio** — not just recency. A launch with a ratio above 10x gets a 🔥 flag, since that's real trading heat relative to its size, not just "it exists."
+
+<Note>
+There's no historical timeframe option ("past day", "past week") on this feed. The chain launches fast enough that the most-recent batch only ever spans about 30 minutes — a "past week" filter would silently show you the same 30 minutes every time. Skopos shows exactly how much time the batch spans instead of implying a coverage window that doesn't exist.
+</Note>
+
+## What each launch shows
+
+- **Risk badge** — a live DexScreener liquidity/honeypot scan on the token, the same signal behind [Token Safety](/features/token-safety): CRITICAL, HIGH, MEDIUM, or LOW, plus the specific flags driving it (`NO_LIQUIDITY`, `SINGLE_POOL`, `NEW_TOKEN`, etc).
+- **Liquidity**, color-coded — red at $5K or below, green above $50K.
+- **Repeat-launch warning** — if the same wallet has launched more than one token in the current feed window, Skopos flags it and links straight to that wallet's full launch history on NOXA.
+- **Contract address** with a one-tap copy button.
+- **Links** — Bankr, DexScreener, GeckoTerminal, and the token's NOXA page, all pointing at the exact same token.
+
+## Why very fresh tokens sometimes show "not scanned yet"
+
+DexScreener now indexes Robinhood Chain, but a token that's 1–2 minutes old can still show up before DexScreener's own index catches up. That's normal indexing lag, not a chain-support gap — Skopos shows an honest "not indexed yet" instead of a fake risk score.
+
+## The honest caveat
+
+Token names on a permissionless chain are unverified. Anyone can launch a token that riffs on a real person's name or a known brand with zero actual affiliation. Repeat-launch count and the live risk scan are the only real safety signals here — treat the name itself as decoration, not proof of anything.

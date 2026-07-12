@@ -1,0 +1,23 @@
+---
+title: "Agent Skill"
+description: "Drop a SKILL.md into Claude, Cursor, or any Agent Skills-compatible agent."
+---
+
+Skopos ships as a real [Agent Skill](https://www.anthropic.com/news/agent-skills) — a `SKILL.md` file that teaches any Agent Skills–compatible agent how to use Skopos as a thin wrapper over the same [API](/build/api-overview).
+
+## Install it
+
+```bash
+curl -o SKILL.md https://www.tryskopos.xyz/skopos-skill.md
+mkdir -p ~/.claude/skills/skopos && mv SKILL.md ~/.claude/skills/skopos/
+```
+
+Or download it directly from [tryskopos.xyz/skopos-skill.md](https://www.tryskopos.xyz/skopos-skill.md) and place it wherever your agent looks for skills.
+
+## What it does
+
+Once installed, the agent answers the same way the Skopos chat does — non-custodially. Asking it to execute a swap or payment gets you a sign-in link back to the Skopos app, never a signable payload the agent could push through on its own.
+
+## Keeping it current
+
+The skill's capability list is kept in sync with what the [text-mode API](/build/api-overview) actually returns — if a new card type ships, the skill describes it too.

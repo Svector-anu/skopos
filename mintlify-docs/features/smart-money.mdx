@@ -1,0 +1,62 @@
+---
+title: "Smart Money"
+description: "See what wallets Nansen tags as smart money are buying, selling, and holding."
+---
+
+Smart-money reads are powered by [Nansen](https://www.nansen.ai) Token God Mode — paid, real-time data on wallet behavior, not on-chain guesswork.
+
+## Who's buying or selling
+
+```
+> who's buying $pepe
+> who's selling shib
+> smart money on pepe
+```
+
+Returns the wallets Nansen tags as smart money that bought or sold a token recently, with volume.
+
+## Holders
+
+```
+> who holds pepe
+> top holders of shib
+```
+
+## Flow trend
+
+```
+> is smart money accumulating pepe
+> flows on shib this week
+```
+
+Shows the accumulation/distribution trend over a timeframe, not just a point-in-time snapshot.
+
+## Flow intelligence
+
+A finer breakdown of where a token is moving right now, segmented by wallet type — smart money, whales, exchanges, fresh wallets:
+
+```
+> flow intelligence on pepe
+```
+
+## Screener — no token needed
+
+```
+> what is smart money buying right now
+> top tokens smart money is buying on base
+```
+
+Discovery mode: surfaces tokens smart money is currently accumulating, optionally narrowed to one chain.
+
+## How it's paid
+
+This is real, paid data — Nansen charges per read. Skopos handles that two ways:
+
+- **Agent-paid** (default when available): Skopos's own wallet fronts the fee. You get the answer with no wallet connection and no signature.
+- **User-paid fallback**: if agent-paid isn't configured, you pay a small x402 fee (around $0.01) from your own connected wallet instead.
+
+Either way, nothing about *your* funds moves except the data-read fee itself — this is not an execution path.
+
+## Coverage
+
+Smart-money reads work for tokens on Ethereum, Base, Solana, Arbitrum, and Polygon — whichever chains Nansen has scored data for. If a token doesn't resolve to one of those, Skopos tells you rather than returning empty data.

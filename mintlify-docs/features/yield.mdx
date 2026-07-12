@@ -1,0 +1,25 @@
+---
+title: "Yield"
+description: "Scan live yield pools across chains, without the dead-incentive noise."
+---
+
+## Find the best yield
+
+```
+> best yield on usdc
+> find the highest yield for my usdc across all chains
+> best eth apy on base
+```
+
+Skopos scans live pools from [DeFiLlama](https://defillama.com) across a curated set of major protocols — Aave, Compound, Morpho, Moonwell, Uniswap v3, Spark, Fluid, Yearn, Convex, Curve, and others.
+
+## Filtering out the noise
+
+Yield data is filtered before it ever reaches you:
+
+- Pools showing APY above 10,000% are dropped outright — these are almost always dead incentive pools with nonsense numbers, not real yield.
+- If you name a chain, results are scoped to that chain only. Asking for "base eth yield" returns Base pools, not a cross-chain mix with the highest number regardless of where it lives.
+
+## What you get
+
+Each result includes the protocol, chain, current APY (base + reward, where the protocol separates them), and TVL — enough to judge whether a pool is worth the gas to enter, not just the headline percentage.

@@ -1,0 +1,40 @@
+---
+title: "Connect Wallet"
+description: "How wallet connection works, and why Skopos never touches your keys."
+---
+
+## Ways to connect
+
+Skopos uses [Privy](https://www.privy.io) for auth, so you can connect however is easiest:
+
+- **Email** — a magic-link sign-in creates an embedded wallet for you automatically.
+- **Google, X, Discord** — same idea, social login creates an embedded wallet.
+- **Bring your own wallet** — MetaMask, Rabby, Coinbase Wallet, or any injected EVM wallet.
+- **Solana** — a separate wallet-adapter connection (Phantom, Solflare, etc.) for routes that touch Solana.
+
+Embedded and external wallets work the same way inside Skopos — you sign transactions from whichever one is active. If you connect an external wallet, that's the one Skopos uses; if you only have a social login, Skopos uses the embedded wallet it created for you.
+
+## What "connected" actually means
+
+Connecting a wallet does **not** hand Skopos any custody or control. It only lets Skopos:
+
+1. Read your address, so it can quote routes and check balances.
+2. Ask your wallet to sign a specific transaction, when you tell it to execute one.
+
+Your wallet — not Skopos — holds the keys, shows you the transaction details, and makes the final signing decision every time.
+
+## Non-custodial by design
+
+This is the core guarantee, and it's not a policy — it's how the execution path is built:
+
+- Every swap, bridge, and payment Skopos builds returns **unsigned calldata**. Skopos's own server never has a private key that can move your funds.
+- There is no "deposit into Skopos" step anywhere in the product. Funds move directly between your wallet and the target contract.
+- The one exception is a small class of **agent-paid** reads (smart-money intel, market reads) where *Skopos's own wallet* pays a third party like Nansen a few cents so you don't have to connect a wallet just to ask "who's buying this token." That's Skopos spending its own money on your behalf for a data read — never the other direction.
+
+## No funds on this chain?
+
+If you try to execute a swap and your connected wallet has no balance on the destination chain, Skopos will offer to fund it (via Privy's on/off-ramp) rather than silently failing.
+
+## Ghost sessions
+
+Occasionally a wallet session can end up authenticated but without a usable EVM address (a "ghost session"). If Skopos looks stuck in that state, disconnect and reconnect — this is a known edge case in the auth flow, not a fund-safety issue.

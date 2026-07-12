@@ -1,0 +1,65 @@
+---
+title: "Market Reads"
+description: "DeFi, narrative, and trending reads powered by Aeon — cache-first, so they're instant."
+---
+
+Market-intelligence reads are powered by [Aeon](https://github.com/Svector-anu/skopos-aeon), running as a self-hosted fork that generates fresh reads on a cron and commits them to a public repo. Skopos fetches and caches them, so these answers are instant rather than waiting on a live model call.
+
+## DeFi read
+
+```
+> defi read
+> what's happening in defi today
+```
+
+## Narrative map
+
+```
+> what's the narrative right now
+```
+
+A read on what story crypto Twitter/CT is currently telling itself — which sectors, which names, which direction sentiment is leaning.
+
+## Trending
+
+```
+> what's trending
+```
+
+## Top DeFi protocols
+
+```
+> top defi protocols
+```
+
+## Fear / divergence read
+
+```
+> fear read
+> is there a fear divergence right now
+```
+
+Flags when market sentiment and price action are telling two different stories.
+
+## Token pick
+
+```
+> pick a token
+> what should i buy
+> any good picks today
+```
+
+One scored pick a day — a 7-day dedup gate prevents the same coin from being re-served, and each candidate gets a 0–10 multi-signal score resulting in a **HIGH**, **MEDIUM**, or honest **SKIP** conviction call. A skip is a real, expected outcome on days nothing clears the bar — this isn't a slot machine that always returns a pick.
+
+## Picks scorecard
+
+```
+> how are my picks doing
+> picks tracker
+```
+
+A running scorecard of every past pick — win/hold/loss classification and hit rate, updated weekly. No cherry-picked dates.
+
+## Why cache-first matters
+
+Because these reads come from a scheduled cron rather than a live model call at request time, they're free to serve and consistently fast — on the web app and in headless/text mode (iMessage, Telegram) alike.
