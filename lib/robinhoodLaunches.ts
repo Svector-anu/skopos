@@ -4,17 +4,20 @@ import { getAgentPayFetch, agentPaidEnabled } from "./x402Agent";
 // own agent wallet fronts the $0.001/call — no user wallet, no signature. Reuses
 // the same SKOPOS_X402_PRIVATE_KEY that pays Nansen (lib/smartMoneyServer.ts).
 //
-// No safety cross-check against lib/dexscreener.ts's scanToken here on purpose:
-// DexScreener has not indexed Robinhood Chain (chainId 4663) as of 2026-07-11 —
-// every lookup returns pairs:null, chain-brand-new tokens have no honeypot/
-// liquidity signal to check yet regardless. The only real signal this feed itself
-// provides is the creator's repeat-launch count — a wallet that's launched several
-// tokens in the current feed window is a materially different risk than a first
-// launch, so that's surfaced directly instead of a safety scan Skopos can't yet do
-// on this chain. Revisit once DexScreener (or another aggregator) covers it.
+// DexScreener indexed Robinhood Chain as of 2026-07-12 (confirmed live — search
+// for "robinhood" now returns real chainId:"robinhood" pairs), so the earlier
+// "no aggregator covers this chain" caveat no longer holds at the chain level.
+// Individual launches can still lag the index by minutes though (a token 1-2
+// minutes old routinely comes back pairs:null even now) — that's normal
+// DexScreener latency, not a Robinhood Chain gap, and this file still doesn't
+// cross-check against lib/dexscreener.ts's scanToken per-launch (rate-limit
+// risk of up to MAX_LIMIT parallel lookups per request, not yet worth it for a
+// feed this fast-moving). Repeat-launch count remains the only safety signal
+// surfaced here.
 
 const ENDPOINT = "https://robinhood-launches.hustlerhigher.workers.dev/recent-robinhood-launches";
 const TIMEOUT_MS = 8_000;
+export const MAX_LIMIT = 25; // upstream API's own ceiling
 
 export interface RobinhoodLaunch {
   symbol: string;
@@ -23,6 +26,9 @@ export interface RobinhoodLaunch {
   ageMinutes: number;
   marketCapUsd: number;
   volume24hUsd: number;
+  volume1hUsd: number;
+  priceChange1hPct: number;
+  transactions24h: number;
   creator: {
     xUsername: string | null;
     walletAddress: string;
@@ -36,7 +42,13 @@ export interface RobinhoodLaunch {
 interface RawLaunch {
   token: { symbol: string; name: string; address: string };
   launch: { ageMinutes: number };
-  market: { marketCapUsd: number; volume24hUsd: number };
+  market: {
+    marketCapUsd: number;
+    volume24hUsd: number;
+    volume1hUsd?: number;
+    priceChange1hPct?: number;
+    transactions24h?: number;
+  };
   creator: {
     xUsername: string | null;
     walletAddress: string;
@@ -54,10 +66,11 @@ export async function getRecentRobinhoodLaunches(limit = 5): Promise<RobinhoodLa
   const payFetch = getAgentPayFetch();
   if (!payFetch) return null;
 
+  const clampedLimit = Math.min(Math.max(limit, 1), MAX_LIMIT);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await payFetch(`${ENDPOINT}?limit=${limit}&onlyAttributed=true`, { signal: controller.signal });
+    const res = await payFetch(`${ENDPOINT}?limit=${clampedLimit}&onlyAttributed=true`, { signal: controller.signal });
     if (!res.ok) {
       console.error(`[robinhood-launches] ${res.status}`);
       return null;
@@ -71,6 +84,9 @@ export async function getRecentRobinhoodLaunches(limit = 5): Promise<RobinhoodLa
       ageMinutes: l.launch.ageMinutes,
       marketCapUsd: l.market.marketCapUsd,
       volume24hUsd: l.market.volume24hUsd,
+      volume1hUsd: l.market.volume1hUsd ?? 0,
+      priceChange1hPct: l.market.priceChange1hPct ?? 0,
+      transactions24h: l.market.transactions24h ?? 0,
       creator: {
         xUsername: l.creator.xUsername,
         walletAddress: l.creator.walletAddress,
