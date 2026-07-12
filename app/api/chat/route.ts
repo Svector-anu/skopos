@@ -1218,7 +1218,10 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // (lib/robinhoodLaunches.ts, docs/paid-data-sources.md) — no user wallet
   // needed. Surfaces the creator's repeat-launch count as the safety signal;
   // DexScreener doesn't index this chain yet so there's no honeypot/liquidity
-  // check to run on top of it.
+  // check to run on top of it. Token names are also unverified — permissionless
+  // launches routinely reference real public figures/brands with zero actual
+  // affiliation (e.g. a token symbol riffing on a known CT persona's name),
+  // so the disclaimer calls that out explicitly rather than implying any vetting.
   if (/\brobinhood\s+chain\s+launch(?:es)?\b|\blaunch(?:es|ing)?\s+on\s+robinhood(?:\s+chain)?\b|\bwhat'?s?\s+launching\s+on\s+robinhood\b/i.test(trimmed)) {
     if (!robinhoodFeedEnabled()) {
       return json({ type: "error", text: "Robinhood Chain launch reads aren't configured right now." });
@@ -1238,7 +1241,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     });
     return json({
       type: "text",
-      text: `Recent Robinhood Chain launches:\n\n${lines.join("\n")}\n\nNo liquidity/honeypot data yet — DexScreener hasn't indexed this chain. Repeat-launch count is the only safety signal available right now.`,
+      text: `Recent Robinhood Chain launches:\n\n${lines.join("\n")}\n\nNo liquidity/honeypot data yet — DexScreener hasn't indexed this chain. Token names are unverified — anyone can launch a token referencing a public figure or brand with zero affiliation. Repeat-launch count is the only safety signal available right now.`,
     });
   }
 
