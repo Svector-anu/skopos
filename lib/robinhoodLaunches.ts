@@ -1,23 +1,39 @@
 import { getAgentPayFetch, agentPaidEnabled } from "./x402Agent";
+import { scanToken, type TokenRisk } from "./dexscreener";
 
 // Robinhood Chain launch feed, paid via x402 (docs/paid-data-sources.md). Skopos's
 // own agent wallet fronts the $0.001/call — no user wallet, no signature. Reuses
 // the same SKOPOS_X402_PRIVATE_KEY that pays Nansen (lib/smartMoneyServer.ts).
 //
 // DexScreener indexed Robinhood Chain as of 2026-07-12 (confirmed live — search
-// for "robinhood" now returns real chainId:"robinhood" pairs), so the earlier
-// "no aggregator covers this chain" caveat no longer holds at the chain level.
-// Individual launches can still lag the index by minutes though (a token 1-2
-// minutes old routinely comes back pairs:null even now) — that's normal
-// DexScreener latency, not a Robinhood Chain gap, and this file still doesn't
-// cross-check against lib/dexscreener.ts's scanToken per-launch (rate-limit
-// risk of up to MAX_LIMIT parallel lookups per request, not yet worth it for a
-// feed this fast-moving). Repeat-launch count remains the only safety signal
-// surfaced here.
+// for "robinhood" now returns real chainId:"robinhood" pairs), so route.ts now
+// cross-checks each *displayed* launch (top 5, not all MAX_LIMIT fetched) via
+// scanRobinhoodLaunchRisk below — parallel (Promise.all in route.ts), and
+// cached here with a short TTL so a hot token that keeps resurfacing across
+// consecutive "what's launching" requests (likely, since the default sort
+// re-ranks by volume/mcap ratio every time) doesn't re-hit DexScreener on
+// every single one. Individual very-fresh launches can still come back
+// unindexed (pairs:null) for a few minutes — that's normal DexScreener
+// latency, not a Robinhood Chain gap.
 
 const ENDPOINT = "https://robinhood-launches.hustlerhigher.workers.dev/recent-robinhood-launches";
 const TIMEOUT_MS = 8_000;
 export const MAX_LIMIT = 25; // upstream API's own ceiling
+
+const RISK_CACHE_TTL_MS = 60_000;
+const riskCache = new Map<string, { risk: TokenRisk | null; ts: number }>();
+
+// Cached, failure-safe wrapper around scanToken for this feed specifically —
+// deep-dive/risk-scan/the prebuy bundle all want scanToken's normal always-fresh
+// behavior, so the cache lives here rather than inside scanToken itself.
+export async function scanRobinhoodLaunchRisk(address: string): Promise<TokenRisk | null> {
+  const key = address.toLowerCase();
+  const cached = riskCache.get(key);
+  if (cached && Date.now() - cached.ts < RISK_CACHE_TTL_MS) return cached.risk;
+  const risk = await scanToken(address).catch(() => null);
+  riskCache.set(key, { risk, ts: Date.now() });
+  return risk;
+}
 
 export interface RobinhoodLaunch {
   symbol: string;

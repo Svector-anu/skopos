@@ -104,7 +104,29 @@ type AeonResult = { type: "aeon"; kind: "narrative" | "defi" | "onchain" | "tren
 type X402Discovery = { ok: boolean; description?: string; network?: string; priceUsd?: string; asset?: string; payTo?: string; error?: string };
 type X402CheckResult = { type: "x402check"; url: string; method: "GET" | "POST"; discovery: X402Discovery };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult;
+type RobinhoodLaunchCard = {
+  symbol: string;
+  name: string;
+  address: string;
+  ageMinutes: number;
+  marketCapUsd: number;
+  volume24hUsd: number;
+  volumeToMcapRatio: number | null;
+  hot: boolean;
+  creator: { xUsername: string | null; repeatLaunchCount: number };
+  risk: { score: 1 | 2 | 3 | 4; label: string; flags: string[]; totalLiquidityUsd: number } | null;
+  links: { bankr: string; dexscreener: string | null; geckoterminal: string | null };
+};
+type RobinhoodLaunchesResult = {
+  type: "robinhood_launches";
+  heading: string;
+  windowLabel: string;
+  coverageNote: string | null;
+  launches: RobinhoodLaunchCard[];
+  omittedCount: number;
+};
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | RobinhoodLaunchesResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1292,6 +1314,11 @@ export default function AppPage() {
                     {msg.result.type === "x402check" && (
                       <ErrorBoundary label="Endpoint check failed to render.">
                         <X402CheckDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "robinhood_launches" && (
+                      <ErrorBoundary label="Robinhood launches failed to render.">
+                        <RobinhoodLaunchesDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "paywall" && (
@@ -4183,6 +4210,126 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── RobinhoodLaunchesDisplay ─────────────────────────────────────────────────
+
+function CopyableAddress({ address }: { address: string }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const [copied, setCopied] = useState(false);
+  const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(address);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch { /* clipboard unavailable — ignore */ }
+      }}
+      title={address}
+      style={{
+        ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.5))",
+        background: "transparent", border: "1px solid var(--card-border-faint)", borderRadius: 6,
+        padding: "2px 7px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5,
+      }}
+    >
+      {short}
+      <span style={{ opacity: 0.7 }}>{copied ? "✓" : "⧉"}</span>
+    </button>
+  );
+}
+
+function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { heading, windowLabel, coverageNote, launches, omittedCount } = result;
+
+  const RISK_COLOR = { 1: "#22c55e", 2: "#f59e0b", 3: "#f97316", 4: "#ef4444" } as const;
+
+  const fmtUsd = (n: number) =>
+    n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M`
+    : n >= 1_000    ? `$${(n / 1_000).toFixed(1)}K`
+    : `$${n.toFixed(0)}`;
+
+  return (
+    <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 460, background: "var(--card-container-bg, #0D0D0D)" }}>
+      <div style={{ padding: "12px 18px 10px", borderBottom: "1px solid var(--card-border-faint)" }}>
+        <p style={{ ...MONO, fontSize: "0.85rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: 0 }}>
+          {heading} <span style={{ fontWeight: 400, color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>· {windowLabel}</span>
+        </p>
+        {coverageNote && (
+          <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "4px 0 0" }}>
+            {coverageNote}
+          </p>
+        )}
+      </div>
+
+      <div>
+        {launches.map((l, i) => {
+          const repeat = l.creator.repeatLaunchCount > 1;
+          const riskColor = l.risk ? RISK_COLOR[l.risk.score] : null;
+          return (
+            <div key={l.address} style={{ padding: "13px 18px", borderBottom: i < launches.length - 1 ? "1px solid var(--card-border-faint)" : "none" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ ...MONO, fontSize: "0.8rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: 0 }}>
+                    {l.hot && "🔥 "}{l.symbol} <span style={{ fontWeight: 400, color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>{l.name}</span>
+                  </p>
+                  <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "3px 0 0" }}>
+                    {l.ageMinutes}m old · {l.marketCapUsd > 0 ? `${fmtUsd(l.marketCapUsd)} mcap` : "no trades yet"}
+                    {l.volumeToMcapRatio !== null && ` · ${l.volumeToMcapRatio.toFixed(1)}x vol/mcap`}
+                    {" · by "}@{l.creator.xUsername ?? "unknown"}
+                  </p>
+                  {repeat && (
+                    <p style={{ ...MONO, fontSize: "0.6rem", color: "#f59e0b", margin: "3px 0 0" }}>
+                      ⚠️ {l.creator.repeatLaunchCount} launches from this wallet in the current feed
+                    </p>
+                  )}
+                  {l.risk ? (
+                    <p style={{ ...MONO, fontSize: "0.62rem", color: riskColor ?? undefined, margin: "5px 0 0" }}>
+                      {l.risk.label} risk{l.risk.flags.length > 0 ? ` — ${l.risk.flags.join(", ")}` : ""} · {fmtUsd(l.risk.totalLiquidityUsd)} liquidity
+                    </p>
+                  ) : (
+                    <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "5px 0 0" }}>
+                      Not indexed by DexScreener yet — too new to scan.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                <CopyableAddress address={l.address} />
+                <a href={l.links.bankr} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
+                  bankr ↗
+                </a>
+                {l.links.dexscreener && (
+                  <a href={l.links.dexscreener} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
+                    dexscreener ↗
+                  </a>
+                )}
+                {l.links.geckoterminal && (
+                  <a href={l.links.geckoterminal} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
+                    geckoterminal ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ padding: "10px 18px 13px", borderTop: "1px solid var(--card-border-faint)" }}>
+        {omittedCount > 0 && (
+          <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 6px" }}>
+            +{omittedCount} more in this window — narrow it further to see them.
+          </p>
+        )}
+        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, lineHeight: 1.6 }}>
+          Token names are unverified — anyone can launch a token referencing a public figure or brand with zero affiliation. Repeat-launch count and the DexScreener scan above are the only safety signals shown here.
+        </p>
+      </div>
     </div>
   );
 }

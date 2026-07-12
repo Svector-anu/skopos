@@ -33,7 +33,7 @@ import { getPrice, getPriceChart, type PriceResult } from "@/lib/priceCache";
 import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled } from "@/lib/smartMoneyServer";
-import { getRecentRobinhoodLaunches, robinhoodFeedEnabled, MAX_LIMIT } from "@/lib/robinhoodLaunches";
+import { getRecentRobinhoodLaunches, robinhoodFeedEnabled, MAX_LIMIT, scanRobinhoodLaunchRisk } from "@/lib/robinhoodLaunches";
 import { discoverX402Endpoint } from "@/lib/x402Discover";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
@@ -1216,18 +1216,29 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // ── Robinhood Chain launch feed (paid, x402) — "robinhood chain launches" /
   // "what's launching on robinhood". Skopos's own wallet pays $0.001/call
   // (lib/robinhoodLaunches.ts, docs/paid-data-sources.md) — no user wallet
-  // needed. Surfaces the creator's repeat-launch count as the safety signal.
-  // Token names are unverified — permissionless launches routinely reference
-  // real public figures/brands with zero actual affiliation (e.g. a token
-  // symbol riffing on a known CT persona's name), so the disclaimer calls that
-  // out explicitly rather than implying any vetting.
+  // needed. Token names are unverified — permissionless launches routinely
+  // reference real public figures/brands with zero actual affiliation, so
+  // that's called out explicitly rather than implying any vetting.
   //
-  // Time window ("past hour" / "today" / "past N days") and a fast-movers sort
-  // are both computed locally from one MAX_LIMIT-sized fetch — the upstream API
-  // has no window or sort parameter of its own, just a flat "N most recent."
-  // MAX_LIMIT (25) is a hard ceiling: if the chain is launching faster than that
-  // reaches the requested window, the response says so honestly instead of
-  // implying a full day/week of coverage that was never actually fetched.
+  // Time window ("past hour" / "today" / "past N days") is computed locally
+  // from one MAX_LIMIT-sized fetch — the upstream API has no window param of
+  // its own, just a flat "N most recent." No mention defaults to 1h. MAX_LIMIT
+  // (25) is a hard ceiling: if the chain is launching faster than that reaches
+  // the requested window, the response says so honestly instead of implying
+  // fuller coverage than was actually fetched.
+  //
+  // Within the window, launches are always sorted by volume24hUsd/marketCapUsd
+  // (not recency, not 1h price change — nearly every launch this fresh shows
+  // 0% 1h change, so that signal is useless here) — a ratio above 10x is
+  // flagged 🔥. DexScreener now indexes this chain (live-verified 2026-07-12,
+  // real chainId:"robinhood" pairs), so each of the top 5 shown gets a real
+  // liquidity/honeypot scan via scanRobinhoodLaunchRisk (lib/robinhoodLaunches.ts)
+  // — parallel (Promise.all, not sequential) and cached there with a 60s TTL,
+  // since the ratio-sort default means the same hot token easily resurfaces
+  // across consecutive requests. Bounded to the 5 displayed launches, never all
+  // 25 fetched. The resolved pair address also backs the DexScreener/
+  // GeckoTerminal links (same address serves both, verified live) — no extra
+  // lookup beyond the one cached risk scan already needed.
   if (/\brobinhood\s+chain\s+launch(?:es)?\b|\blaunch(?:es|ing)?\s+on\s+robinhood(?:\s+chain)?\b|\bwhat'?s?\s+launching\s+on\s+robinhood\b/i.test(trimmed)) {
     if (!robinhoodFeedEnabled()) {
       return json({ type: "error", text: "Robinhood Chain launch reads aren't configured right now." });
@@ -1235,57 +1246,78 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
 
     const hourMatch = trimmed.match(/\b(?:past|last)\s+(\d+)?\s*hours?\b/i);
     const dayMatch  = trimmed.match(/\b(?:past|last)\s+(\d+)?\s*days?\b/i);
+    const weekMatch = trimmed.match(/\b(?:past|last)\s+(\d+)?\s*weeks?\b/i);
     const isToday   = /\btoday\b/i.test(trimmed);
     const minMatch  = trimmed.match(/\b(?:past|last)\s+(\d+)\s*(?:minutes?|mins?)\b/i);
-    const windowMinutes = hourMatch ? (Number(hourMatch[1]) || 1) * 60
+    const windowMinutes = minMatch ? Number(minMatch[1])
+      : hourMatch ? (Number(hourMatch[1]) || 1) * 60
+      : weekMatch ? (Number(weekMatch[1]) || 1) * 10080
       : (dayMatch || isToday) ? (Number(dayMatch?.[1]) || 1) * 1440
-      : minMatch ? Number(minMatch[1])
-      : null;
-    const wantsMomentum = /\b(?:fast(?:est)?[\s-]?(?:moving|growing)?|top\s+movers?|momentum)\b/i.test(trimmed);
+      : 60; // no mention → default 1h
 
-    const fetchLimit = (windowMinutes || wantsMomentum) ? MAX_LIMIT : 5;
-    const launches = await getRecentRobinhoodLaunches(fetchLimit);
+    const launches = await getRecentRobinhoodLaunches(MAX_LIMIT);
     if (!launches || launches.length === 0) {
       return json({ type: "error", text: "Couldn't fetch Robinhood Chain launches right now — try again shortly." });
     }
 
-    let scoped = windowMinutes != null ? launches.filter(l => l.ageMinutes <= windowMinutes) : launches;
-    let coverageNote = "";
-    if (windowMinutes != null && scoped.length === launches.length && launches.length === MAX_LIMIT) {
-      // The whole MAX_LIMIT batch fits inside the requested window — the chain
-      // is launching too fast for 25 lookbehind entries to actually reach it.
+    const scoped = launches.filter(l => l.ageMinutes <= windowMinutes);
+    let coverageNote: string | null = null;
+    if (scoped.length === launches.length && launches.length === MAX_LIMIT) {
       const oldestMinutes = Math.max(...launches.map(l => l.ageMinutes));
-      coverageNote = ` (only reaches the last ${oldestMinutes}m — Robinhood Chain is launching faster than ${MAX_LIMIT} entries can cover)`;
+      coverageNote = `Only reaches the last ${oldestMinutes}m — Robinhood Chain is launching faster than ${MAX_LIMIT} entries can cover.`;
     }
-    if (wantsMomentum) {
-      scoped = [...scoped].sort((a, b) => b.priceChange1hPct - a.priceChange1hPct);
-    }
-    const DISPLAY_CAP = 10;
-    const shown = scoped.slice(0, DISPLAY_CAP);
-    const omitted = scoped.length - shown.length;
+
+    const ranked = [...scoped].sort((a, b) => {
+      const ratioA = a.marketCapUsd > 0 ? a.volume24hUsd / a.marketCapUsd : 0;
+      const ratioB = b.marketCapUsd > 0 ? b.volume24hUsd / b.marketCapUsd : 0;
+      return ratioB - ratioA;
+    });
+    const DISPLAY_CAP = 5;
+    const shown = ranked.slice(0, DISPLAY_CAP);
+    const omittedCount = ranked.length - shown.length;
 
     if (shown.length === 0) {
-      return json({ type: "text", text: `No Robinhood Chain launches found in that window${coverageNote}. Try a shorter window or ask for the most recent launches.` });
+      return json({ type: "error", text: `No Robinhood Chain launches found in that window. Try a wider one — "past 24 hours" or "past week".` });
     }
 
-    const lines = shown.map(l => {
-      const repeat = l.creator.repeatLaunchCount > 1
-        ? ` ⚠️ ${l.creator.repeatLaunchCount} launches from this wallet in the current feed`
-        : "";
-      const mcap = l.marketCapUsd > 0
-        ? `$${l.marketCapUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} mcap`
-        : "no trades yet";
-      const momentum = wantsMomentum && l.priceChange1hPct !== 0
-        ? ` · ${l.priceChange1hPct >= 0 ? "+" : ""}${l.priceChange1hPct.toFixed(1)}% (1h)`
-        : "";
-      return `${l.symbol} (${l.name}) — ${l.ageMinutes}m old, ${mcap}, by @${l.creator.xUsername ?? "unknown"}${momentum}${repeat}`;
+    const risks = await Promise.all(shown.map(l => scanRobinhoodLaunchRisk(l.address)));
+
+    const launchCards = shown.map((l, i) => {
+      const risk = risks[i];
+      const ratio = l.marketCapUsd > 0 ? l.volume24hUsd / l.marketCapUsd : null;
+      const pairAddress = risk?.topPair?.pairAddress ?? null;
+      const chainSlug = risk?.topPair?.chainId ?? null;
+      return {
+        symbol: l.symbol,
+        name: l.name,
+        address: l.address,
+        ageMinutes: l.ageMinutes,
+        marketCapUsd: l.marketCapUsd,
+        volume24hUsd: l.volume24hUsd,
+        volumeToMcapRatio: ratio,
+        hot: ratio !== null && ratio > 10,
+        creator: { xUsername: l.creator.xUsername, repeatLaunchCount: l.creator.repeatLaunchCount },
+        risk: risk ? { score: risk.score, label: risk.label, flags: risk.flags, totalLiquidityUsd: risk.totalLiquidityUsd } : null,
+        links: {
+          bankr: l.bankrUrl,
+          dexscreener: pairAddress && chainSlug ? `https://dexscreener.com/${chainSlug}/${pairAddress}` : null,
+          geckoterminal: pairAddress && chainSlug ? `https://www.geckoterminal.com/${chainSlug}/pools/${pairAddress}` : null,
+        },
+      };
     });
-    const heading = wantsMomentum ? "Fastest-moving Robinhood Chain launches" : "Recent Robinhood Chain launches";
-    const windowLabel = windowMinutes != null ? ` (past ${windowMinutes >= 1440 ? `${Math.round(windowMinutes / 1440)}d` : windowMinutes >= 60 ? `${Math.round(windowMinutes / 60)}h` : `${windowMinutes}m`})` : "";
-    const more = omitted > 0 ? `\n\n+${omitted} more in this window — narrow it further to see them.` : "";
+
+    const windowLabel = windowMinutes >= 10080 ? `past ${Math.round(windowMinutes / 10080)}w`
+      : windowMinutes >= 1440 ? `past ${Math.round(windowMinutes / 1440)}d`
+      : windowMinutes >= 60 ? `past ${Math.round(windowMinutes / 60)}h`
+      : `past ${windowMinutes}m`;
+
     return json({
-      type: "text",
-      text: `${heading}${windowLabel}${coverageNote}:\n\n${lines.join("\n")}${more}\n\nDexScreener indexes this chain now, but very fresh launches can still lag the index by a few minutes — not cross-checked here yet. Token names are unverified — anyone can launch a token referencing a public figure or brand with zero affiliation. Repeat-launch count is the only safety signal available right now.`,
+      type: "robinhood_launches",
+      heading: "Robinhood Chain launches",
+      windowLabel,
+      coverageNote,
+      launches: launchCards,
+      omittedCount,
     });
   }
 
