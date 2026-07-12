@@ -68,15 +68,31 @@
   "navbar": {
     "links": [
       {
-        "label": "Open App",
-        "href": "https://www.tryskopos.xyz/app"
+        "type": "github",
+        "href": "https://github.com/Svector-anu/skopos-os"
+      },
+      {
+        "label": "X",
+        "icon": "x-twitter",
+        "iconType": "brands",
+        "href": "https://x.com/tryskopos"
+      },
+      {
+        "label": "Changelog",
+        "icon": "clock-rotate-left",
+        "href": "https://www.tryskopos.xyz/changelog"
       }
-    ]
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Open App",
+      "href": "https://www.tryskopos.xyz/app"
+    }
   },
   "footer": {
     "socials": {
       "x": "https://x.com/tryskopos",
-      "github": "https://github.com/Svector-anu/skopos"
+      "github": "https://github.com/Svector-anu/skopos-os"
     }
   }
 }
