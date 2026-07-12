@@ -1,4 +1,4 @@
-import { Redis } from "@upstash/redis";
+import { getRedis } from "./redis";
 
 // Shared registration registry for the three standing-watch features
 // (price-alert, monitor-polymarket, onchain-monitor) — same missing
@@ -7,15 +7,6 @@ import { Redis } from "@upstash/redis";
 // kind so a fired watcher can be removed by id in O(1), unlike a list.
 
 const WATCHER_HASH_PREFIX = "watchers:"; // + kind
-
-let client: Redis | null = null;
-function getRedis(): Redis | null {
-  const url   = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  if (!client) client = new Redis({ url, token });
-  return client;
-}
 
 export type WatcherKind = "price" | "polymarket" | "onchain";
 

@@ -1,4 +1,4 @@
-import { Redis } from "@upstash/redis";
+import { getRedis } from "./redis";
 
 // Subscription entitlement store. A paid wallet gets a time-boxed pass written to
 // Upstash as sub:<wallet> = expiry epoch (seconds, UTC). isEntitled() is the
@@ -12,15 +12,6 @@ import { Redis } from "@upstash/redis";
 // (no sub data or Redis error → not entitled); the user then falls through to the
 // free counter, which itself fails open — so a Redis outage degrades to "everyone
 // gets free Smart", never "paid user blocked".
-
-let client: Redis | null = null;
-function getRedis(): Redis | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  if (!client) client = new Redis({ url, token });
-  return client;
-}
 
 function subKey(wallet: string): string {
   return `sub:${wallet.toLowerCase()}`;

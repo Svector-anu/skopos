@@ -1,4 +1,5 @@
-const TIMEOUT_MS = 8_000;
+import { fetchWithTimeout as fetchWithTimeoutBase } from "./http";
+
 const TTL_MS = 60_000;
 
 export interface PriceResult {
@@ -105,14 +106,11 @@ const BASE_HEADERS = {
   "User-Agent": "Mozilla/5.0 (compatible; Skopos/1.0)",
 };
 
+// Thin wrapper over the shared timeout helper — this file's own contribution
+// is the Vercel Data Cache revalidate directive + custom headers, not the
+// timeout/abort mechanics, which now live in one place (lib/http.ts).
 async function fetchWithTimeout(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(url, { signal: controller.signal, next: { revalidate: 60 }, headers: BASE_HEADERS } as RequestInit);
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchWithTimeoutBase(url, { next: { revalidate: 60 }, headers: BASE_HEADERS } as RequestInit);
 }
 
 // ── CoinGecko (primary) ───────────────────────────────────────────────────────

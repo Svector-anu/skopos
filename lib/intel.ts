@@ -1,16 +1,7 @@
-const READER_BASE = "https://r.jina.ai/";
-const TIMEOUT_MS   = 8000;
-const EXCERPT_CHARS = 600;
+import { fetchWithTimeout } from "./http";
 
-async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
-}
+const READER_BASE = "https://r.jina.ai/";
+const EXCERPT_CHARS = 600;
 
 export interface WebContext {
   url: string;

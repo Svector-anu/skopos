@@ -2,6 +2,7 @@ import { createPublicClient, http } from "viem";
 import { mainnet } from "viem/chains";
 import type { TxData, Transfer, ChainBalance, TokenBalance, AddressData } from "./alchemy-types";
 import { getPrices } from "./priceCache";
+import { fetchWithTimeout } from "./http";
 export type { TxData, Transfer, ChainBalance, TokenBalance, AddressData };
 
 const KEY = process.env.ALCHEMY_API_KEY ?? "";
@@ -67,18 +68,6 @@ function decodeApprove(input: string | undefined): { spender: string; unlimited:
 }
 
 // ── internal helpers ──────────────────────────────────────────────────────────
-
-const TIMEOUT_MS = 8000;
-
-async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
-}
 
 async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T> {
   const res = await fetchWithTimeout(url, {

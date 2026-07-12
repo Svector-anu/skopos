@@ -1,4 +1,4 @@
-import { Redis } from "@upstash/redis";
+import { getRedis } from "./redis";
 
 // Smart-tier metering. One increment per submitted Smart message that actually
 // reached the gateway. Daily calendar key with a 24h TTL → resets at UTC
@@ -35,15 +35,6 @@ const INTEL_AGENT_DAILY_CAP  = envCap("SMART_MONEY_AGENT_DAILY_CAP", 200);
 // this one FAILS CLOSED — no anonId or Redis down → deny, so a headless caller can
 // never drain the USDC budget when metering is unavailable.
 const AGENT_TEXT_INTEL_DAILY_CAP = envCap("AGENT_TEXT_INTEL_DAILY_CAP", 15);
-
-let client: Redis | null = null;
-function getRedis(): Redis | null {
-  const url   = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  if (!client) client = new Redis({ url, token });
-  return client;
-}
 
 function utcDay(): string {
   return new Date().toISOString().slice(0, 10);

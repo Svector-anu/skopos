@@ -1,15 +1,6 @@
-const BASE = "https://gamma-api.polymarket.com";
-const TIMEOUT_MS = 8_000;
+import { fetchWithTimeout } from "./http";
 
-async function fetchWithTimeout(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
-}
+const BASE = "https://gamma-api.polymarket.com";
 
 export interface PolymarketMarket {
   id: string;

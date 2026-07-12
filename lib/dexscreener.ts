@@ -1,15 +1,6 @@
-const BASE = "https://api.dexscreener.com";
-const TIMEOUT_MS = 8000;
+import { fetchWithTimeout } from "./http";
 
-async function fetchWithTimeout(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
-}
+const BASE = "https://api.dexscreener.com";
 
 export interface DexPair {
   chainId: string;

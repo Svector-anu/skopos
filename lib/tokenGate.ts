@@ -1,6 +1,6 @@
-import { Redis } from "@upstash/redis";
 import { createPublicClient, http, getAddress } from "viem";
 import { base } from "viem/chains";
+import { getRedis } from "./redis";
 
 // $skopos holder tiers for the Smart tier. Holding more $skopos lifts a wallet's
 // daily Smart cap through ascending bands — bounded upgrades, not the uncapped
@@ -55,15 +55,6 @@ function tiers(): Tier[] {
     out.push({ min: toWei(min), cap: envNum(band.capVar) ?? band.defaultCap });
   }
   return out.sort((a, b) => (a.min < b.min ? -1 : a.min > b.min ? 1 : 0));
-}
-
-let redis: Redis | null = null;
-function getRedis(): Redis | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  if (!redis) redis = new Redis({ url, token });
-  return redis;
 }
 
 function makeClient() {

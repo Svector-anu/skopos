@@ -1,5 +1,5 @@
 import webpush from "web-push";
-import { Redis } from "@upstash/redis";
+import { getRedis } from "./redis";
 
 // Web Push delivery — the notification channel for watchers (lib/watchers.ts).
 // Chosen over Telegram/email as the FIRST channel because it needs zero new
@@ -10,15 +10,6 @@ import { Redis } from "@upstash/redis";
 // A Telegram channel can be added later against the same watcher registry.
 
 const SUB_KEY_PREFIX = "push:sub:"; // + identity (wallet or anonId)
-
-let client: Redis | null = null;
-function getRedis(): Redis | null {
-  const url   = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-  if (!client) client = new Redis({ url, token });
-  return client;
-}
 
 let vapidConfigured = false;
 function ensureVapid(): boolean {
