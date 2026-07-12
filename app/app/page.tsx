@@ -198,6 +198,7 @@ const EXAMPLE_PROMPTS = [
 // backend answers them honestly if triggered. Live ones (no `soon`) fill the
 // composer with a working prompt the user can send.
 const HORIZON_PILLS: { label: string; prompt: string; soon?: boolean }[] = [
+  { label: "robinhood launches", prompt: "what's launching on robinhood chain" },
   { label: "polymarket",       prompt: "what are the current odds ETH hits $5k this year?" },
   { label: "yield scanner",    prompt: "find the highest yield for USDC on base" },
   { label: "agent mode",       prompt: "set up an agent to DCA $20 into ETH every week on base", soon: true },

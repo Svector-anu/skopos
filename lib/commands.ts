@@ -5,6 +5,10 @@ export interface Command {
 
 export const COMMANDS: Command[] = [
   {
+    cmd: "what's launching on robinhood chain",
+    response: "Live Robinhood Chain launch feed pulled\nFresh tokens, creator attribution, repeat-launch risk flagged",
+  },
+  {
     cmd: "move 2 eth from ethereum to base",
     response: "Routed — ETH to Base via best path\nOptimized for cost and speed · ready when you are",
   },
