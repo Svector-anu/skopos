@@ -16,6 +16,7 @@ import {
   type LlmMeta,
 } from "@/lib/parseIntent";
 import { checkSmartQuota, incrSmart } from "@/lib/usage";
+import { checkRateLimit, trustedIp, corsHeadersFor } from "@/lib/rateLimit";
 import { isEntitled } from "@/lib/subscription";
 import { resolveHolderCap } from "@/lib/tokenGate";
 import { looksLikePay, buildPayIntent } from "@/lib/pay";
@@ -198,20 +199,6 @@ function buildBridgeAnalysisPrompt(
       ? `Your conclusion is FIXED: "${verdict}" State it plainly in 1-2 short sentences using only the figures above. Do NOT repeat it verbatim, do NOT contradict or reverse it, and do NOT state any percentage other than the one given. Only add an adapter note if it's genuinely useful — otherwise skip it.`
       : `Give a one-sentence directional take: is this route worth executing at these costs? Only mention the adapter if something about it is genuinely worth knowing.`,
   ].filter(Boolean).join("\n");
-}
-
-// ── in-memory rate limiter (sliding window, per IP) ──────────────────────────
-const RATE_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT     = 30;     // max 30 requests per minute per IP
-
-const rateMap = new Map<string, number[]>();
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const hits = (rateMap.get(ip) ?? []).filter(t => now - t < RATE_WINDOW_MS);
-  hits.push(now);
-  rateMap.set(ip, hits);
-  return hits.length <= RATE_LIMIT;
 }
 
 // ── retry helper ──────────────────────────────────────────────────────────────
@@ -591,13 +578,7 @@ a{color:#F5B800;text-decoration:none}
 }
 
 async function handleChat(req: NextRequest): Promise<NextResponse> {
-  // CORS — only allow requests from the production origin and localhost dev
-  const origin = req.headers.get("origin") ?? "";
-  const allowedOrigins = new Set(["https://www.tryskopos.xyz", "https://tryskopos.xyz"]);
-  const corsOrigin = allowedOrigins.has(origin) ? origin : (origin.startsWith("http://localhost") ? origin : null);
-  const corsHeaders: Record<string, string> = corsOrigin
-    ? { "Access-Control-Allow-Origin": corsOrigin, "Vary": "Origin" }
-    : {};
+  const corsHeaders = corsHeadersFor(req);
 
   // Body size guard — reject before parsing to avoid memory pressure from large payloads
   const contentLength = parseInt(req.headers.get("content-length") ?? "0", 10);
@@ -605,11 +586,8 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ type: "error", text: "Request too large." }, { status: 413 });
   }
 
-  // Use the rightmost trusted IP from x-forwarded-for to prevent header spoofing
-  const forwardedFor = req.headers.get("x-forwarded-for") ?? "";
-  const ips = forwardedFor.split(",").map(s => s.trim()).filter(Boolean);
-  const ip = ips[ips.length - 1] ?? req.headers.get("x-real-ip") ?? "unknown";
-  if (!checkRateLimit(ip)) {
+  const ip = trustedIp(req);
+  if (!checkRateLimit("chat", ip, 30)) {
     return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429, headers: corsHeaders });
   }
 
