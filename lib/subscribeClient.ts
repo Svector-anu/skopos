@@ -1,6 +1,7 @@
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
-import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
+import { ExactEvmScheme } from "@x402/evm";
 import type { WalletClient } from "viem";
+import { walletToSigner } from "./x402ClientSigner";
 
 // User-signed x402 purchase for the Smart subscription. The wallet signs an
 // EIP-3009 USDC authorization against the 402 returned by the Bankr x402 Cloud
@@ -19,28 +20,12 @@ export interface SubscribeResult {
   error?: string;
 }
 
-function walletToSigner(walletClient: WalletClient) {
-  const account = walletClient.account;
-  if (!account) throw new Error("Connect a wallet to subscribe.");
-  return toClientEvmSigner({
-    address: account.address,
-    signTypedData: (message) =>
-      walletClient.signTypedData({
-        account,
-        domain: message.domain,
-        types: message.types,
-        primaryType: message.primaryType,
-        message: message.message,
-      } as Parameters<WalletClient["signTypedData"]>[0]),
-  });
-}
-
 export async function subscribe(walletClient: WalletClient): Promise<SubscribeResult> {
   if (!SUBSCRIBE_URL) return { ok: false, error: "Subscriptions are not enabled yet." };
   const account = walletClient.account;
   if (!account) return { ok: false, error: "Connect a wallet to subscribe." };
 
-  const client = new x402Client().register(NETWORK, new ExactEvmScheme(walletToSigner(walletClient)));
+  const client = new x402Client().register(NETWORK, new ExactEvmScheme(walletToSigner(walletClient, "Connect a wallet to subscribe.")));
   const payFetch = wrapFetchWithPayment(globalThis.fetch, client);
 
   let res: Response;

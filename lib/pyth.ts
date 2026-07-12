@@ -1,5 +1,6 @@
+import { fetchWithTimeout } from "./http";
+
 const HERMES    = "https://hermes.pyth.network";
-const TIMEOUT_MS = 8_000;
 const TTL_MS     = 60_000;
 
 const pythCache = new Map<string, { data: PythPrice; fetchedAt: number }>();
@@ -67,16 +68,6 @@ export function toUSDRate(currency: string, rates: Partial<Record<PythFeedKey, P
   const inverted = rates[`USD/${currency}` as PythFeedKey];
   if (inverted) return 1 / inverted.price;
   return NaN;
-}
-
-async function fetchWithTimeout(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const timer      = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 export async function getPythRates(

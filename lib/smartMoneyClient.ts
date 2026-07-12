@@ -1,6 +1,7 @@
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
-import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
+import { ExactEvmScheme } from "@x402/evm";
 import type { WalletClient } from "viem";
+import { walletToSigner } from "./x402ClientSigner";
 
 // NOTE: This module is the user-signed x402 settlement path and is COMPILE-VERIFIED
 // ONLY. The live $0.05 USDC payment + Nansen settlement cannot be exercised without
@@ -13,25 +14,6 @@ export interface SmartMoneyResponse {
   ok: boolean;
   data?: unknown;
   error?: string;
-}
-
-// Adapt the user's wagmi/Privy wallet into an x402 ClientEvmSigner. The wallet
-// signs the EIP-3009 typed data; no private key ever leaves the wallet.
-function walletToSigner(walletClient: WalletClient) {
-  const account = walletClient.account;
-  if (!account) throw new Error("Connect a wallet to pay for the smart-money read.");
-  return toClientEvmSigner({
-    address: account.address,
-    signTypedData: (message) =>
-      walletClient.signTypedData({
-        account,
-        // x402 passes loose Record types; viem wants its TypedData generics.
-        domain: message.domain,
-        types: message.types,
-        primaryType: message.primaryType,
-        message: message.message,
-      } as Parameters<WalletClient["signTypedData"]>[0]),
-  });
 }
 
 const LOOKBACK_DAYS = 30;
@@ -49,7 +31,7 @@ export async function fetchSmartMoney(
     return { ok: false, error: "Couldn't locate this token on a supported chain." };
   }
 
-  const client = new x402Client().register(BASE_NETWORK, new ExactEvmScheme(walletToSigner(walletClient)));
+  const client = new x402Client().register(BASE_NETWORK, new ExactEvmScheme(walletToSigner(walletClient, "Connect a wallet to pay for the smart-money read.")));
   const payFetch = wrapFetchWithPayment(globalThis.fetch, client);
 
   const now = new Date();

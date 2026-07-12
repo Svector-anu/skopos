@@ -1,6 +1,7 @@
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
-import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
+import { ExactEvmScheme } from "@x402/evm";
 import type { WalletClient } from "viem";
+import { walletToSigner } from "./x402ClientSigner";
 
 // Pays and calls ANY x402 endpoint using the user's OWN connected wallet — no
 // endpoint-specific knowledge required, unlike every hardcoded source in
@@ -15,22 +16,6 @@ import type { WalletClient } from "viem";
 
 const BASE_NETWORK = "eip155:8453";
 
-function walletToSigner(walletClient: WalletClient) {
-  const account = walletClient.account;
-  if (!account) throw new Error("Connect a wallet to pay for this.");
-  return toClientEvmSigner({
-    address: account.address,
-    signTypedData: (message) =>
-      walletClient.signTypedData({
-        account,
-        domain: message.domain,
-        types: message.types,
-        primaryType: message.primaryType,
-        message: message.message,
-      } as Parameters<WalletClient["signTypedData"]>[0]),
-  });
-}
-
 export interface X402GenericResponse {
   ok: boolean;
   data?: unknown;
@@ -43,7 +28,7 @@ export async function callX402Endpoint(
   method: "GET" | "POST" = "GET",
   body?: Record<string, unknown> | null,
 ): Promise<X402GenericResponse> {
-  const client = new x402Client().register(BASE_NETWORK, new ExactEvmScheme(walletToSigner(walletClient)));
+  const client = new x402Client().register(BASE_NETWORK, new ExactEvmScheme(walletToSigner(walletClient, "Connect a wallet to pay for this.")));
   const payFetch = wrapFetchWithPayment(globalThis.fetch, client);
   try {
     const res = await payFetch(url, {

@@ -1,22 +1,20 @@
+import { fetchWithTimeout as fetchWithTimeoutBase } from "./http";
+
 const BASE        = "https://api.bankr.bot";
 const PARTNER_KEY = process.env.BANKR_PARTNER_KEY ?? "";
-const TIMEOUT_MS  = 8000;
 
 export function isBankrEnabled(): boolean {
   return PARTNER_KEY.length > 0;
 }
 
+// Thin wrapper over the shared timeout helper — this file's own contribution
+// is the X-Partner-Key/Content-Type header injection, not the timeout/abort
+// mechanics, which now live in one place (lib/http.ts) instead of ten.
 async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
   const headers = new Headers(init?.headers);
   if (PARTNER_KEY) headers.set("X-Partner-Key", PARTNER_KEY);
   headers.set("Content-Type", "application/json");
-  try {
-    return await fetch(input, { ...init, headers, signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
+  return fetchWithTimeoutBase(input, { ...init, headers });
 }
 
 export interface LaunchTokenParams {

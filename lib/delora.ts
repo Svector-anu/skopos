@@ -1,22 +1,17 @@
+import { fetchWithTimeout as fetchWithTimeoutBase } from "./http";
+
 const BASE       = "https://api.delora.build";
 const API_KEY    = process.env.DELORA_API_KEY ?? "";
 const INTEGRATOR = process.env.DELORA_INTEGRATOR ?? "anu";
 const FEE        = 0.0005; // 0.05% integrator fee
 
-
-
-const TIMEOUT_MS = 8000;
-
+// Thin wrapper over the shared timeout helper — this file's own contribution
+// is the x-api-key header injection, not the timeout/abort mechanics, which
+// now live in one place (lib/http.ts) instead of ten.
 async function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
   const headers = new Headers(init?.headers);
   if (API_KEY) headers.set("x-api-key", API_KEY);
-  try {
-    return await fetch(input, { ...init, headers, signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
+  return fetchWithTimeoutBase(input, { ...init, headers });
 }
 
 // ── Chain types ───────────────────────────────────────────────────────────────
