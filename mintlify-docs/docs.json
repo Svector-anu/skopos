@@ -68,7 +68,8 @@
   "navbar": {
     "links": [
       {
-        "type": "github",
+        "icon": "github",
+        "iconType": "brands",
         "href": "https://github.com/Svector-anu/skopos-os"
       },
       {
