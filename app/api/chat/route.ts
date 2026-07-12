@@ -1566,6 +1566,19 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ type: "text", text: SKOPOS_HELP });
   }
 
+  // MCP capability question — deterministic (zero-LLM), same pattern as HELP_RE
+  // just above. skopos-mcp is a real, published npm package (mcp/index.js), so
+  // this must never fall into NOT_LIVE's generic "isn't live yet" denial below —
+  // that's exactly the bug this block replaces (the old NOT_LIVE entry told
+  // users MCP wasn't live while Skopos was already shipping it).
+  const MCP_RE = /\b(mcp|model\s+context\s+protocol|claude\s+desktop)\b/i;
+  if (MCP_RE.test(trimmed)) {
+    return json({
+      type: "text",
+      text: `Yes — Skopos ships a real MCP server. Install it with "npx -y skopos-mcp" in Claude Desktop, Cursor, or any MCP client; it's a thin wrapper that answers the same way this chat does, non-custodially. More at tryskopos.xyz/docs.`,
+    });
+  }
+
   // Not-live features — answer honestly instead of mis-parsing the request (a DCA
   // ask used to become a nonsensical bridge prompt). Fires before execution and
   // rebalance parsing, so "buy ETH when it hits $X" isn't run as a market order.
@@ -1576,8 +1589,6 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       `Limit and conditional orders aren't live yet — Skopos executes at the current market rate. You can swap or bridge now at live prices; price-triggered orders are coming.`],
     [/\b(off[-\s]?ramp|cash\s*out|withdraw\s+to\s+(?:my\s+)?(?:bank|card|debit)|to\s+my\s+(?:debit|bank)\s+(?:card|account)?|fiat\s+out)\b/i,
       `Cashing out to a bank or card isn't live yet. Skopos handles on-chain swaps and bridges; fiat off-ramp is on the roadmap.`],
-    [/\b(mcp|model\s+context\s+protocol|claude\s+desktop)\b/i,
-      `An MCP connector isn't live yet — Skopos works right here in chat for now.`],
     [/\b(whale\s+(?:signals?|tracking|watch\w*|alerts?)|smart\s+money|top\s+wallets|what\s+(?:others|people|whales)\s+are\s+(?:bridging|buying|trading|doing))\b/i,
       `Whale and smart-money tracking isn't live yet. You can scan a specific wallet (paste its address) or a token's risk ("scan PEPE risk") today.`],
   ];
