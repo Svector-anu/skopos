@@ -68,18 +68,19 @@
   "navbar": {
     "links": [
       {
+        "label": "",
         "icon": "github",
         "iconType": "brands",
         "href": "https://github.com/Svector-anu/skopos-os"
       },
       {
-        "label": "X",
+        "label": "",
         "icon": "x-twitter",
         "iconType": "brands",
         "href": "https://x.com/tryskopos"
       },
       {
-        "label": "Changelog",
+        "label": "",
         "icon": "clock-rotate-left",
         "href": "https://www.tryskopos.xyz/changelog"
       }
