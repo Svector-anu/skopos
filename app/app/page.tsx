@@ -113,15 +113,14 @@ type RobinhoodLaunchCard = {
   volume24hUsd: number;
   volumeToMcapRatio: number | null;
   hot: boolean;
-  creator: { xUsername: string | null; repeatLaunchCount: number };
+  creator: { xUsername: string | null; repeatLaunchCount: number; profileUrl: string };
   risk: { score: 1 | 2 | 3 | 4; label: string; flags: string[]; totalLiquidityUsd: number } | null;
-  links: { bankr: string; dexscreener: string | null; geckoterminal: string | null };
+  links: { bankr: string; dexscreener: string | null; geckoterminal: string | null; noxa: string };
 };
 type RobinhoodLaunchesResult = {
   type: "robinhood_launches";
   heading: string;
-  windowLabel: string;
-  coverageNote: string | null;
+  subtitle: string;
   launches: RobinhoodLaunchCard[];
   omittedCount: number;
 };
@@ -4243,77 +4242,119 @@ function CopyableAddress({ address }: { address: string }) {
   );
 }
 
+const RH_RISK_COLOR = { 1: "#22c55e", 2: "#f59e0b", 3: "#f97316", 4: "#ef4444" } as const;
+
+function RiskBadge({ risk }: { risk: RobinhoodLaunchCard["risk"] }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  if (!risk) {
+    return (
+      <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, color: "var(--card-text-faint, rgba(255,255,255,0.35))", background: "rgba(255,255,255,0.06)", border: "1px solid var(--card-border-faint)", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+        ⏳ NOT SCANNED
+      </span>
+    );
+  }
+  const color = RH_RISK_COLOR[risk.score];
+  return (
+    <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, color, background: `${color}1f`, border: `1px solid ${color}45`, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+      ● {risk.label}
+    </span>
+  );
+}
+
 function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-  const { heading, windowLabel, coverageNote, launches, omittedCount } = result;
+  const { heading, subtitle, launches, omittedCount } = result;
 
-  const RISK_COLOR = { 1: "#22c55e", 2: "#f59e0b", 3: "#f97316", 4: "#ef4444" } as const;
+  const RISK_FLAG_LABELS: Record<string, string> = {
+    NO_LIQUIDITY: "NO LIQUIDITY", VOLUME_SPIKE: "VOLUME SPIKE", SINGLE_POOL: "SINGLE POOL",
+    NEW_TOKEN: "NEW TOKEN", HIGH_VOLATILITY: "HIGH VOLATILITY", HEAVY_SELLING: "HEAVY SELLING",
+    POSSIBLE_HONEYPOT: "POSSIBLE HONEYPOT",
+  };
 
   const fmtUsd = (n: number) =>
     n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M`
     : n >= 1_000    ? `$${(n / 1_000).toFixed(1)}K`
     : `$${n.toFixed(0)}`;
 
+  // Liquidity is the single most dangerous signal on this card — color it
+  // instead of letting it blend into the rest of the stats line.
+  const liqColor = (usd: number) => (usd <= 5_000 ? "#ef4444" : usd > 50_000 ? "#22c55e" : "var(--card-text-dim, rgba(255,255,255,0.6))");
+
+  const LinkPill = ({ href, label }: { href: string; label: string }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
+      {label} ↗
+    </a>
+  );
+
   return (
     <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 460, background: "var(--card-container-bg, #0D0D0D)" }}>
       <div style={{ padding: "12px 18px 10px", borderBottom: "1px solid var(--card-border-faint)" }}>
         <p style={{ ...MONO, fontSize: "0.85rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: 0 }}>
-          {heading} <span style={{ fontWeight: 400, color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>· {windowLabel}</span>
+          {heading}
         </p>
-        {coverageNote && (
-          <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "4px 0 0" }}>
-            {coverageNote}
-          </p>
-        )}
+        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "4px 0 0" }}>
+          {subtitle}
+        </p>
       </div>
 
       <div>
         {launches.map((l, i) => {
           const repeat = l.creator.repeatLaunchCount > 1;
-          const riskColor = l.risk ? RISK_COLOR[l.risk.score] : null;
+          const liq = l.risk ? l.risk.totalLiquidityUsd : null;
           return (
             <div key={l.address} style={{ padding: "13px 18px", borderBottom: i < launches.length - 1 ? "1px solid var(--card-border-faint)" : "none" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ ...MONO, fontSize: "0.8rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: 0 }}>
-                    {l.hot && "🔥 "}{l.symbol} <span style={{ fontWeight: 400, color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>{l.name}</span>
-                  </p>
-                  <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "3px 0 0" }}>
-                    {l.ageMinutes}m old · {l.marketCapUsd > 0 ? `${fmtUsd(l.marketCapUsd)} mcap` : "no trades yet"}
-                    {l.volumeToMcapRatio !== null && ` · ${l.volumeToMcapRatio.toFixed(1)}x vol/mcap`}
-                    {" · by "}@{l.creator.xUsername ?? "unknown"}
-                  </p>
-                  {repeat && (
-                    <p style={{ ...MONO, fontSize: "0.6rem", color: "#f59e0b", margin: "3px 0 0" }}>
-                      ⚠️ {l.creator.repeatLaunchCount} launches from this wallet in the current feed
-                    </p>
-                  )}
-                  {l.risk ? (
-                    <p style={{ ...MONO, fontSize: "0.62rem", color: riskColor ?? undefined, margin: "5px 0 0" }}>
-                      {l.risk.label} risk{l.risk.flags.length > 0 ? ` — ${l.risk.flags.join(", ")}` : ""} · {fmtUsd(l.risk.totalLiquidityUsd)} liquidity
-                    </p>
-                  ) : (
-                    <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "5px 0 0" }}>
-                      Not indexed by DexScreener yet — too new to scan.
-                    </p>
-                  )}
-                </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <RiskBadge risk={l.risk} />
+                {l.hot && <span style={{ fontSize: "0.85rem" }}>🔥</span>}
+                <span style={{ ...MONO, fontSize: "0.8rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>
+                  {l.symbol} <span style={{ fontWeight: 400, color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>({l.name})</span>
+                </span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+                  · {l.ageMinutes}m old
+                </span>
               </div>
+
+              <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.6))", margin: "6px 0 0" }}>
+                {l.marketCapUsd > 0 ? `${fmtUsd(l.marketCapUsd)} mcap` : "no trades yet"}
+                {liq !== null && <> · <span style={{ color: liqColor(liq), fontWeight: 600 }}>{fmtUsd(liq)} liq</span></>}
+                {l.volumeToMcapRatio !== null && ` · ${l.volumeToMcapRatio.toFixed(1)}x vol/mcap`}
+              </p>
+
+              {l.risk && l.risk.flags.length > 0 && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
+                  {l.risk.flags.map(f => (
+                    <span key={f} style={{ ...MONO, fontSize: "0.56rem", fontWeight: 600, color: "var(--card-text-muted, rgba(255,255,255,0.65))", background: "rgba(255,255,255,0.06)", border: "1px solid var(--card-border-faint)", borderRadius: 5, padding: "2px 6px" }}>
+                      {RISK_FLAG_LABELS[f] ?? f}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {!l.risk && (
+                <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "7px 0 0" }}>
+                  Not indexed by DexScreener yet — too new to scan.
+                </p>
+              )}
+
+              <p style={{ ...MONO, fontSize: "0.64rem", margin: "7px 0 0" }}>
+                <a href={l.creator.profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--card-text-dim, rgba(255,255,255,0.55))", textDecoration: "none" }}>
+                  by @{l.creator.xUsername ?? "unknown"}
+                </a>
+                {repeat && (
+                  <>
+                    {" "}
+                    <a href={l.creator.profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#f59e0b", textDecoration: "none" }}>
+                      ⚠️ {l.creator.repeatLaunchCount} launches →
+                    </a>
+                  </>
+                )}
+              </p>
+
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                 <CopyableAddress address={l.address} />
-                <a href={l.links.bankr} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
-                  bankr ↗
-                </a>
-                {l.links.dexscreener && (
-                  <a href={l.links.dexscreener} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
-                    dexscreener ↗
-                  </a>
-                )}
-                {l.links.geckoterminal && (
-                  <a href={l.links.geckoterminal} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
-                    geckoterminal ↗
-                  </a>
-                )}
+                <LinkPill href={l.links.bankr} label="bankr" />
+                {l.links.dexscreener && <LinkPill href={l.links.dexscreener} label="dexscreener" />}
+                {l.links.geckoterminal && <LinkPill href={l.links.geckoterminal} label="geckoterminal" />}
+                <LinkPill href={l.links.noxa} label="noxa" />
               </div>
             </div>
           );
@@ -4323,7 +4364,7 @@ function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult 
       <div style={{ padding: "10px 18px 13px", borderTop: "1px solid var(--card-border-faint)" }}>
         {omittedCount > 0 && (
           <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 6px" }}>
-            +{omittedCount} more in this window — narrow it further to see them.
+            +{omittedCount} more fetched but not shown — ask again to see fresh ones as they land.
           </p>
         )}
         <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, lineHeight: 1.6 }}>
