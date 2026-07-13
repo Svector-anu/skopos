@@ -1,0 +1,47 @@
+---
+title: "Token Safety"
+description: "Risk-scan any token by symbol or contract address before you touch it."
+---
+
+## Scan a token
+
+```
+> deep dive on pepe
+> scan pepe risk
+> is shib safe to buy
+> 0x6982508145454ce325ddbe47a25d4ec3d2311933
+```
+
+Skopos pulls live liquidity, volume, and trading data from DexScreener and returns a risk score from **LOW** to **CRITICAL**, along with the specific flags that drove it.
+
+## Risk flags
+
+| Flag | What it means |
+| --- | --- |
+| `NO_LIQUIDITY` | Total liquidity across all pools is under $10K |
+| `SINGLE_POOL` | Only one liquidity pool exists on one DEX |
+| `NEW_TOKEN` | The top pool was created less than 7 days ago |
+| `VOLUME_SPIKE` | 24h volume is more than 20x total liquidity — unusual activity |
+| `HIGH_VOLATILITY` | Price moved more than 50% in 24 hours |
+| `HEAVY_SELLING` | Sells make up more than 70% of 24h transactions |
+| `POSSIBLE_HONEYPOT` | 5+ buys with zero sells over 24 hours — a classic "can't sell" signal |
+
+The overall score weighs these together — a possible honeypot or sub-$10K liquidity is always **CRITICAL**, regardless of anything else.
+
+## Bare symbols vs contract addresses
+
+A bare symbol like `pepe` resolves via DexScreener search, which ranks by market cap and filters out obvious wash-traded pools. For frequently-impersonated tickers, paste the actual contract address if you want certainty — Skopos will always scan the exact token you give it.
+
+## Transaction-level safety
+
+Paste any transaction hash and Skopos decodes it. If the transaction is an `approve()` call granting an unlimited (or near-unlimited) allowance, Skopos flags it explicitly — that's the pattern behind most wallet-drainer exploits.
+
+```
+> 0x... (a transaction hash)
+```
+
+This works across all 10 chains Skopos's address/transaction lookup covers: Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, zkSync, Linea, and Gnosis.
+
+## What this doesn't cover yet
+
+Token safety scanning is per-token, on demand — it does not currently scan your *wallet's* existing approvals to find ones you should revoke. If that's what you're looking for, ask Skopos directly; it's an active area of work.

@@ -1,0 +1,18 @@
+---
+title: "MCP Server"
+description: "skopos-mcp — a published MCP server wrapping the same API, for Claude Desktop, Cursor, and any MCP client."
+---
+
+Skopos ships a real, published MCP server: [`skopos-mcp`](https://www.npmjs.com/package/skopos-mcp) on npm.
+
+## Install it
+
+```bash
+npx -y skopos-mcp
+```
+
+Add it to Claude Desktop, Cursor, or any MCP-compatible client's server config, and it exposes Skopos's capabilities as MCP tools.
+
+## What it is
+
+A thin wrapper over the same [`/api/chat` endpoint](/build/api-overview) — it answers the same way the chat does, non-custodially. It is not a separate implementation with its own logic to drift out of sync.

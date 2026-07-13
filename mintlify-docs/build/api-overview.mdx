@@ -1,0 +1,64 @@
+---
+title: "API Overview"
+description: "The same copilot over one HTTP endpoint — no SDK, no API key required."
+---
+
+Every capability described in [What Skopos Can Do](/features/swap-bridge) is available over one endpoint. This is exactly what powers Skopos's own iMessage integration today.
+
+## The endpoint
+
+```bash
+curl -sX POST https://www.tryskopos.xyz/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"who is buying $pepe","format":"text","anonId":"chat-123"}'
+```
+
+```json
+{
+  "type": "intel",
+  "text": "$PEPE — top buyers: Wintermute Market Making +$10.69M, … Net accumulating $15.54M."
+}
+```
+
+Set `format:"text"` and you get a plain-text answer back instead of a UI card. No SDK, no API key, no card-shape knowledge required — relay the `text` field verbatim and you have a working bot.
+
+## Request fields
+
+| Field | Description |
+| --- | --- |
+| `message` | Required. The user's text, verbatim. |
+| `format` | `"text"` \| `"card"` — default `"card"`. The browser uses `"card"`; headless clients send `"text"`. |
+| `anonId` | Required for text-mode intel reads — a stable per-conversation id that drives the cost cap. |
+| `senderAddress` | Optional. A connected wallet unlocks that address's tier. |
+| `sparkline` | Optional, default `true` — set `false` to omit the ASCII price chart. |
+
+## Response fields
+
+| Field | Description |
+| --- | --- |
+| `type` | The card type — branch on it if you want, or ignore it entirely. |
+| `text` | Always populated, plain text, ready to relay as-is. |
+| `link` | On swap / bridge / pay replies — a tap-to-sign URL. Skopos is non-custodial, so execution always finishes in the app, never inside your bot. |
+| `image` | On price replies — a chart PNG URL. |
+
+## Stability
+
+There's no versioning scheme. The request shape is stable, and the response is a discriminated union keyed by `type` that grows over time as new capabilities ship. Branch on `type` and handle unknown values gracefully; relaying `text` verbatim is always safe regardless of what `type` says.
+
+## Three ways to integrate
+
+<CardGroup cols={3}>
+  <Card title="Your own bot or app" icon="terminal">
+    Call the endpoint above directly.
+  </Card>
+  <Card title="Agent Skill" icon="puzzle-piece" href="/build/agent-skill">
+    Drop a SKILL.md into Claude, Cursor, or any Agent Skills–compatible agent.
+  </Card>
+  <Card title="MCP server" icon="plug" href="/build/mcp-server">
+    <code>npx -y skopos-mcp</code> — works in Claude Desktop, Cursor, or any MCP client.
+  </Card>
+</CardGroup>
+
+## Paying to use Skopos's data
+
+If you're building an *agent* rather than a chat client, Skopos also exposes 8 of its data reads as directly payable x402 endpoints — see [Agent-Payable Routes](/build/agent-payable-routes).

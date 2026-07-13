@@ -114,7 +114,28 @@ type PrebuyResult = {
   analysis?: string;
 };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult;
+type RobinhoodLaunchCard = {
+  symbol: string;
+  name: string;
+  address: string;
+  ageMinutes: number;
+  marketCapUsd: number;
+  volume24hUsd: number;
+  volumeToMcapRatio: number | null;
+  hot: boolean;
+  creator: { xUsername: string | null; repeatLaunchCount: number; profileUrl: string };
+  risk: { score: 1 | 2 | 3 | 4; label: string; flags: string[]; totalLiquidityUsd: number } | null;
+  links: { bankr: string; dexscreener: string | null; geckoterminal: string | null; noxa: string };
+};
+type RobinhoodLaunchesResult = {
+  type: "robinhood_launches";
+  heading: string;
+  subtitle: string;
+  launches: RobinhoodLaunchCard[];
+  omittedCount: number;
+};
+
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult | RobinhoodLaunchesResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1307,6 +1328,11 @@ export default function AppPage() {
                     {msg.result.type === "x402check" && (
                       <ErrorBoundary label="Endpoint check failed to render.">
                         <X402CheckDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "robinhood_launches" && (
+                      <ErrorBoundary label="Robinhood launches failed to render.">
+                        <RobinhoodLaunchesDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "paywall" && (
@@ -4259,6 +4285,168 @@ function PrebuyDisplay({ result, connectedAddress }: { result: PrebuyResult; con
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── RobinhoodLaunchesDisplay ─────────────────────────────────────────────────
+
+function CopyableAddress({ address }: { address: string }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const [copied, setCopied] = useState(false);
+  const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(address);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch { /* clipboard unavailable — ignore */ }
+      }}
+      title={address}
+      style={{
+        ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.5))",
+        background: "transparent", border: "1px solid var(--card-border-faint)", borderRadius: 6,
+        padding: "2px 7px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5,
+      }}
+    >
+      {short}
+      <span style={{ opacity: 0.7 }}>{copied ? "✓" : "⧉"}</span>
+    </button>
+  );
+}
+
+const RH_RISK_COLOR = { 1: "#22c55e", 2: "#f59e0b", 3: "#f97316", 4: "#ef4444" } as const;
+
+function RiskBadge({ risk }: { risk: RobinhoodLaunchCard["risk"] }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  if (!risk) {
+    return (
+      <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, color: "var(--card-text-faint, rgba(255,255,255,0.35))", background: "rgba(255,255,255,0.06)", border: "1px solid var(--card-border-faint)", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+        ⏳ NOT SCANNED
+      </span>
+    );
+  }
+  const color = RH_RISK_COLOR[risk.score];
+  return (
+    <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, color, background: `${color}1f`, border: `1px solid ${color}45`, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+      ● {risk.label}
+    </span>
+  );
+}
+
+function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult }) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { heading, subtitle, launches, omittedCount } = result;
+
+  const RISK_FLAG_LABELS: Record<string, string> = {
+    NO_LIQUIDITY: "NO LIQUIDITY", VOLUME_SPIKE: "VOLUME SPIKE", SINGLE_POOL: "SINGLE POOL",
+    NEW_TOKEN: "NEW TOKEN", HIGH_VOLATILITY: "HIGH VOLATILITY", HEAVY_SELLING: "HEAVY SELLING",
+    POSSIBLE_HONEYPOT: "POSSIBLE HONEYPOT",
+  };
+
+  const fmtUsd = (n: number) =>
+    n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M`
+    : n >= 1_000    ? `$${(n / 1_000).toFixed(1)}K`
+    : `$${n.toFixed(0)}`;
+
+  // Liquidity is the single most dangerous signal on this card — color it
+  // instead of letting it blend into the rest of the stats line.
+  const liqColor = (usd: number) => (usd <= 5_000 ? "#ef4444" : usd > 50_000 ? "#22c55e" : "var(--card-text-dim, rgba(255,255,255,0.6))");
+
+  const LinkPill = ({ href, label }: { href: string; label: string }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
+      {label} ↗
+    </a>
+  );
+
+  return (
+    <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 460, background: "var(--card-container-bg, #0D0D0D)" }}>
+      <div style={{ padding: "12px 18px 10px", borderBottom: "1px solid var(--card-border-faint)" }}>
+        <p style={{ ...MONO, fontSize: "0.85rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: 0 }}>
+          {heading}
+        </p>
+        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "4px 0 0" }}>
+          {subtitle}
+        </p>
+      </div>
+
+      <div>
+        {launches.map((l, i) => {
+          const repeat = l.creator.repeatLaunchCount > 1;
+          const liq = l.risk ? l.risk.totalLiquidityUsd : null;
+          return (
+            <div key={l.address} style={{ padding: "13px 18px", borderBottom: i < launches.length - 1 ? "1px solid var(--card-border-faint)" : "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <RiskBadge risk={l.risk} />
+                {l.hot && <span style={{ fontSize: "0.85rem" }}>🔥</span>}
+                <span style={{ ...MONO, fontSize: "0.8rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>
+                  {l.symbol} <span style={{ fontWeight: 400, color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>({l.name})</span>
+                </span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+                  · {l.ageMinutes}m old
+                </span>
+              </div>
+
+              <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.6))", margin: "6px 0 0" }}>
+                {l.marketCapUsd > 0 ? `${fmtUsd(l.marketCapUsd)} mcap` : "no trades yet"}
+                {liq !== null && <> · <span style={{ color: liqColor(liq), fontWeight: 600 }}>{fmtUsd(liq)} liq</span></>}
+                {l.volumeToMcapRatio !== null && ` · ${l.volumeToMcapRatio.toFixed(1)}x vol/mcap`}
+              </p>
+
+              {l.risk && l.risk.flags.length > 0 && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
+                  {l.risk.flags.map(f => (
+                    <span key={f} style={{ ...MONO, fontSize: "0.56rem", fontWeight: 600, color: "var(--card-text-muted, rgba(255,255,255,0.65))", background: "rgba(255,255,255,0.06)", border: "1px solid var(--card-border-faint)", borderRadius: 5, padding: "2px 6px" }}>
+                      {RISK_FLAG_LABELS[f] ?? f}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {!l.risk && (
+                <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "7px 0 0" }}>
+                  Not indexed by DexScreener yet — too new to scan.
+                </p>
+              )}
+
+              <p style={{ ...MONO, fontSize: "0.64rem", margin: "7px 0 0" }}>
+                <a href={l.creator.profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--card-text-dim, rgba(255,255,255,0.55))", textDecoration: "none" }}>
+                  by @{l.creator.xUsername ?? "unknown"}
+                </a>
+                {repeat && (
+                  <>
+                    {" "}
+                    <a href={l.creator.profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#f59e0b", textDecoration: "none" }}>
+                      ⚠️ {l.creator.repeatLaunchCount} launches →
+                    </a>
+                  </>
+                )}
+              </p>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                <CopyableAddress address={l.address} />
+                <LinkPill href={l.links.bankr} label="bankr" />
+                {l.links.dexscreener && <LinkPill href={l.links.dexscreener} label="dexscreener" />}
+                {l.links.geckoterminal && <LinkPill href={l.links.geckoterminal} label="geckoterminal" />}
+                <LinkPill href={l.links.noxa} label="noxa" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ padding: "10px 18px 13px", borderTop: "1px solid var(--card-border-faint)" }}>
+        {omittedCount > 0 && (
+          <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 6px" }}>
+            +{omittedCount} more fetched but not shown — ask again to see fresh ones as they land.
+          </p>
+        )}
+        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, lineHeight: 1.6 }}>
+          Token names are unverified — anyone can launch a token referencing a public figure or brand with zero affiliation. Repeat-launch count and the DexScreener scan above are the only safety signals shown here.
+        </p>
+      </div>
     </div>
   );
 }

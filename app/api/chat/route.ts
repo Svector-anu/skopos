@@ -16,6 +16,7 @@ import {
   type LlmMeta,
 } from "@/lib/parseIntent";
 import { checkSmartQuota, incrSmart } from "@/lib/usage";
+import { checkRateLimit, trustedIp, corsHeadersFor } from "@/lib/rateLimit";
 import { isEntitled } from "@/lib/subscription";
 import { resolveHolderCap } from "@/lib/tokenGate";
 import { looksLikePay, buildPayIntent } from "@/lib/pay";
@@ -33,7 +34,7 @@ import { getPrice, getPriceChart, type PriceResult } from "@/lib/priceCache";
 import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
 import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled, fetchSmartMoneyServer } from "@/lib/smartMoneyServer";
-import { getRecentRobinhoodLaunches, robinhoodFeedEnabled } from "@/lib/robinhoodLaunches";
+import { getRecentRobinhoodLaunches, robinhoodFeedEnabled, MAX_LIMIT, scanRobinhoodLaunchRisk } from "@/lib/robinhoodLaunches";
 import { discoverX402Endpoint } from "@/lib/x402Discover";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
@@ -198,20 +199,6 @@ function buildBridgeAnalysisPrompt(
       ? `Your conclusion is FIXED: "${verdict}" State it plainly in 1-2 short sentences using only the figures above. Do NOT repeat it verbatim, do NOT contradict or reverse it, and do NOT state any percentage other than the one given. Only add an adapter note if it's genuinely useful — otherwise skip it.`
       : `Give a one-sentence directional take: is this route worth executing at these costs? Only mention the adapter if something about it is genuinely worth knowing.`,
   ].filter(Boolean).join("\n");
-}
-
-// ── in-memory rate limiter (sliding window, per IP) ──────────────────────────
-const RATE_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT     = 30;     // max 30 requests per minute per IP
-
-const rateMap = new Map<string, number[]>();
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const hits = (rateMap.get(ip) ?? []).filter(t => now - t < RATE_WINDOW_MS);
-  hits.push(now);
-  rateMap.set(ip, hits);
-  return hits.length <= RATE_LIMIT;
 }
 
 // ── retry helper ──────────────────────────────────────────────────────────────
@@ -591,13 +578,7 @@ a{color:#F5B800;text-decoration:none}
 }
 
 async function handleChat(req: NextRequest): Promise<NextResponse> {
-  // CORS — only allow requests from the production origin and localhost dev
-  const origin = req.headers.get("origin") ?? "";
-  const allowedOrigins = new Set(["https://www.tryskopos.xyz", "https://tryskopos.xyz"]);
-  const corsOrigin = allowedOrigins.has(origin) ? origin : (origin.startsWith("http://localhost") ? origin : null);
-  const corsHeaders: Record<string, string> = corsOrigin
-    ? { "Access-Control-Allow-Origin": corsOrigin, "Vary": "Origin" }
-    : {};
+  const corsHeaders = corsHeadersFor(req);
 
   // Body size guard — reject before parsing to avoid memory pressure from large payloads
   const contentLength = parseInt(req.headers.get("content-length") ?? "0", 10);
@@ -605,11 +586,8 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ type: "error", text: "Request too large." }, { status: 413 });
   }
 
-  // Use the rightmost trusted IP from x-forwarded-for to prevent header spoofing
-  const forwardedFor = req.headers.get("x-forwarded-for") ?? "";
-  const ips = forwardedFor.split(",").map(s => s.trim()).filter(Boolean);
-  const ip = ips[ips.length - 1] ?? req.headers.get("x-real-ip") ?? "unknown";
-  if (!checkRateLimit(ip)) {
+  const ip = trustedIp(req);
+  if (!checkRateLimit("chat", ip, 30)) {
     return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429, headers: corsHeaders });
   }
 
@@ -1307,32 +1285,91 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // ── Robinhood Chain launch feed (paid, x402) — "robinhood chain launches" /
   // "what's launching on robinhood". Skopos's own wallet pays $0.001/call
   // (lib/robinhoodLaunches.ts, docs/paid-data-sources.md) — no user wallet
-  // needed. Surfaces the creator's repeat-launch count as the safety signal;
-  // DexScreener doesn't index this chain yet so there's no honeypot/liquidity
-  // check to run on top of it. Token names are also unverified — permissionless
-  // launches routinely reference real public figures/brands with zero actual
-  // affiliation (e.g. a token symbol riffing on a known CT persona's name),
-  // so the disclaimer calls that out explicitly rather than implying any vetting.
+  // needed. Token names are unverified — permissionless launches routinely
+  // reference real public figures/brands with zero actual affiliation, so
+  // that's called out explicitly rather than implying any vetting.
+  //
+  // NO timeframe options ("past hour"/"today"/"past week") — deliberately
+  // removed. Live-checked 2026-07-12: the upstream feed's MAX_LIMIT(25) most
+  // recent launches span only ~28 minutes right now (the chain launches a
+  // token every 1-2 min), so "past 1d"/"past 1w" were silently returning the
+  // exact same ~28 minutes of data every time — a capability the source
+  // doesn't have. Just show the N most recent, honestly labeled as such.
+  //
+  // Sorted by volume24hUsd/marketCapUsd ratio (not recency, not 1h price
+  // change — nearly every launch this fresh shows 0% 1h change, so that
+  // signal is useless here) — a ratio above 10x is flagged 🔥. DexScreener now
+  // indexes this chain (live-verified, real chainId:"robinhood" pairs), so
+  // each of the top 5 shown gets a real liquidity/honeypot scan via
+  // scanRobinhoodLaunchRisk (lib/robinhoodLaunches.ts) — parallel (Promise.all,
+  // not sequential) and cached there with a 60s TTL, since the ratio-sort
+  // means the same hot token easily resurfaces across consecutive requests.
+  // Bounded to the 5 displayed launches, never all 25 fetched. The resolved
+  // pair address also backs the DexScreener/GeckoTerminal links (same address
+  // serves both, verified live) — no extra lookup beyond the one cached risk
+  // scan already needed. Deployer profile + per-token links on noxa.fun are
+  // both live-verified real patterns (noxa.fun/profile/{addr} shows every
+  // token a wallet has launched — exactly what the repeat-launch warning is
+  // about; noxa.fun/robinhood/token/{addr} for the token itself, confirmed via
+  // live href inspection, not /token/{addr} as originally guessed).
   if (/\brobinhood\s+chain\s+launch(?:es)?\b|\blaunch(?:es|ing)?\s+on\s+robinhood(?:\s+chain)?\b|\bwhat'?s?\s+launching\s+on\s+robinhood\b/i.test(trimmed)) {
     if (!robinhoodFeedEnabled()) {
       return json({ type: "error", text: "Robinhood Chain launch reads aren't configured right now." });
     }
-    const launches = await getRecentRobinhoodLaunches(5);
+
+    const launches = await getRecentRobinhoodLaunches(MAX_LIMIT);
     if (!launches || launches.length === 0) {
       return json({ type: "error", text: "Couldn't fetch Robinhood Chain launches right now — try again shortly." });
     }
-    const lines = launches.map(l => {
-      const repeat = l.creator.repeatLaunchCount > 1
-        ? ` ⚠️ ${l.creator.repeatLaunchCount} launches from this wallet in the current feed`
-        : "";
-      const mcap = l.marketCapUsd > 0
-        ? `$${l.marketCapUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} mcap`
-        : "no trades yet";
-      return `${l.symbol} (${l.name}) — ${l.ageMinutes}m old, ${mcap}, by @${l.creator.xUsername ?? "unknown"}${repeat}`;
+
+    const ranked = [...launches].sort((a, b) => {
+      const ratioA = a.marketCapUsd > 0 ? a.volume24hUsd / a.marketCapUsd : 0;
+      const ratioB = b.marketCapUsd > 0 ? b.volume24hUsd / b.marketCapUsd : 0;
+      return ratioB - ratioA;
     });
+    const DISPLAY_CAP = 5;
+    const shown = ranked.slice(0, DISPLAY_CAP);
+    const omittedCount = ranked.length - shown.length;
+    const spanMinutes = Math.max(...launches.map(l => l.ageMinutes));
+
+    const risks = await Promise.all(shown.map(l => scanRobinhoodLaunchRisk(l.address)));
+
+    const launchCards = shown.map((l, i) => {
+      const risk = risks[i];
+      const ratio = l.marketCapUsd > 0 ? l.volume24hUsd / l.marketCapUsd : null;
+      const pairAddress = risk?.topPair?.pairAddress ?? null;
+      const chainSlug = risk?.topPair?.chainId ?? null;
+      const deployerAddress = l.creator.walletAddress;
+      return {
+        symbol: l.symbol,
+        name: l.name,
+        address: l.address,
+        ageMinutes: l.ageMinutes,
+        marketCapUsd: l.marketCapUsd,
+        volume24hUsd: l.volume24hUsd,
+        volumeToMcapRatio: ratio,
+        hot: ratio !== null && ratio > 10,
+        creator: {
+          xUsername: l.creator.xUsername,
+          repeatLaunchCount: l.creator.repeatLaunchCount,
+          profileUrl: `https://www.noxa.fun/profile/${deployerAddress}`,
+        },
+        risk: risk ? { score: risk.score, label: risk.label, flags: risk.flags, totalLiquidityUsd: risk.totalLiquidityUsd } : null,
+        links: {
+          bankr: l.bankrUrl,
+          dexscreener: pairAddress && chainSlug ? `https://dexscreener.com/${chainSlug}/${pairAddress}` : null,
+          geckoterminal: pairAddress && chainSlug ? `https://www.geckoterminal.com/${chainSlug}/pools/${pairAddress}` : null,
+          noxa: `https://www.noxa.fun/robinhood/token/${l.address}`,
+        },
+      };
+    });
+
     return json({
-      type: "text",
-      text: `Recent Robinhood Chain launches:\n\n${lines.join("\n")}\n\nNo liquidity/honeypot data yet — DexScreener hasn't indexed this chain. Token names are unverified — anyone can launch a token referencing a public figure or brand with zero affiliation. Repeat-launch count is the only safety signal available right now.`,
+      type: "robinhood_launches",
+      heading: "Robinhood Chain launches",
+      subtitle: `${shown.length} of ${launches.length} most recent · spans the last ${spanMinutes}m`,
+      launches: launchCards,
+      omittedCount,
     });
   }
 

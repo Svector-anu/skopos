@@ -1,0 +1,100 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Skopos",
+  "description": "Skopos is a non-custodial, cross-chain crypto copilot. Swap, bridge, check prices, scan token safety, read smart-money intel, and more — all from one chat box.",
+  "colors": {
+    "primary": "#FACC15",
+    "light": "#FACC15",
+    "dark": "#FACC15"
+  },
+  "appearance": {
+    "default": "dark",
+    "strict": true
+  },
+  "background": {
+    "color": {
+      "light": "#000000",
+      "dark": "#000000"
+    }
+  },
+  "logo": "/logo.png",
+  "favicon": "/favicon.png",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "index",
+          "get-started/quickstart",
+          "get-started/connect-wallet"
+        ]
+      },
+      {
+        "group": "What Skopos Can Do",
+        "pages": [
+          "features/swap-bridge",
+          "features/token-safety",
+          "features/prices",
+          "features/portfolio",
+          "features/smart-money",
+          "features/market-reads",
+          "features/yield",
+          "features/prediction-markets",
+          "features/robinhood-chain",
+          "features/alerts",
+          "features/payments"
+        ]
+      },
+      {
+        "group": "Build on Skopos",
+        "pages": [
+          "build/api-overview",
+          "build/agent-payable-routes",
+          "build/agent-skill",
+          "build/mcp-server",
+          "build/supported-chains"
+        ]
+      },
+      {
+        "group": "Pricing",
+        "pages": [
+          "pricing/tiers",
+          "pricing/token-utility"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "",
+        "icon": "github",
+        "iconType": "brands",
+        "href": "https://github.com/Svector-anu/skopos-os"
+      },
+      {
+        "label": "",
+        "icon": "x-twitter",
+        "iconType": "brands",
+        "href": "https://x.com/tryskopos"
+      },
+      {
+        "label": "",
+        "icon": "clock-rotate-left",
+        "href": "https://www.tryskopos.xyz/changelog"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Open App",
+      "href": "https://www.tryskopos.xyz/app"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/tryskopos",
+      "github": "https://github.com/Svector-anu/skopos-os"
+    }
+  }
+}

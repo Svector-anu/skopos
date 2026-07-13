@@ -1,0 +1,50 @@
+---
+title: "What is Skopos"
+description: "A non-custodial, cross-chain crypto copilot you talk to in plain English."
+---
+
+Skopos is a non-custodial, cross-chain crypto copilot — live at [tryskopos.xyz](https://www.tryskopos.xyz), and embeddable anywhere else you work via one API, an Agent Skill, or an MCP server.
+
+Type what you want in plain English — prices, smart-money intel, market reads, alerts, token safety, prediction markets, or a swap/bridge/payment — and Skopos either pulls live data or hands your wallet a transaction to sign. It never holds your funds or your keys.
+
+```
+> swap 0.1 eth to usdc on base
+> what's launching on robinhood chain
+> who's buying $pepe
+> pay 10 usdc to 0x... for invoice-42 on base
+```
+
+## The core idea
+
+Every execution path in Skopos — swaps, bridges, payments, rebalances — returns **unsigned calldata**. Your own connected wallet signs it. There is no server-side signing, no custodial wallet, no "trust us with your keys." If Skopos disappeared tomorrow, nothing you own would be stuck anywhere.
+
+Everything that isn't execution — prices, risk scans, smart-money reads, market intelligence — is a live data pull. The model is fenced off from inventing numbers: if a live source is unavailable, Skopos says so instead of guessing.
+
+## How to use it
+
+Open the [app](https://www.tryskopos.xyz/app), connect a wallet, and type into the chat. No forms, no chain pickers, no dropdown menus — just describe the move.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
+    Your first swap, price check, and risk scan in under two minutes.
+  </Card>
+  <Card title="Connect a wallet" icon="wallet" href="/get-started/connect-wallet">
+    Email, Google, X, Discord, or bring your own wallet.
+  </Card>
+  <Card title="What Skopos can do" icon="list-check" href="/features/swap-bridge">
+    The full command surface — swap, bridge, safety, intel, alerts, payments.
+  </Card>
+  <Card title="Build on Skopos" icon="code" href="/build/api-overview">
+    The same copilot over HTTP, as an Agent Skill, or as an MCP server.
+  </Card>
+</CardGroup>
+
+## Three ways to reach it
+
+Skopos isn't only a web app:
+
+- **The app** — [tryskopos.xyz/app](https://www.tryskopos.xyz/app), the full chat UI with cards, charts, and wallet connect.
+- **The API** — one HTTP endpoint (`POST /api/chat`) with `format:"text"` for bots and headless clients. This is what powers Skopos's own iMessage integration today.
+- **Agent Skill / MCP** — drop a `SKILL.md` into Claude, Cursor, or any Agent Skills–compatible agent, or run `npx -y skopos-mcp` to get Skopos as an MCP server in Claude Desktop, Cursor, or any MCP client.
+
+See [Build on Skopos](/build/api-overview) for all three.

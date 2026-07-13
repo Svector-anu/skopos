@@ -319,6 +319,35 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       return `Ready: send ${amt} ${sym} to ${str(c.to)}${c.chainName ? ` on ${str(c.chainName)}` : ""}${c.memoText ? ` for "${str(c.memoText)}"` : ""}. Tap to sign in the Skopos app.`;
     }
 
+    case "robinhood_launches": {
+      const launches = (Array.isArray(c.launches) ? c.launches : []) as Card[];
+      if (!launches.length) return `No Robinhood Chain launches found right now.`;
+      const lines = launches.map((l) => {
+        const creator = (l.creator ?? {}) as Card;
+        const risk = l.risk as Card | null;
+        const links = (l.links ?? {}) as Card;
+        const ratio = num(l.volumeToMcapRatio);
+        const mcap = num(l.marketCapUsd);
+        const liq = num(risk?.totalLiquidityUsd);
+        const repeat = num(creator.repeatLaunchCount) ?? 0;
+        const parts = [
+          `${l.hot ? "🔥 " : ""}${str(l.symbol)} (${str(l.name)})`,
+          `${num(l.ageMinutes) ?? "?"}m old`,
+          mcap && mcap > 0 ? `${fmtUsd(mcap)} mcap` : "no trades yet",
+          liq !== null ? `${fmtUsd(liq)} liq` : null,
+          ratio !== null ? `${ratio.toFixed(1)}x vol/mcap` : null,
+          `by @${str(creator.xUsername) || "unknown"}`,
+          repeat > 1 ? `⚠️ ${repeat} launches this wallet — ${str(creator.profileUrl)}` : null,
+          risk ? `${str(risk.label)} risk` : "not indexed yet",
+          `CA ${str(l.address)}`,
+          str(links.geckoterminal) || null,
+        ].filter(Boolean);
+        return parts.join(" · ");
+      });
+      const subtitle = str(c.subtitle);
+      return `${str(c.heading)}${subtitle ? ` · ${subtitle}` : ""}:\n\n${lines.join("\n")}`;
+    }
+
     default:
       return `Open Skopos for this: ${SITE}`;
   }
