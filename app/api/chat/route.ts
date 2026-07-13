@@ -33,7 +33,7 @@ import { generateDepositAddress, getDepositStatus, getPolymarketBalance } from "
 import { getPrice, getPriceChart, type PriceResult } from "@/lib/priceCache";
 import { getPythRates, getPythRate, toUSDRate, type PythFeedKey } from "@/lib/pyth";
 import { fetchWebContext, extractUrl } from "@/lib/intel";
-import { agentPaidEnabled } from "@/lib/smartMoneyServer";
+import { agentPaidEnabled, fetchSmartMoneyServer } from "@/lib/smartMoneyServer";
 import { getRecentRobinhoodLaunches, robinhoodFeedEnabled, MAX_LIMIT, scanRobinhoodLaunchRisk } from "@/lib/robinhoodLaunches";
 import { discoverX402Endpoint } from "@/lib/x402Discover";
 import { parseTimeframe } from "@/lib/timeframe";
@@ -1025,6 +1025,97 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
       }
     }
+  }
+
+  // ── Pre-buy research bundle — "should i buy X" / "research X (before i buy)"
+  // / "tell me about X before i buy". One card: price+risk (scanToken already
+  // covers both — DexScreener's feed doubles as the "price" slot here, no
+  // separate getPrice call needed), smart money (Nansen, agent-paid, only when
+  // the resolved chain has a known Nansen slug), and a same-chain USDC→token
+  // swap quote (Delora, only when the chain resolves AND a wallet is connected)
+  // — all three run in parallel. "tell me about X" requires the "before i buy"
+  // qualifier so it doesn't hijack ordinary "tell me about ethereum"-style
+  // education questions (classifyIntent already routes bare "tell me about X"
+  // to a Groq informational reply further down); "should i buy X" / "research
+  // X" don't need that guard since both phrasings are unambiguously about a
+  // purchasable asset already.
+  const prebuyMatch =
+    trimmed.match(/\bshould\s+i\s+buy\s+(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})\b/i)
+    ?? trimmed.match(/\bresearch\s+(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})(?:\s+before\s+i\s+buy)?\b/i)
+    ?? trimmed.match(/\btell\s+me\s+about\s+(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})\s+before\s+i\s+buy\b/i);
+  if (prebuyMatch) {
+    const query = prebuyMatch[1].replace(/^\$/, "");
+    const risk = await scanToken(query);
+    if (!risk) {
+      return json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
+    }
+
+    const dexChain      = risk.topPair?.chainId ?? null;
+    const nansenChain   = dexChain ? toNansenChain(dexChain) : null;
+    const deloraChainId = dexChain ? resolveChainId(dexChain) : null;
+    const tokenAddress  = risk.topPair?.baseToken?.address ?? null;
+
+    // Skopos's own wallet fronts the Nansen fee (same agent-paid pattern as the
+    // "intel" card) — only attempted when the chain has a confirmed Nansen slug,
+    // so an unroutable chain never burns a paid call destined to 422.
+    const smartMoneyPromise = (nansenChain && tokenAddress && agentPaidEnabled())
+      ? fetchSmartMoneyServer({ symbol: risk.symbol, address: tokenAddress, chain: nansenChain }, "BUY").catch(() => null)
+      : Promise.resolve(null);
+
+    // A default $100 USDC→token reference quote, same chain only — Delora has
+    // no cross-chain path relevant here, this is "what would entering cost me
+    // right now," not a bridge. Needs a connected wallet the same way every
+    // other execution path does (resolveLeg rejects without one).
+    const quotePromise = (deloraChainId && senderAddress)
+      ? resolveLeg(
+          { originChain: dexChain!, destinationChain: dexChain!, token: "USDC", amount: "100", destinationToken: risk.symbol },
+          senderAddress, safeSlippage, solanaAddress, message,
+        ).catch(() => null)
+      : Promise.resolve(null);
+
+    const [smartMoneyRes, quoteRes, analysis] = await Promise.all([
+      smartMoneyPromise,
+      quotePromise,
+      generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta),
+    ]);
+    await recordSmart();
+
+    // Collapse Nansen's raw wallet-level rows into a glance-able summary — the
+    // full per-wallet breakdown is already the "intel" card's job, not this one's.
+    let smartMoney: { buyerCount: number; totalBoughtUsd: number } | null = null;
+    if (smartMoneyRes?.ok && smartMoneyRes.data && typeof smartMoneyRes.data === "object") {
+      const rows = (smartMoneyRes.data as { data?: Array<{ bought_volume_usd?: number }> }).data;
+      if (Array.isArray(rows)) {
+        smartMoney = {
+          buyerCount: rows.length,
+          totalBoughtUsd: rows.reduce((sum, r) => sum + (r.bought_volume_usd ?? 0), 0),
+        };
+      }
+    }
+
+    let quote: Record<string, unknown> | null = null;
+    let quoteUnavailable: string | null = null;
+    if (quoteRes && "ok" in quoteRes && quoteRes.ok) {
+      const { intent: legIntent, route, approval, calldata } = quoteRes as LegOk;
+      quote = { type: "quote", mode: "preview", quotedAt: Date.now(), intent: legIntent, route, approval, calldata };
+    } else if (!deloraChainId) {
+      // The Robinhood Chain gap lands here today — see the TODO in lib/delora.ts.
+      quoteUnavailable = "Routing isn't available for this chain yet.";
+    } else if (!senderAddress) {
+      quoteUnavailable = "Connect a wallet to see an entry route.";
+    } else {
+      quoteUnavailable = `Couldn't find a route for ${risk.symbol} right now.`;
+    }
+
+    return json({
+      type: "prebuy",
+      query: risk.symbol,
+      risk,
+      smartMoney,
+      quote,
+      quoteUnavailable,
+      ...(analysis && { analysis }),
+    });
   }
 
   // ── Token pick — "pick a token" / "give me a token pick" / "what should I

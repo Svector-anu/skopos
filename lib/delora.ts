@@ -51,6 +51,15 @@ export async function getChainById(chainId: number): Promise<DeloraChain | null>
   return chains.find(c => c.id === chainId) ?? null;
 }
 
+// TODO(robinhood-chain): chain ID 4663 confirmed absent from /v1/chains (27
+// chains listed, live-checked 2026-07-12) — no swap/bridge execution for
+// Robinhood Chain through Delora today. Spike done same day: Li.Fi's
+// li.quest/v1/chains DOES list 4663 ("Robinhood Chain", real diamond address +
+// RPC + explorer) — a live drop-in candidate for RH-chain execution only, not
+// a Delora replacement elsewhere. Socket (api.socket.tech) does not list it
+// (25 chains, no 4663). Next: a scoped Li.Fi quote-only spike for RH chain
+// before wiring anything into resolveLeg.
+
 
 
 // ── Token types ───────────────────────────────────────────────────────────────
