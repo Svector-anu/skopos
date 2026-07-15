@@ -1706,7 +1706,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   if (MCP_RE.test(trimmed)) {
     return json({
       type: "text",
-      text: `Yes — Skopos ships a real MCP server. Install it with "npx -y skopos-mcp" in Claude Desktop, Cursor, or any MCP client; it's a thin wrapper that answers the same way this chat does, non-custodially. More at tryskopos.xyz/docs.`,
+      text: `Yes — Skopos ships a real MCP server. Install it with "npx -y skopos-mcp" in Claude Desktop, Cursor, or any MCP client; it's a thin wrapper that answers the same way this chat does, non-custodially. More at docs.tryskopos.xyz.`,
     });
   }
 
