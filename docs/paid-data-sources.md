@@ -55,23 +55,40 @@ that balance first before assuming the upstream is down.
   disappear without notice, unlike Nansen. If it starts 404ing or timing out,
   that's the most likely explanation — not a Skopos-side bug.
 
-### HYRE Agent (sniper detection)
+### HYRE Agent (sniper detection) — currently non-functional on all 3 chains
 - **File:** `lib/sniperCheck.ts`
 - **Endpoint:** `GET https://mpp.hyreagent.fun/base/trenches/token/{mint}/snipers`
-- **Price:** $0.04/call (confirmed live via a real 402 challenge on 2026-07-15;
-  full paid response not observed — the settlement itself wasn't tested)
-- **Feeds:** `/api/sniper-check` (`app/api/sniper-check/route.ts`)
+- **Price:** $0.04/call advertised — but `getSniperCheck()` short-circuits
+  before spending it (`HYRE_BASE_KNOWN_BROKEN`, see below). Zero live cost
+  right now.
+- **Feeds:** `/api/sniper-check` (`app/api/sniper-check/route.ts`) — re-priced
+  $0.15 → $0.05 on 2026-07-15 to reflect that this route currently only
+  delivers holder concentration. Restore $0.15 once sniper detection works.
 - **Trust tier:** `origin_hosted` (real OpenAPI spec, agentcash-verified)
-- **Known limitation:** HYRE also serves Solana (root paths) and SKALE
-  (`/skale/*`) sniper endpoints at the same $0.04, but `lib/x402Agent.ts`'s
-  signer only registers the Base network (`eip155:8453`) — no Solana keypair,
-  no SKALE registration. Worse, a live test against the SKALE endpoint with
-  CASHCAT (`0x020bfc650a365f8bb26819deaabf3e21291018b4`) returned a 402
-  challenge that failed to parse (`parse_payment_required`) — the challenge
-  itself isn't spec-conformant, not just an auth gap on our side. Both chains
-  are deferred: Solana needs a whole new signer (SVM keypair + a Solana x402
-  scheme), SKALE needs the upstream challenge fixed or a documented workaround
-  found first.
+- **Status per chain, confirmed 2026-07-15:**
+  - **Base:** `lib/x402Agent.ts` now registers HYRE's v1 scheme (`base` /
+    `eip155:8453` were the missing piece — see the x402 v1 fix, commit
+    `c5874fd`), so payment negotiation succeeds. HYRE's own server then
+    returns a bare `500 Internal server error` on every well-formed payment,
+    before settlement — confirmed via on-chain balance check that nothing is
+    charged. This is an upstream bug, not a Skopos-side gap. `getSniperCheck()`
+    short-circuits to `null` immediately rather than eating this round trip on
+    every paid call.
+  - **Solana:** `lib/x402Agent.ts` has no Solana keypair, no signer at all —
+    unchanged, still needs a whole new SVM signer + Solana x402 scheme.
+  - **SKALE:** re-tested live against CASHCAT
+    (`0x020bfc650a365f8bb26819deaabf3e21291018b4`) with the same v1-fixed
+    client that unblocked Base — **still fails, but not the same bug.** The
+    original 2026-07-15 diagnosis (`parse_payment_required` via agentcash's
+    tooling) turned out to be the right symptom for the wrong reason once
+    re-examined: SKALE's challenge declares `"x402Version":2` but keeps
+    v1-style field names (`maxAmountRequired`) and omits the v2-required
+    top-level `resource` object. It fails schema validation
+    (`Failed to parse payment requirements: Invalid payment required
+    response`) before any payment is attempted — a genuinely malformed/hybrid
+    response on HYRE's SKALE endpoint, not a network-registration gap. Not
+    fixable client-side. Re-test if HYRE ever corrects the SKALE response
+    shape.
 
 ### Holder concentration — Nansen `tgm/holders`, not x402 Trading Hub
 - **File:** `lib/holderConcentration.ts`
