@@ -1,5 +1,7 @@
 # skopos-mcp
 
+![skopos-mcp](https://www.tryskopos.xyz/skopos-mcp-banner.png)
+
 Skopos — the non-custodial, cross-chain crypto copilot — as an installable **agent skill** over MCP.
 
 One tool, `skopos_ask`, lets any MCP-compatible agent (Claude, Cursor, Zero, Aeon…)

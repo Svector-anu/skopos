@@ -35,6 +35,11 @@ export interface TokenRisk {
   dexCount: number;
   flags: string[];
   sparkline?: number[];
+  // Populated only by app/api/sniper-check/route.ts — scanToken() itself never
+  // sets these (they require a separate paid x402 call, unlike the DexScreener
+  // signals above).
+  sniper?: { signal: string; confidence: number; insight: string } | null;
+  top10HolderPct?: number | null;
 }
 
 const COINGECKO_IDS: Record<string, string> = {

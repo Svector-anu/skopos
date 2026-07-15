@@ -56,6 +56,7 @@ type TokenRiskResult = {
     priceChange24h: number | null; pairCount: number; dexCount: number;
     flags: string[]; topPair: { url: string; dexId: string; chainId: string } | null;
     sparkline?: number[];
+    top10HolderPct?: number | null;
   };
   analysis?: string;
   pick?: boolean;
@@ -4131,6 +4132,8 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
     HIGH_VOLATILITY: "Price moved >50% in 24h",
     HEAVY_SELLING:   "Heavy sell pressure",
     POSSIBLE_HONEYPOT: "Buys but no sells — possible honeypot",
+    SNIPED:          "Early buyers concentrated in the first blocks",
+    CONCENTRATED:    "Top 10 wallets hold over half the supply",
   };
 
   return (
@@ -4181,6 +4184,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
           ["Vol (24h)",   fmt(risk.volume24h)],
           ["Liquidity",   fmt(risk.totalLiquidityUsd)],
           ["Pools",       `${risk.pairCount} / ${risk.dexCount} DEX`],
+          ...(risk.top10HolderPct != null ? [["Top 10 Hold", `${risk.top10HolderPct.toFixed(1)}%`]] : []),
         ].map(([label, val]) => (
           <div key={label} style={{ padding: "11px 16px", background: "var(--card-container-bg, #0D0D0D)" }}>
             <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: "0 0 3px", letterSpacing: "0.07em" }}>{label!.toUpperCase()}</p>

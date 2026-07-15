@@ -49,3 +49,6 @@ docs/vara-mvp-prd.md
 /internal/
 .env*.local
 .gstack/
+
+# broken pnpm approve-builds scaffold — do not track (breaks install/build)
+pnpm-workspace.yaml
