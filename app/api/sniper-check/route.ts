@@ -37,12 +37,12 @@ a{color:#F5B800;text-decoration:none}
   <div class="body">
     <div><span class="p">&gt;</span> GET /api/sniper-check</div>
     <div class="dim">418 &mdash; i'm a teapot &#129380; (well, a paid, post-only api)</div>
-    <p>top-10 holder concentration, straight from nansen &mdash; how much of the supply a handful of wallets really hold:</p>
+    <p>who bought first, and whether it was one wallet wearing four masks. sniper detection + top-10 holder concentration, base &amp; nansen chains, one paid call:</p>
 <pre>curl -sX POST https://www.tryskopos.xyz/api/sniper-check \\
   -H 'content-type: application/json' \\
   -d '{"tokenAddress":"0x...","chain":"base"}'</pre>
-    <div class="dim">&rarr; first call 402s with the price. an x402 wallet pays it and retries. CONCENTRATED lands on the risk card when top-10 hold &gt;50%. sniper detection is wired but not yet live &mdash; SNIPED won't fire, sniper always comes back null.</div>
-    <p class="dim" style="margin-top:16px">$0.05/call via x402 &middot; no key, no signup.<br>agent-payable &middot; <a href="https://www.tryskopos.xyz">tryskopos.xyz</a></p>
+    <div class="dim">&rarr; first call 402s with the price. an x402 wallet pays it and retries. SNIPED lands on the risk card when 3+ early buyers share one tx (confirmed bundle) &mdash; base only for now. CONCENTRATED fires when top-10 hold &gt;50%.</div>
+    <p class="dim" style="margin-top:16px">$0.25/call via x402 &middot; no key, no signup.<br>agent-payable &middot; <a href="https://www.tryskopos.xyz">tryskopos.xyz</a></p>
   </div>
 </div>
 </body></html>`;
@@ -52,18 +52,20 @@ a{color:#F5B800;text-decoration:none}
   });
 }
 
-// Paid concentration-only bundle — $0.05/call via x402. Pays Nansen TGM's
-// tgm/holders ($0.01–0.05 typical, see docs/paid-data-sources.md) out of
-// Skopos's own agent wallet (lib/x402Agent.ts) and resells with margin, same
-// pattern as app/api/smart-money/route.ts. Base scan reuses scanToken()
+// Paid sniper + holder-concentration bundle — $0.25/call via x402. Pays
+// x402 Chain Intel ($0.18, Base sniper detection) and Nansen TGM's
+// tgm/holders (~$0.01–0.05, see docs/paid-data-sources.md) out of Skopos's
+// own agent wallet (lib/x402Agent.ts) and resells with margin, same pattern
+// as app/api/smart-money/route.ts. Base scan reuses scanToken()
 // (lib/dexscreener.ts) — same free-path logic every other risk-adjacent
 // route reuses.
 //
-// Priced for what actually ships: getSniperCheck() (lib/sniperCheck.ts) is
-// short-circuited to null — HYRE's Base endpoint confirmed 500ing on every
-// well-formed payment, Solana has no signer, SKALE's challenge fails schema
-// validation. Was $0.15 when sniper detection was believed to work; restore
-// that price once it actually does. See docs/paid-data-sources.md.
+// Sniper detection was HYRE Agent, then $0 (short-circuited — HYRE's Base
+// endpoint 500s on every well-formed payment). Replaced 2026-07-15 with
+// x402 Chain Intel, a clean spec-conformant provider — live-verified against
+// AERO (0x940181a94a35a4569e4529a3cdfb74e38fd98631): 4 early buyers sharing
+// one txHash, a confirmed bundle. See lib/sniperCheck.ts and
+// docs/paid-data-sources.md.
 //
 // Holder concentration originally targeted x402 Trading Hub ($0.14/call) but
 // that origin is confirmed dead (404 DEPLOYMENT_NOT_FOUND straight from
@@ -72,7 +74,7 @@ a{color:#F5B800;text-decoration:none}
 // elsewhere in this repo instead of a second unreliable source.
 export const POST = router
   .route({ path: "sniper-check" })
-  .paid("0.05")
+  .paid("0.25")
   .body(
     z.object({
       tokenAddress: z.string().min(1).max(64).describe("Token contract address (or mint for Solana)"),
@@ -81,9 +83,9 @@ export const POST = router
   )
   .inputExample({ tokenAddress: "0x6982508145454ce325ddbe47a25d4ec3d2311933", chain: "ethereum" })
   .description(
-    "Holder concentration via Nansen (live, verified). Sniper detection currently returns null — HYRE 500s " +
-      "on Base; Solana and SKALE have separate blockers. Flags CONCENTRATED when top-10 hold >50% of supply. " +
-      "SNIPED flag not yet operational.",
+    "Holder concentration via Nansen (live, verified). Base sniper detection live via x402 Chain Intel — " +
+      "flags SNIPED on a confirmed bundle (3+ early buyers sharing one tx). RH Chain and Solana still " +
+      "blocked — returns null for those chains. Flags CONCENTRATED when top-10 hold >50% of supply.",
   )
   .handler(async ({ body }) => {
     const tokenAddress = body.tokenAddress.trim();
@@ -104,7 +106,7 @@ export const POST = router
     const concentration = concentrationResult.status === "fulfilled" ? concentrationResult.value : null;
 
     const flags = [...risk.flags];
-    if (sniper && sniper.signal === "snipe" && sniper.confidence > 0.7) flags.push("SNIPED");
+    if (sniper?.confirmedBundle) flags.push("SNIPED");
     if (concentration && concentration.top10Pct > 50) flags.push("CONCENTRATED");
 
     return {
@@ -119,7 +121,9 @@ export const POST = router
       priceChange24h: risk.priceChange24h,
       pairCount: risk.pairCount,
       flags,
-      sniper: sniper ? { signal: sniper.signal, confidence: sniper.confidence, insight: sniper.insight } : null,
+      sniper: sniper
+        ? { earlyBuyerCount: sniper.earlyBuyerCount, confirmedBundle: sniper.confirmedBundle, buyers: sniper.buyers }
+        : null,
       sniperSupportedChain: sniperCheckSupportsChain(chain),
       top10HolderPct: concentration?.top10Pct ?? null,
     };

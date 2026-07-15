@@ -55,40 +55,36 @@ that balance first before assuming the upstream is down.
   disappear without notice, unlike Nansen. If it starts 404ing or timing out,
   that's the most likely explanation — not a Skopos-side bug.
 
-### HYRE Agent (sniper detection) — currently non-functional on all 3 chains
+### x402 Chain Intel (sniper detection, Base) — replaced HYRE 2026-07-15
 - **File:** `lib/sniperCheck.ts`
-- **Endpoint:** `GET https://mpp.hyreagent.fun/base/trenches/token/{mint}/snipers`
-- **Price:** $0.04/call advertised — but `getSniperCheck()` short-circuits
-  before spending it (`HYRE_BASE_KNOWN_BROKEN`, see below). Zero live cost
-  right now.
+- **Endpoint:** `POST https://x402-chain-intel.vercel.app/api/hunter/early-buyers`
+  — body `{"address": tokenAddress, "chain": "base"}`
+- **Price:** $0.18/call (advertised in the 402 challenge, confirmed via a real
+  settlement — clean spec-conformant x402 v2, no client-side fix needed,
+  unlike HYRE)
 - **Feeds:** `/api/sniper-check` (`app/api/sniper-check/route.ts`) — re-priced
-  $0.15 → $0.05 on 2026-07-15 to reflect that this route currently only
-  delivers holder concentration. Restore $0.15 once sniper detection works.
-- **Trust tier:** `origin_hosted` (real OpenAPI spec, agentcash-verified)
-- **Status per chain, confirmed 2026-07-15:**
-  - **Base:** `lib/x402Agent.ts` now registers HYRE's v1 scheme (`base` /
-    `eip155:8453` were the missing piece — see the x402 v1 fix, commit
-    `c5874fd`), so payment negotiation succeeds. HYRE's own server then
-    returns a bare `500 Internal server error` on every well-formed payment,
-    before settlement — confirmed via on-chain balance check that nothing is
-    charged. This is an upstream bug, not a Skopos-side gap. `getSniperCheck()`
-    short-circuits to `null` immediately rather than eating this round trip on
-    every paid call.
-  - **Solana:** `lib/x402Agent.ts` has no Solana keypair, no signer at all —
-    unchanged, still needs a whole new SVM signer + Solana x402 scheme.
-  - **SKALE:** re-tested live against CASHCAT
-    (`0x020bfc650a365f8bb26819deaabf3e21291018b4`) with the same v1-fixed
-    client that unblocked Base — **still fails, but not the same bug.** The
-    original 2026-07-15 diagnosis (`parse_payment_required` via agentcash's
-    tooling) turned out to be the right symptom for the wrong reason once
-    re-examined: SKALE's challenge declares `"x402Version":2` but keeps
-    v1-style field names (`maxAmountRequired`) and omits the v2-required
-    top-level `resource` object. It fails schema validation
+  $0.05 → $0.25 on 2026-07-15 ($0.18 Chain Intel + ~$0.04 Nansen + margin).
+- **Response shape:** `{ earlyBuyerCount, earlyBuyers: [{ address, txHash,
+  block, value }] }`. `getSniperCheck()` derives `confirmedBundle`:
+  `earlyBuyerCount >= 3` AND every buyer shares the same `txHash` — one
+  transaction landing multiple "different" wallets is the signature of a
+  single sniper bot wearing several addresses. `SNIPED` fires on
+  `confirmedBundle`, not on buyer count alone.
+- **Live-verified:** AERO (`0x940181a94a35a4569e4529a3cdfb74e38fd98631`) — 4
+  early buyers, all four sharing one `txHash`. Real confirmed-bundle case,
+  paid for real, response shape matches what's implemented above.
+- **Base only.** Solana and RH Chain (SKALE) are unrelated to this swap and
+  remain blocked on HYRE's side (HYRE is still the only known provider for
+  either):
+  - **Solana:** `lib/x402Agent.ts` has no Solana keypair, no signer at all.
+  - **RH Chain (SKALE):** HYRE's SKALE challenge declares `"x402Version":2`
+    but keeps v1-style field names (`maxAmountRequired`) and omits the
+    v2-required top-level `resource` object — fails schema validation
     (`Failed to parse payment requirements: Invalid payment required
-    response`) before any payment is attempted — a genuinely malformed/hybrid
-    response on HYRE's SKALE endpoint, not a network-registration gap. Not
-    fixable client-side. Re-test if HYRE ever corrects the SKALE response
-    shape.
+    response`) before any payment is attempted, confirmed 2026-07-15 with the
+    same v1-fixed client that unblocked HYRE's Base payment negotiation (see
+    commit `c5874fd`). Not fixable client-side. Re-test if HYRE ever corrects
+    the SKALE response shape.
 
 ### Holder concentration — Nansen `tgm/holders`, not x402 Trading Hub
 - **File:** `lib/holderConcentration.ts`
