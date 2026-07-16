@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
+import { resolveRobinhoodToken, getFlashQuote } from "@/lib/flash";
 import {
   parseIntent,
   parseRebalanceIntent,
@@ -473,6 +474,124 @@ export async function resolveLeg(intent: ParsedIntent, senderAddress?: string, s
     },
     calldata: quote.calldata ?? null,
     raw:      quote,
+  };
+}
+
+// ── Flash (Robinhood Chain) leg resolver ─────────────────────────────────────
+// Delora doesn't support Robinhood Chain (chain 4663) — resolveLeg() dead-ends
+// on "Unknown chain" for it. Flash (Definitive, lib/flash.ts) is the swap
+// execution layer there instead. Scoped to same-chain swaps on Robinhood
+// Chain only — no cross-chain bridge-into-Robinhood-via-Flash path has been
+// tested, so a mixed-chain intent is rejected with guidance rather than
+// attempted. targetAsset/contraAsset mapping: destination = target (what's
+// being acquired), origin = contra (what's being spent) — this makes every
+// swap a Flash "buy" order regardless of which side is the meme/stable coin,
+// since qty is naturally in contraAsset units for buys, matching
+// intent.amount's own units (the amount of the origin token being spent).
+export type FlashLegOk = {
+  ok: true;
+  intent: LegOk["intent"];
+  route: LegOk["route"];
+  flash: {
+    quoteId: string;
+    targetChain: "robinhood";
+    contraChain: "robinhood";
+    targetAsset: string;
+    contraAsset: string;
+    side: "buy";
+    qty: string;
+    orderType: "market";
+    funderAddress: string;
+    flashIntegratorFeeBps: string;
+    approveTx: { to: string; data: string } | null;
+    permitTypedData: string;
+    orderTypedData: string;
+  };
+};
+
+const ROBINHOOD_CHAIN_ID = 4663;
+const FLASH_INTEGRATOR_FEE_BPS = "10";
+
+export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: string): Promise<FlashLegOk | LegErr> {
+  const parsedAmount = parseFloat(intent.amount);
+  if (!isFinite(parsedAmount) || parsedAmount <= 0) {
+    return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
+  }
+  if (!senderAddress || !senderAddress.startsWith("0x")) {
+    return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
+  }
+
+  const originChainId = resolveChainId(intent.originChain);
+  const destChainId   = resolveChainId(intent.destinationChain);
+  if (originChainId !== ROBINHOOD_CHAIN_ID || destChainId !== ROBINHOOD_CHAIN_ID) {
+    return {
+      ok: false,
+      text: "Flash trades happen directly on Robinhood Chain — both sides of the swap need to be there. Bridge funds to Robinhood Chain first, then buy.",
+    };
+  }
+
+  const [contraAsset, targetAsset] = await Promise.all([
+    resolveRobinhoodToken(intent.token),
+    resolveRobinhoodToken(intent.destinationToken),
+  ]);
+  if (!contraAsset) return { ok: false, text: `Could not find ${intent.token} on Robinhood Chain.` };
+  if (!targetAsset) return { ok: false, text: `Could not find ${intent.destinationToken} on Robinhood Chain.` };
+
+  let quote;
+  try {
+    quote = await getFlashQuote({
+      targetChain: "robinhood",
+      contraChain: "robinhood",
+      targetAsset,
+      contraAsset,
+      side: "buy",
+      qty: intent.amount,
+      orderType: "market",
+      funderAddress: senderAddress,
+      flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
+    });
+  } catch (err) {
+    console.error(`[resolveFlashLeg] getFlashQuote failed: ${err instanceof Error ? err.message : err}`);
+    return {
+      ok: false,
+      text: `Could not get a Flash quote for ${intent.token} → ${intent.destinationToken} on Robinhood Chain — try a different amount, or the pricing feed may be temporarily unavailable for this token.`,
+    };
+  }
+
+  if (!quote.evm) {
+    return { ok: false, text: "Flash returned a quote with no signable payload — try again." };
+  }
+
+  return {
+    ok: true,
+    intent: {
+      from: { chain: "Robinhood Chain", chainId: ROBINHOOD_CHAIN_ID, token: intent.token, amount: intent.amount },
+      to:   { chain: "Robinhood Chain", chainId: ROBINHOOD_CHAIN_ID, token: intent.destinationToken, receiver: senderAddress },
+    },
+    route: {
+      tool: "Flash",
+      outputAmount: quote.to.amount,
+      feesUSD: quote.fees.estimatedFeeNotional,
+      gasUSD: null,
+      inputUSD: Number(quote.from.notional) || null,
+      outputUSD: Number(quote.to.notional) || null,
+      etaSec: null,
+    },
+    flash: {
+      quoteId: quote.quoteId,
+      targetChain: "robinhood",
+      contraChain: "robinhood",
+      targetAsset,
+      contraAsset,
+      side: "buy",
+      qty: intent.amount,
+      orderType: "market",
+      funderAddress: senderAddress,
+      flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
+      approveTx: quote.evm.approveTx,
+      permitTypedData: quote.evm.permitTypedData,
+      orderTypedData: quote.evm.orderTypedData,
+    },
   };
 }
 
@@ -973,6 +1092,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     linea:    "ETH",  scroll: "ETH", blast: "ETH",      mode: "ETH",  megaeth: "ETH",
     polygon:  "POL",  bsc: "BNB",   avalanche: "AVAX",  mantle: "MNT",
     solana:   "SOL",  berachain: "BERA", cronos: "CRO", hyperevm: "HYPE",
+    robinhood: "ETH", "robinhood chain": "ETH",
   };
   const TRADE_SYMBOL_CHAIN: Record<string, string> = {
     MEGAETH: "megaeth", MEGA: "megaeth",
@@ -2061,14 +2181,25 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         },
       });
     }
-    const result = await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress, message);
+    const isFlashLeg = resolveChainId(intent.originChain) === ROBINHOOD_CHAIN_ID
+      || resolveChainId(intent.destinationChain) === ROBINHOOD_CHAIN_ID;
+    const result = isFlashLeg
+      ? await resolveFlashLeg(intent, senderAddress)
+      : await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress, message);
     if (!result.ok) return json({ type: "error", text: result.text });
-    const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;
     // Use the resolved display symbols (e.g. CBBTC, not the raw parsed WBTC) so the
     // analysis text never contradicts what the card actually shows.
-    const analysisIntent = { ...intent, token: legIntent.from.token, destinationToken: legIntent.to.token };
-    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(analysisIntent, route), tier, meterMeta);
+    const analysisIntent = { ...intent, token: result.intent.from.token, destinationToken: result.intent.to.token };
+    const bridgeAnalysis = await generateDecisionAnalysis(buildBridgeAnalysisPrompt(analysisIntent, result.route), tier, meterMeta);
     await recordSmart();
+    if ("flash" in result) {
+      return json({
+        type: "quote", mode: "preview", quotedAt: Date.now(),
+        intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
+        raw: null, ...(bridgeAnalysis && { analysis: bridgeAnalysis }),
+      });
+    }
+    const { intent: legIntent, route, approval, calldata, raw } = result as LegOk;
     return json({ type: "quote", mode: "preview", quotedAt: Date.now(), intent: legIntent, route, approval, calldata, raw, ...(bridgeAnalysis && { analysis: bridgeAnalysis }) });
   }
 

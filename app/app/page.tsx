@@ -7,7 +7,7 @@ import { usePrivy, useFundWallet, useWallets, useConnectWallet } from "@privy-io
 import {
 useAccount, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
-  useWaitForTransactionReceipt, useWalletClient,
+  useWaitForTransactionReceipt, useWalletClient, useSignTypedData,
 } from "wagmi";
 import { fetchSmartMoney } from "@/lib/smartMoneyClient";
 import { callX402Endpoint } from "@/lib/x402GenericClient";
@@ -24,6 +24,26 @@ import { WhatsNewToast } from "@/components/shared/WhatsNewToast";
 
 type ApprovalInfo = { tokenAddress: string; spender: string; amount: string } | null;
 
+// Flash (Robinhood Chain) leg — populated instead of approval/calldata when
+// intent.from.chainId === ROBINHOOD_CHAIN_ID. Delora's calldata is a raw tx
+// to broadcast directly; Flash instead needs EIP-712 typed-data signing plus
+// a submit round-trip (FlashExecuteButton), so it can't share that field.
+type FlashLegInfo = {
+  quoteId: string;
+  targetChain: string;
+  contraChain: string;
+  targetAsset: string;
+  contraAsset: string;
+  side: "buy";
+  qty: string;
+  orderType: string;
+  funderAddress: string;
+  flashIntegratorFeeBps: string;
+  approveTx: { to: string; data: string } | null;
+  permitTypedData: string;
+  orderTypedData: string;
+};
+
 type QuoteResult = {
   type: "quote";
   mode: "preview";
@@ -36,6 +56,7 @@ type QuoteResult = {
   route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null; etaSec?: number | null };
   approval: ApprovalInfo;
   calldata: { to: string; value: string; data: string } | null;
+  flash?: FlashLegInfo;
   analysis?: string;
 };
 
@@ -193,7 +214,13 @@ const EXPLORER_URLS: Record<string, string> = {
   Linea: "https://lineascan.build/tx/", Berachain: "https://berascan.com/tx/",
   Blast: "https://blastscan.io/tx/", Scroll: "https://scrollscan.com/tx/",
   MegaETH: "https://mega.etherscan.io/tx/",
+  "Robinhood Chain": "https://robinhoodchain.blockscout.com/tx/",
 };
+
+// Matches lib/chains.ts's CHAIN_IDS "robinhood" entry — Flash (Definitive)
+// trades happen here instead of through Delora, which doesn't support this
+// chain. See resolveFlashLeg() in app/api/chat/route.ts.
+const ROBINHOOD_CHAIN_ID = 4663;
 
 const BRIDGE_ACTIONS = [
   { label: "ETH → Base",     prompt: "bridge 0.1 ETH from ethereum to base" },
@@ -1820,7 +1847,8 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   // Only when the ORIGIN is Solana does Phantom sign the source tx. EVM→Solana is
   // signed on the EVM side (the Solana address is just the destination), so it must
   // use the normal EVM execute path, not the Phantom-signing button.
-  const isSolanaOrigin = originChainId === SOLANA_CHAIN_ID;
+  const isSolanaOrigin    = originChainId === SOLANA_CHAIN_ID;
+  const isRobinhoodOrigin = originChainId === ROBINHOOD_CHAIN_ID;
   const isSwap        = originChainId === destChainId;
 
   // Track the real MetaMask chain via window.ethereum — wagmi's useChainId() reads
@@ -2124,6 +2152,8 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
           )
         ) : isSolanaOrigin ? (
           <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} onRevalidate={onRevalidate} />
+        ) : isRobinhoodOrigin ? (
+          <FlashExecuteButton result={result} onTxSubmitted={onTxSubmitted} onCorrectChain={onCorrectChain} />
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => handleRefresh()} disabled={isRefreshing || !onRefresh}
@@ -2281,6 +2311,170 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
       <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, textAlign: "center" }}>
         {publicKey ? `${publicKey.toBase58().slice(0, 6)}…${publicKey.toBase58().slice(-4)}` : "phantom · solana"}
       </p>
+    </div>
+  );
+}
+
+// ─── FlashExecuteButton ───────────────────────────────────────────────────────
+// Robinhood Chain leg (result.flash set by resolveFlashLeg()). Same EVM wallet
+// as every other chain — unlike Solana this isn't a different signer — but a
+// genuinely different signing flow: Flash needs EIP-712 typed-data signing
+// plus a submit round-trip (POST /api/flash/submit, since only the server
+// holds the x-definitive-api-key), not a raw calldata send via
+// sendTransaction. No existing signTypedData usage anywhere in this codebase
+// to follow, so this is a new pattern, built and verified against Flash's
+// real OpenAPI spec and a live quote (see lib/flash.ts).
+function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
+  result: QuoteResult;
+  onTxSubmitted?: (r: TxRecord) => void;
+  onCorrectChain: boolean;
+}) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { login, authenticated } = usePrivy();
+  const { mutateAsync: switchChain } = useSwitchChain();
+  const { mutateAsync: sendTransaction, isPending: isApproving } = useSendTransaction();
+  const { mutateAsync: signTypedDataAsync, isPending: isSigning } = useSignTypedData();
+  const flash = result.flash;
+  const originChainId = result.intent.from.chainId;
+
+  const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>();
+  const { isSuccess: approvalConfirmed } = useWaitForTransactionReceipt({ hash: approvalHash, chainId: originChainId });
+  const [err, setErr]               = useState<string | null>(null);
+  const [orderId, setOrderId]       = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSwitching, setIsSwitching]   = useState(false);
+
+  async function handleSwitchChain() {
+    setErr(null);
+    setIsSwitching(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const eth = (window as any).ethereum;
+      if (eth) {
+        await (eth.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: `0x${originChainId.toString(16)}` }],
+        }) as Promise<void>);
+      } else {
+        await switchChain({ chainId: originChainId });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? "Rejected in wallet." : `Switch failed: ${msg.slice(0, 80)}`);
+    } finally {
+      setIsSwitching(false);
+    }
+  }
+
+  async function approve() {
+    if (!flash?.approveTx) return;
+    setErr(null);
+    try {
+      // Flash's approveTx is already-built raw calldata (a standard ERC-20
+      // approve() call), not an ABI + args triple — sent directly, unlike
+      // Delora's approval which goes through writeContract().
+      const hash = await sendTransaction({
+        to: flash.approveTx.to as `0x${string}`, data: flash.approveTx.data as `0x${string}`,
+        value: BigInt(0), chainId: originChainId,
+      });
+      setApprovalHash(hash);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+    }
+  }
+
+  async function signAndSubmit() {
+    if (!flash) return;
+    setErr(null);
+    try {
+      const parsed = JSON.parse(flash.orderTypedData) as {
+        domain: Record<string, unknown>; types: Record<string, unknown>; primaryType: string; message: Record<string, unknown>;
+      };
+      // viem/wagmi derive EIP712Domain internally from `domain` — passing it
+      // inside `types` too (as Flash's raw JSON does) throws. Domain's
+      // chainId also arrives as a string ("4663") but viem's typed-data
+      // domain wants a number.
+      const { EIP712Domain, ...types } = parsed.types;
+      void EIP712Domain;
+      const chainIdRaw = parsed.domain.chainId;
+      const signature = await signTypedDataAsync({
+        domain: { ...parsed.domain, chainId: typeof chainIdRaw === "string" ? Number(chainIdRaw) : chainIdRaw },
+        types,
+        primaryType: parsed.primaryType,
+        message: parsed.message,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      setIsSubmitting(true);
+      const res = await fetch("/api/flash/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetChain: flash.targetChain, contraChain: flash.contraChain,
+          targetAsset: flash.targetAsset, contraAsset: flash.contraAsset,
+          side: flash.side, qty: flash.qty, orderType: flash.orderType,
+          funderAddress: flash.funderAddress, quoteId: flash.quoteId,
+          flashIntegratorFeeBps: flash.flashIntegratorFeeBps,
+          userSignature: signature, evmOrderTypedData: flash.orderTypedData,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `Order submission failed (${res.status})`);
+      setOrderId(data.orderId);
+      onTxSubmitted?.({
+        hash: data.orderId,
+        label: `${result.intent.from.amount} ${result.intent.from.token} → ${result.intent.to.token}`,
+        explorerUrl: `https://robinhoodchain.blockscout.com/address/${flash.funderAddress}`,
+        chainId: originChainId, chain: result.intent.from.chain, timestamp: Date.now(),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? "Signature rejected in wallet." : msg.slice(0, 160));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (orderId) {
+    return (
+      <div style={{ ...MONO, width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80" }}>
+        order submitted ✓ · id {orderId.slice(0, 8)}…
+      </div>
+    );
+  }
+
+  const needsApproval = !!flash?.approveTx && !approvalConfirmed;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
+      {approvalConfirmed && (
+        <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0 }}>
+          approval confirmed ✓ — sign below
+        </p>
+      )}
+      {!authenticated ? (
+        <button onClick={login}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: "pointer" }}>
+          Connect Wallet
+        </button>
+      ) : !onCorrectChain ? (
+        <button onClick={handleSwitchChain} disabled={isSwitching}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
+          {isSwitching ? "Switching…" : "Switch to Robinhood Chain"}
+        </button>
+      ) : needsApproval ? (
+        <button onClick={approve} disabled={isApproving || (!!approvalHash && !approvalConfirmed)}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isApproving ? "wait" : "pointer", opacity: (isApproving || (!!approvalHash && !approvalConfirmed)) ? 0.65 : 1 }}>
+          {isApproving ? "Approving…" : approvalHash && !approvalConfirmed ? "Confirming…" : `Approve ${result.intent.from.token}`}
+        </button>
+      ) : (
+        <button onClick={signAndSubmit} disabled={isSigning || isSubmitting || !flash}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: (isSigning || isSubmitting) ? "wait" : "pointer", opacity: (isSigning || isSubmitting) ? 0.65 : 1 }}>
+          {isSigning ? "Confirm in wallet…" : isSubmitting ? "Submitting order…" : "Sign & Execute →"}
+        </button>
+      )}
     </div>
   );
 }

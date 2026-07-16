@@ -27,7 +27,18 @@ import {
   megaeth,
   baseSepolia,
 } from "wagmi/chains";
-import { http, fallback } from "viem";
+import { http, fallback, defineChain } from "viem";
+
+// Not in wagmi/chains yet — hand-rolled. Chain ID, RPC, and explorer confirmed
+// live against Flash's own docs and ChainList (see lib/flash.ts's header
+// comment for the Flash trading-API side of this integration).
+export const robinhoodChain = defineChain({
+  id: 4663,
+  name: "Robinhood Chain",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.mainnet.chain.robinhood.com"] } },
+  blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
+});
 
 export const SUPPORTED_CHAINS = [
   mainnet,
@@ -56,6 +67,7 @@ export const SUPPORTED_CHAINS = [
   hyperEvm,
   megaeth,
   baseSepolia,
+  robinhoodChain,
 ] as const;
 
 // Explicit CORS-friendly public RPC URLs — the wagmi default fallbacks (e.g. eth.merkle.io)
@@ -93,5 +105,6 @@ export const wagmiConfig = createConfig({
     [scroll.id]:     http("https://rpc.scroll.io"),
     [hyperEvm.id]:   http("https://rpc.hyperliquid.xyz/evm"),
     [megaeth.id]:    http("https://mainnet.megaeth.com/rpc"),
+    [robinhoodChain.id]: http("https://rpc.mainnet.chain.robinhood.com"),
   },
 });

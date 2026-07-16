@@ -26,6 +26,15 @@ export function classifyIntent(input: string): IntentType {
   // Metal keywords are unambiguous — gold/silver/XAU/XAG never appear in crypto bridge flows
   if (/\b(gold|silver|xau|xag)\b/i.test(t)) return "metal";
 
+  // Execution beats equity specifically for "hood"/"robinhood" — Robinhood
+  // Chain (chain 4663, lib/chains.ts) is a real chain name now, so "swap 1
+  // USDG from robinhood to CASHCAT" must not get hijacked into a HOOD stock
+  // price query the way it would have before that chain existed. Every other
+  // equity ticker is unaffected — none of their exec-verb-adjacent phrasings
+  // are real swap/bridge commands, so this carve-out only needs to cover
+  // this one now-ambiguous word.
+  if (hasExecVerb && hasAmount && /\b(hood|robinhood)\b/i.test(t)) return "execution";
+
   // Equity — the stocks we have verified Pyth feed IDs for (route.ts maps the
   // ticker → feed). "coin" is excluded (too crypto-ambiguous); "coinbase" only.
   if (/\b(aapl|apple|msft|microsoft|hood|robinhood|nvda|nvidia|tsla|tesla|googl|google|meta|amzn|amazon|coinbase|spy|qqq|mstr|microstrategy|amd|pltr|palantir|nflx|netflix|mara|marathon|riot|sofi|pypl|paypal|dis|disney|jpm|jpmorgan|baba|alibaba|intc|avgo|broadcom|uber|crm|salesforce|orcl|smci|supermicro|arkk)\b/i.test(t)) return "equity";

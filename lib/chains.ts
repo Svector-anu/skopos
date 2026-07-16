@@ -51,6 +51,10 @@ export const CHAIN_IDS: Record<string, number> = {
   scroll: 534352,
   // MegaETH
   megaeth: 4326, mega: 4326,
+  // Robinhood Chain — NOT a Delora chain (Delora doesn't support it). Trades
+  // route through Flash (lib/flash.ts) instead; see resolveFlashLeg() in
+  // app/api/chat/route.ts. 4663 is Robinhood Chain's real EVM chain ID.
+  robinhood: 4663, "robinhood chain": 4663,
   // Solana (Delora ID)
   solana: 1000000001, sol: 1000000001,
   // Common compound aliases users type

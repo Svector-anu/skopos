@@ -127,6 +127,7 @@ Ghost session (authenticated but no EVM address): `logout().then(() => login())`
 ```
 DELORA_API_KEY
 DELORA_INTEGRATOR        # default "ANU"
+FLASH_API_KEY            # optional — Robinhood Chain (4663) swaps via Flash; unset → falls back to Definitive's shared public dev key, fine for dev, not production
 GROQ_API_KEY
 ALCHEMY_API_KEY
 NEXT_PUBLIC_PRIVY_APP_ID
@@ -189,6 +190,7 @@ RELAY_SECRET             # required to authenticate /api/vara (the relay/ Vara b
 | Service | Used For | Key Env Var |
 |---|---|---|
 | Delora (`api.delora.build`) | Quotes + calldata | `DELORA_API_KEY` |
+| Flash (`flash.definitive.fi`) | Robinhood Chain (4663) swap quotes + EIP-712 order signing — Delora doesn't support this chain | `FLASH_API_KEY` (falls back to Definitive's own published shared dev key if unset — get a real key before production traffic) |
 | Groq | LLM (all calls) | `GROQ_API_KEY` |
 | Alchemy | Portfolio, tx lookup, ENS | `ALCHEMY_API_KEY` |
 | CoinGecko (free tier) | Price data (primary) | none |
