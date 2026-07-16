@@ -44,6 +44,25 @@ type FlashLegInfo = {
   orderTypedData: string;
 };
 
+// Relay leg — populated instead of approval/calldata when the intent moves
+// funds onto or off Robinhood Chain (exactly one side is chainId 4663,
+// unlike Flash's same-chain-only case). Unlike Flash, every step observed so
+// far is a plain raw transaction — no EIP-712 signing — but there can be 1-2
+// steps in sequence (approve, then deposit, for an ERC-20 source), which
+// neither Delora's single-calldata shape nor Flash's single-order shape
+// models, hence its own field.
+type RelayStepInfo = {
+  id: string;
+  action: string;
+  description: string;
+  tx: { from: string; to: string; data: string; value: string; chainId: number };
+  checkEndpoint: string | null;
+};
+type RelayLegInfo = {
+  steps: RelayStepInfo[];
+  timeEstimateSec: number | null;
+};
+
 type QuoteResult = {
   type: "quote";
   mode: "preview";
@@ -57,6 +76,7 @@ type QuoteResult = {
   approval: ApprovalInfo;
   calldata: { to: string; value: string; data: string } | null;
   flash?: FlashLegInfo;
+  relay?: RelayLegInfo;
   analysis?: string;
 };
 
@@ -1848,7 +1868,12 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   // signed on the EVM side (the Solana address is just the destination), so it must
   // use the normal EVM execute path, not the Phantom-signing button.
   const isSolanaOrigin    = originChainId === SOLANA_CHAIN_ID;
-  const isRobinhoodOrigin = originChainId === ROBINHOOD_CHAIN_ID;
+  // Checked separately from (and takes priority over) isRobinhoodOrigin below:
+  // a Relay leg moving funds OFF Robinhood Chain also has originChainId ===
+  // ROBINHOOD_CHAIN_ID, but it's a plain multi-step tx sequence, not a Flash
+  // same-chain swap — result.relay (not the chain ID alone) is the real signal.
+  const isRelayLeg        = !!result.relay;
+  const isRobinhoodOrigin = !isRelayLeg && originChainId === ROBINHOOD_CHAIN_ID;
   const isSwap        = originChainId === destChainId;
 
   // Track the real MetaMask chain via window.ethereum — wagmi's useChainId() reads
@@ -2150,6 +2175,8 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
               {isConfirming ? "confirming on-chain…" : "submitted · waiting…"}
             </div>
           )
+        ) : isRelayLeg ? (
+          <RelayExecuteSteps result={result} onTxSubmitted={onTxSubmitted} onCorrectChain={onCorrectChain} />
         ) : isSolanaOrigin ? (
           <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} onRevalidate={onRevalidate} />
         ) : isRobinhoodOrigin ? (
@@ -2473,6 +2500,165 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
         <button onClick={signAndSubmit} disabled={isSigning || isSubmitting || !flash}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: (isSigning || isSubmitting) ? "wait" : "pointer", opacity: (isSigning || isSubmitting) ? 0.65 : 1 }}>
           {isSigning ? "Confirm in wallet…" : isSubmitting ? "Submitting order…" : "Sign & Execute →"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── RelayExecuteSteps ────────────────────────────────────────────────────────
+// Bridges funds onto/off Robinhood Chain (result.relay set by
+// resolveRelayLeg()). Same signing primitive as the plain EVM execute path
+// below (sendTransaction, no EIP-712 — unlike FlashExecuteButton) but a
+// genuinely different shape: 1-2 raw transactions to send IN SEQUENCE
+// (approve, then deposit, for an ERC-20 source) rather than one. All steps
+// run on the origin chain (intent.from.chainId) — a bridge deposit is
+// entirely client-side on the source; nothing is sent on the destination.
+function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain }: {
+  result: QuoteResult;
+  onTxSubmitted?: (r: TxRecord) => void;
+  onCorrectChain: boolean;
+}) {
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { login, authenticated } = usePrivy();
+  const { mutateAsync: switchChain } = useSwitchChain();
+  const { mutateAsync: sendTransaction, isPending: isSending } = useSendTransaction();
+  const relay = result.relay;
+  const originChainId = result.intent.from.chainId;
+  const steps = relay?.steps ?? [];
+  const totalSteps = steps.length;
+
+  const [stepIndex, setStepIndex] = useState(0);
+  const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
+  const { isLoading: isConfirming, data: txReceipt, isError: txReceiptError } =
+    useWaitForTransactionReceipt({ hash: txHash, chainId: originChainId });
+  const [err, setErr] = useState<string | null>(null);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [allDone, setAllDone] = useState(false);
+  const [finalHash, setFinalHash] = useState<`0x${string}` | undefined>();
+
+  const currentStep = steps[stepIndex];
+
+  useEffect(() => {
+    if (!txReceipt || txReceipt.status !== "success") return;
+    if (stepIndex + 1 < totalSteps) {
+      setTxHash(undefined);
+      setStepIndex((i) => i + 1);
+      return;
+    }
+    setAllDone(true);
+    setFinalHash(txHash);
+    if (txHash) {
+      onTxSubmitted?.({
+        hash: txHash,
+        label: `${result.intent.from.amount} ${result.intent.from.token} → ${result.intent.to.chain}`,
+        explorerUrl: `${EXPLORER_URLS[result.intent.from.chain] ?? "https://etherscan.io/tx/"}${txHash}`,
+        chainId: originChainId, chain: result.intent.from.chain, timestamp: Date.now(),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [txReceipt]);
+
+  async function handleSwitchChain() {
+    setErr(null);
+    setIsSwitching(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const eth = (window as any).ethereum;
+      if (eth) {
+        await (eth.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: `0x${originChainId.toString(16)}` }],
+        }) as Promise<void>);
+      } else {
+        await switchChain({ chainId: originChainId });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? "Rejected in wallet." : `Switch failed: ${msg.slice(0, 80)}`);
+    } finally {
+      setIsSwitching(false);
+    }
+  }
+
+  async function sendCurrentStep() {
+    if (!currentStep) return;
+    setErr(null);
+    try {
+      const hash = await sendTransaction({
+        to: currentStep.tx.to as `0x${string}`,
+        data: currentStep.tx.data as `0x${string}`,
+        value: BigInt(currentStep.tx.value || "0"),
+        chainId: originChainId,
+      });
+      setTxHash(hash);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+    }
+  }
+
+  if (allDone) {
+    const eta = relay?.timeEstimateSec;
+    const explorerUrl = `${EXPLORER_URLS[result.intent.from.chain] ?? "https://etherscan.io/tx/"}${finalHash}`;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
+          style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80", textDecoration: "none" }}>
+          deposit confirmed ✓ · view on explorer →
+        </a>
+        {eta != null && (
+          <div style={{ ...MONO, width: "100%", padding: "10px 0", fontSize: "0.68rem", letterSpacing: "0.04em", textAlign: "center", background: "rgba(245,184,0,0.05)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, color: "rgba(245,184,0,0.8)" }}>
+            bridging to {result.intent.to.chain} · funds arrive in ~{eta >= 60 ? `${Math.round(eta / 60)} min` : `${Math.round(eta)} sec`}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (txReceipt?.status === "reverted" || txReceiptError) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>
+          Transaction failed — refresh the quote and try again.
+        </p>
+      </div>
+    );
+  }
+
+  const stepLabel = currentStep?.id === "approve"
+    ? `Approve ${result.intent.from.token}`
+    : currentStep?.id === "deposit"
+      ? "Bridge →"
+      : currentStep?.action ?? "Execute →";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {totalSteps > 1 && (
+        <p style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.06em", color: "var(--card-text-faint, rgba(255,255,255,0.35))", textAlign: "center", margin: 0 }}>
+          STEP {stepIndex + 1} OF {totalSteps}{currentStep ? ` — ${currentStep.description}` : ""}
+        </p>
+      )}
+      {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
+      {txHash ? (
+        <div style={{ ...MONO, width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(245,184,0,0.04)", border: "1px solid rgba(245,184,0,0.15)", borderRadius: 10, color: "rgba(245,184,0,0.5)" }}
+          className={isConfirming ? "animate-pulse" : ""}>
+          {isConfirming ? "confirming on-chain…" : "submitted · waiting…"}
+        </div>
+      ) : !authenticated ? (
+        <button onClick={login}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: "pointer" }}>
+          Connect Wallet
+        </button>
+      ) : !onCorrectChain ? (
+        <button onClick={handleSwitchChain} disabled={isSwitching}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
+          {isSwitching ? "Switching…" : `Switch to ${result.intent.from.chain}`}
+        </button>
+      ) : (
+        <button onClick={sendCurrentStep} disabled={isSending || !currentStep}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSending ? "wait" : "pointer", opacity: isSending ? 0.65 : 1 }}>
+          {isSending ? "Confirm in wallet…" : stepLabel}
         </button>
       )}
     </div>

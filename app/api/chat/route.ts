@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
-import { resolveRobinhoodToken, getFlashQuote } from "@/lib/flash";
+import { resolveRobinhoodToken, getFlashQuote, RH_CHAIN_STABLECOIN } from "@/lib/flash";
+import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
   parseIntent,
   parseRebalanceIntent,
@@ -570,7 +571,11 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
     },
     route: {
       tool: "Flash",
-      outputAmount: quote.to.amount,
+      // Flash's amount is already a human-readable decimal string (unlike
+      // Delora's raw wei-style integers, so no /10**decimals division here),
+      // but it's full-precision (e.g. "0.005225091488573649") — round to 6dp
+      // to match resolveLeg()'s outputFormatted convention the card expects.
+      outputAmount: Number(quote.to.amount).toFixed(6),
       feesUSD: quote.fees.estimatedFeeNotional,
       gasUSD: null,
       inputUSD: Number(quote.from.notional) || null,
@@ -591,6 +596,158 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
       approveTx: quote.evm.approveTx,
       permitTypedData: quote.evm.permitTypedData,
       orderTypedData: quote.evm.orderTypedData,
+    },
+  };
+}
+
+// ── Relay (bridge onto/off Robinhood Chain) leg resolver ────────────────────
+// Neither Delora nor Flash cover moving funds between Robinhood Chain and
+// anywhere else: Delora doesn't support chain 4663 at all, and Flash's own
+// API rejects cross-chain quotes outright (targetChain must equal
+// contraChain — confirmed live, 2026-07-16). Relay (lib/relay.ts) fills
+// exactly this gap. Only ever called when EXACTLY ONE of origin/destination
+// is Robinhood Chain — same-chain Robinhood swaps stay on Flash, and
+// everything not touching Robinhood Chain stays on Delora, unchanged.
+//
+// Token resolution deliberately does NOT reuse resolveRobinhoodToken() for
+// native ETH on the Robinhood side — that resolver returns Flash's
+// 0xEeee...EEeE sentinel (lib/flash.ts), but Relay expects the zero address
+// (RELAY_NATIVE_ADDRESS, lib/relay.ts). Mixing the two would silently build
+// a wrong quote request, not throw — so native ETH is special-cased before
+// ever calling resolveRobinhoodToken(), which is only reached for non-native
+// Robinhood-chain tokens (USDG, etc.).
+const RELAY_ROBINHOOD_DECIMALS: Record<string, number> = { ETH: 18, WETH: 18, USDG: 6 };
+
+async function resolveRelaySideToken(
+  chainId: number,
+  symbol: string,
+): Promise<{ address: string; decimals: number; chainName: string; symbol: string } | null> {
+  if (chainId === ROBINHOOD_CHAIN_ID) {
+    const upper = symbol.toUpperCase();
+    if (upper === "ETH" || upper === "WETH") {
+      return { address: RELAY_NATIVE_ADDRESS, decimals: 18, chainName: "Robinhood Chain", symbol: upper };
+    }
+    const address = await resolveRobinhoodToken(symbol);
+    if (!address) return null;
+    // resolveRobinhoodToken() silently substitutes USDC -> USDG (Robinhood
+    // Chain's real stablecoin, lib/flash.ts) — the display symbol must
+    // follow that substitution too, or the card would show "USDC" for a
+    // trade that actually resolved and settled in USDG.
+    const displaySymbol = upper === "USDC" ? RH_CHAIN_STABLECOIN : symbol;
+    return { address, decimals: RELAY_ROBINHOOD_DECIMALS[upper] ?? 18, chainName: "Robinhood Chain", symbol: displaySymbol };
+  }
+
+  const chain = await getChainById(chainId);
+  const isNative = symbol.toUpperCase() === chain?.nativeToken.symbol?.toUpperCase();
+  if (isNative) {
+    return {
+      address: chain?.nativeToken.address ?? RELAY_NATIVE_ADDRESS,
+      decimals: chain?.nativeToken.decimals ?? 18,
+      chainName: chain?.name ?? String(chainId),
+      symbol,
+    };
+  }
+  const tokenData = await getToken(chainId, symbol);
+  if (!tokenData) return null;
+  return { address: tokenData.address, decimals: tokenData.decimals, chainName: chain?.name ?? String(chainId), symbol };
+}
+
+export type RelayLegOk = {
+  ok: true;
+  intent: LegOk["intent"];
+  route: LegOk["route"];
+  relay: {
+    steps: {
+      id: string;
+      action: string;
+      description: string;
+      tx: RelayTransactionData;
+      checkEndpoint: string | null;
+    }[];
+    timeEstimateSec: number | null;
+  };
+};
+
+export async function resolveRelayLeg(intent: ParsedIntent, senderAddress?: string): Promise<RelayLegOk | LegErr> {
+  const parsedAmount = parseFloat(intent.amount);
+  if (!isFinite(parsedAmount) || parsedAmount <= 0) {
+    return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
+  }
+  if (!senderAddress || !senderAddress.startsWith("0x")) {
+    return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
+  }
+
+  const originChainId = resolveChainId(intent.originChain);
+  const destChainId   = resolveChainId(intent.destinationChain);
+  if (!originChainId || !destChainId) {
+    const unknown = !originChainId ? intent.originChain : intent.destinationChain;
+    return { ok: false, text: `Unknown chain: "${unknown}".` };
+  }
+
+  const [origin, dest] = await Promise.all([
+    resolveRelaySideToken(originChainId, intent.token),
+    resolveRelaySideToken(destChainId, intent.destinationToken),
+  ]);
+  if (!origin) return { ok: false, text: `Could not find ${intent.token} on ${intent.originChain}.` };
+  if (!dest)   return { ok: false, text: `Could not find ${intent.destinationToken} on ${intent.destinationChain}.` };
+
+  const amountWei = toWei(intent.amount, origin.decimals);
+
+  let quote;
+  try {
+    quote = await getRelayQuote({
+      user: senderAddress,
+      originChainId,
+      destinationChainId: destChainId,
+      originCurrency: origin.address,
+      destinationCurrency: dest.address,
+      amount: amountWei,
+      tradeType: "EXACT_INPUT",
+    });
+  } catch (err) {
+    console.error(`[resolveRelayLeg] getRelayQuote failed: ${err instanceof Error ? err.message : err}`);
+    return {
+      ok: false,
+      text: `Could not get a bridge quote for ${intent.token} → ${intent.destinationToken} — try a different amount.`,
+    };
+  }
+
+  if (!quote.steps?.length) {
+    return { ok: false, text: "Relay returned no executable steps for this route — try again." };
+  }
+
+  const steps = quote.steps.map((s) => {
+    const item = s.items[0];
+    const tx = item?.data as RelayTransactionData | undefined;
+    return {
+      id: s.id,
+      action: s.action,
+      description: s.description,
+      tx: tx ?? { from: "", to: "", data: "", value: "0", chainId: originChainId },
+      checkEndpoint: item?.check?.endpoint ?? null,
+    };
+  });
+
+  const outputFormatted = Number(quote.details.currencyOut.amountFormatted).toFixed(6);
+
+  return {
+    ok: true,
+    intent: {
+      from: { chain: origin.chainName, chainId: originChainId, token: origin.symbol, amount: intent.amount },
+      to:   { chain: dest.chainName,   chainId: destChainId,   token: dest.symbol, receiver: senderAddress },
+    },
+    route: {
+      tool: "Relay",
+      outputAmount: outputFormatted,
+      feesUSD: quote.fees.relayer.amountUsd,
+      gasUSD: quote.fees.gas.amountUsd,
+      inputUSD: Number(quote.details.currencyIn.amountUsd) || null,
+      outputUSD: Number(quote.details.currencyOut.amountUsd) || null,
+      etaSec: quote.details.timeEstimate ?? null,
+    },
+    relay: {
+      steps,
+      timeEstimateSec: quote.details.timeEstimate ?? null,
     },
   };
 }
@@ -1121,6 +1278,24 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         text: `How much ${symbol} from ${sourceChain} would you like to sell, and for which token? Type it — e.g. "swap 0.5 ${symbol} from ${sourceChain} to USDC" or "swap 0.5 ${symbol} from ${sourceChain} to ETH"`,
       });
     }
+  }
+
+  // ── Guided Robinhood Chain bridge — must run BEFORE the single-leg intent
+  // block, same reasoning as guided buy/sell above: "bridge from robinhood to
+  // base" or "get funds onto robinhood chain" has no amount, so
+  // parseIntent()/regexParse() can't build a real quote from it (every one of
+  // the 8 regex patterns requires \d+). Ask conversationally instead of
+  // falling through to a confusing informational-LLM answer or a bare parse
+  // failure. Only fires when there's no amount already — a fully-specified
+  // "bridge 0.1 ETH from base to robinhood" skips this and goes straight to
+  // the single-leg block below, which now routes it to Relay (resolveRelayLeg).
+  const mentionsRobinhoodBridge = /\brobinhood\b/i.test(trimmed) && /\b(bridge|move|get|send|transfer)\b/i.test(trimmed);
+  const hasAmountAlready = /\b\d[\d.,]*\b/.test(trimmed);
+  if (mentionsRobinhoodBridge && !hasAmountAlready) {
+    return json({
+      type: "text",
+      text: `How much would you like to bridge, and which token? Type an amount and both chains — e.g. "bridge 0.1 ETH from base to robinhood" (onto Robinhood Chain) or "bridge 0.1 ETH from robinhood to base" (off it).`,
+    });
   }
 
   // ── Token deep-dive — "deep dive on $X" / "$X deep dive". Must run before the
@@ -2181,11 +2356,17 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         },
       });
     }
-    const isFlashLeg = resolveChainId(intent.originChain) === ROBINHOOD_CHAIN_ID
-      || resolveChainId(intent.destinationChain) === ROBINHOOD_CHAIN_ID;
-    const result = isFlashLeg
+    // Three-way split on Robinhood Chain (4663) involvement: both sides ->
+    // same-chain swap -> Flash. Exactly one side -> moving funds onto/off the
+    // chain -> Relay (neither Delora nor Flash can do this — Flash's own API
+    // rejects cross-chain quotes outright). Neither side -> unchanged Delora path.
+    const originIsRobinhood = resolveChainId(intent.originChain) === ROBINHOOD_CHAIN_ID;
+    const destIsRobinhood   = resolveChainId(intent.destinationChain) === ROBINHOOD_CHAIN_ID;
+    const result = originIsRobinhood && destIsRobinhood
       ? await resolveFlashLeg(intent, senderAddress)
-      : await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress, message);
+      : originIsRobinhood !== destIsRobinhood
+        ? await resolveRelayLeg(intent, senderAddress)
+        : await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress, message);
     if (!result.ok) return json({ type: "error", text: result.text });
     // Use the resolved display symbols (e.g. CBBTC, not the raw parsed WBTC) so the
     // analysis text never contradicts what the card actually shows.
@@ -2196,6 +2377,13 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       return json({
         type: "quote", mode: "preview", quotedAt: Date.now(),
         intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
+        raw: null, ...(bridgeAnalysis && { analysis: bridgeAnalysis }),
+      });
+    }
+    if ("relay" in result) {
+      return json({
+        type: "quote", mode: "preview", quotedAt: Date.now(),
+        intent: result.intent, route: result.route, approval: null, calldata: null, relay: result.relay,
         raw: null, ...(bridgeAnalysis && { analysis: bridgeAnalysis }),
       });
     }
