@@ -35,6 +35,22 @@ const RH_ADDRESS_ALIASES: Record<string, string> = {
   WETH: NATIVE_ETH_SENTINEL,
 };
 
+// Robinhood Chain's canonical L2 WETH, from
+// https://docs.robinhood.com/chain/protocol-contracts ("L2 Weth", Mainnet).
+// Verified live (2026-07-17): quoting with NATIVE_ETH_SENTINEL as contraAsset
+// already returns an orderTypedData whose message.fromToken is this exact
+// address — Flash's signed order never references the sentinel. The actual
+// bug this constant fixes lives one level up, in resolveFlashLeg() (route.ts):
+// the *quote request's* contraAsset (the sentinel) was also being echoed
+// into the *submit request's* top-level contraAsset field, which Flash
+// rejects at /order with NATIVE_ASSET_NOT_SUBMITTABLE — "submit with the
+// wrapped asset the quote was priced against" — even though the signature
+// itself was always correct. Confirmed live both ways: submitting with the
+// sentinel here reproduces that exact rejection; submitting with this
+// address instead (same quote, same signature, nothing else changed) clears
+// it and progresses to the expected balance check.
+export const RH_CHAIN_WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
+
 // Canonical Robinhood Chain stock/ETF token addresses — source of truth is
 // Robinhood's own registry at https://docs.robinhood.com/chain/contracts,
 // NOT DexScreener search. This distinction matters: DexScreener indexes

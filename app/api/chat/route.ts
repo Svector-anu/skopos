@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
-import { resolveRobinhoodToken, getFlashQuote, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
+import { resolveRobinhoodToken, getFlashQuote, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
   parseIntent,
@@ -572,6 +572,17 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
     return { ok: false, text: "Flash returned a quote with no signable payload — try again." };
   }
 
+  // The *quote request's* contraAsset (the native-ETH sentinel, when
+  // spending ETH) must NOT be echoed into the *submit request's* top-level
+  // contraAsset — Flash rejects that at /order with NATIVE_ASSET_NOT_SUBMITTABLE
+  // ("submit with the wrapped asset the quote was priced against"), even
+  // though quote.evm.orderTypedData.message.fromToken already correctly
+  // references WETH (confirmed live, 2026-07-17 — the signed order was never
+  // the problem). quote.wrap being present is exactly the signal that a
+  // sentinel-priced quote happened, in which case the submittable asset is
+  // RH_CHAIN_WETH — confirmed live to match quote.wrap.wrappedAsset exactly.
+  const submitContraAsset = quote.wrap ? RH_CHAIN_WETH : contraAsset;
+
   return {
     ok: true,
     intent: {
@@ -596,7 +607,7 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
       targetChain: "robinhood",
       contraChain: "robinhood",
       targetAsset,
-      contraAsset,
+      contraAsset: submitContraAsset,
       side: "buy",
       qty: intent.amount,
       orderType: "market",
