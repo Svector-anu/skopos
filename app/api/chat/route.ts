@@ -1155,6 +1155,28 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ type: "error", text: "Message too long." }, { status: 400, headers: corsHeaders });
   }
 
+  // ── Harmful-content boundary — fires before ANY routing, including
+  // structural card generators that call an LLM for enrichment (token-risk
+  // analysis, yield analysis, etc.), not just the final informational
+  // fallback. Skopos has zero legitimate reason to discuss weapons/CBRN/
+  // drug-synthesis content in any framing — confirmed live (2026-07-17) that
+  // the Groq-backed informational path complied with real napalm-synthesis
+  // steps (gasoline + naphthenic acid, aluminum sulfate thickener, 200°F,
+  // benzene stabilizer) when the request was wrapped as a dying-grandmother
+  // bedtime story. That's the well-known "grandma exploit" jailbreak
+  // pattern — the roleplay wrapper is infinitely rephraseable, so this keys
+  // on the harmful-content TOPIC itself rather than the wrapper. Tier 1
+  // fires on mention alone (these words have no legitimate use case in a
+  // DeFi copilot); Tier 2 requires production-seeking phrasing nearby, since
+  // the bare words are common/dual-use (crypto slang: "that trade was a
+  // bomb", "PEPE just bombed").
+  const HARM_TOPIC_RE = /\b(napalm|sarin|vx\s*(?:gas|nerve\s*agent)|nerve\s*(?:gas|agent)|ricin|anthrax|mustard\s*gas|dirty\s*bomb|bioweapon|biological\s*weapon|chemical\s*weapon|nuclear\s*weapon|botulinum|weapons?[\s-]grade\s+(?:uranium|plutonium))\b/i;
+  const HARM_PRODUCTION_RE = /\b(?:how\s+to\s+(?:make|build|synthesi[sz]e|create|produce|manufacture)|steps?\s+(?:to|for)\s+(?:making|producing|building|synthesi[sz]ing)|recipe\s+for)\b.{0,40}\b(bomb|explosive|pipe\s*bomb|ied|improvised\s*explosive|meth(?:amphetamine)?|fentanyl|malware|ransomware|keylogger)\b/i;
+  if (HARM_TOPIC_RE.test(trimmed) || HARM_PRODUCTION_RE.test(trimmed)) {
+    console.warn(`[chat] harmful-content boundary fired, len=${trimmed.length}`);
+    return json({ type: "text", text: "I can't help with that, in any framing — I'm here for DeFi and on-chain tasks." });
+  }
+
   // ── Smart-tier metering gate (Fast is always free + anonymous, never gated) ──
   // Wallet users get the free daily cap; anon users get a small teaser keyed by a
   // client-generated id, then a connect paywall. Read-only here: the counter only
