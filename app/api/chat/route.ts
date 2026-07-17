@@ -504,6 +504,15 @@ export type FlashLegOk = {
     orderType: "market";
     funderAddress: string;
     flashIntegratorFeeBps: string;
+    // A quote spending the native-ETH sentinel isn't actually spendable as
+    // native ETH — Flash's signed order pulls WETH (confirmed live,
+    // 2026-07-16: orderTypedData.message.fromToken is WETH's real contract
+    // address even when contraAsset is the sentinel). wrapTx (Flash's own
+    // `wrap.evmTx`, a deposit() call on WETH) has to be sent and confirmed
+    // BEFORE approveTx/orderTypedData mean anything — this was silently
+    // dropped in the first pass, which is exactly the bug that produced a
+    // real approve tx for WETH the funder didn't actually hold yet.
+    wrapTx: { to: string; data: string; value: string } | null;
     approveTx: { to: string; data: string } | null;
     permitTypedData: string;
     orderTypedData: string;
@@ -593,6 +602,7 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
       orderType: "market",
       funderAddress: senderAddress,
       flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
+      wrapTx: quote.wrap?.evmTx ?? null,
       approveTx: quote.evm.approveTx,
       permitTypedData: quote.evm.permitTypedData,
       orderTypedData: quote.evm.orderTypedData,

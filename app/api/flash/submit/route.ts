@@ -39,7 +39,13 @@ export async function POST(req: NextRequest) {
     funderAddress, userSignature,
   } = body;
   if (!targetChain || !contraChain || !targetAsset || !contraAsset || !side || !qty || !orderType || !funderAddress || !userSignature) {
-    return Response.json({ error: "Missing required order fields." }, { status: 400 });
+    // Log which fields were actually missing — a bare 400 gave no way to
+    // tell "wallet disconnected mid-flow, funderAddress went stale" apart
+    // from "genuine client bug" without re-instrumenting on the fly.
+    const missing = Object.entries({ targetChain, contraChain, targetAsset, contraAsset, side, qty, orderType, funderAddress, userSignature })
+      .filter(([, v]) => !v).map(([k]) => k);
+    console.error("[flash-submit] missing fields:", missing.join(", "));
+    return Response.json({ error: `Missing required order fields: ${missing.join(", ")}.` }, { status: 400 });
   }
 
   try {

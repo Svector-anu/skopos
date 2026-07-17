@@ -39,9 +39,19 @@ type FlashLegInfo = {
   orderType: string;
   funderAddress: string;
   flashIntegratorFeeBps: string;
+  // Must be sent and confirmed BEFORE approveTx/orderTypedData mean
+  // anything — spending the native-ETH sentinel actually pulls WETH under
+  // the hood, so the funder needs real WETH first. See route.ts's
+  // resolveFlashLeg() comment for how this was discovered.
+  wrapTx: { to: string; data: string; value: string } | null;
   approveTx: { to: string; data: string } | null;
   permitTypedData: string;
   orderTypedData: string;
+  // Set client-side (via onResultUpdate) once submitFlashOrder() succeeds —
+  // persisted into the chat message itself, not just FlashExecuteButton's
+  // local state, so the success view survives a reload instead of resetting
+  // to a fresh, already-stale quote card.
+  completedOrderId?: string;
 };
 
 // Relay leg — populated instead of approval/calldata when the intent moves
@@ -61,6 +71,10 @@ type RelayStepInfo = {
 type RelayLegInfo = {
   steps: RelayStepInfo[];
   timeEstimateSec: number | null;
+  // Same reasoning as FlashLegInfo.completedOrderId — set once the final
+  // step's tx confirms, persisted into the message so the success view
+  // survives a reload.
+  completedTxHash?: string;
 };
 
 type QuoteResult = {
@@ -1215,6 +1229,9 @@ export default function AppPage() {
                           <QuoteDisplay
                             result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} slippage={slippage}
                             onSlippageChange={setSlippage}
+                            onResultUpdate={(patch) => setMessages(prev => prev.map((m, j) =>
+                              j === i && m.role === "assistant" ? { role: "assistant", result: { ...m.result, ...patch } as AssistantResult } : m
+                            ))}
                             onRefresh={async (slippageOverride?: number) => {
                               const origin = (msg.result as QuoteResult).originMessage;
                               if (!origin) return;
@@ -1848,13 +1865,17 @@ function ChainLogo({ chainId, size = 48 }: { chainId: number; size?: number }) {
 
 const QUOTE_TTL = 30;
 
-function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRevalidate, onSlippageChange, slippage = 0.005 }: {
+function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRevalidate, onSlippageChange, onResultUpdate, slippage = 0.005 }: {
   result: QuoteResult;
   connectedAddress: string | null;
   onTxSubmitted?: (r: TxRecord) => void;
   onRefresh?: (slippageOverride?: number) => Promise<void>;
   onRevalidate?: () => Promise<QuoteResult | null>;
   onSlippageChange?: (v: number) => void;
+  // Persists a completion patch (FlashLegInfo.completedOrderId /
+  // RelayLegInfo.completedTxHash) into the actual chat message, not just
+  // this component's local state, so the success view survives a reload.
+  onResultUpdate?: (patch: Partial<QuoteResult>) => void;
   slippage?: number;
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
@@ -2049,7 +2070,14 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
         <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
           {executionMode ? "TRANSACTION" : isSwap ? "SWAP PREVIEW" : "BRIDGE PREVIEW"}
         </span>
-        {!executionMode && (
+        {/* Flash/Relay flows realistically take longer than QUOTE_TTL to click
+            through with real wallet confirmations (wrap, approve, sign are
+            each a separate prompt) — neither FlashExecuteButton nor
+            RelayExecuteSteps checks or enforces this countdown, so showing
+            "EXPIRED" here would be actively misleading, not just cosmetic:
+            confirmed live, the sign+submit flow still completes fine after
+            this badge says EXPIRED. */}
+        {!executionMode && !result.flash && !result.relay && (
           <span style={{
             ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4,
             background: "var(--card-border-faint, rgba(255,255,255,0.05))",
@@ -2176,11 +2204,11 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             </div>
           )
         ) : isRelayLeg ? (
-          <RelayExecuteSteps result={result} onTxSubmitted={onTxSubmitted} onCorrectChain={onCorrectChain} />
+          <RelayExecuteSteps result={result} onTxSubmitted={onTxSubmitted} onCorrectChain={onCorrectChain} onResultUpdate={onResultUpdate} />
         ) : isSolanaOrigin ? (
           <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} onRevalidate={onRevalidate} />
         ) : isRobinhoodOrigin ? (
-          <FlashExecuteButton result={result} onTxSubmitted={onTxSubmitted} onCorrectChain={onCorrectChain} />
+          <FlashExecuteButton result={result} onTxSubmitted={onTxSubmitted} onCorrectChain={onCorrectChain} onResultUpdate={onResultUpdate} />
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => handleRefresh()} disabled={isRefreshing || !onRefresh}
@@ -2351,10 +2379,11 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
 // sendTransaction. No existing signTypedData usage anywhere in this codebase
 // to follow, so this is a new pattern, built and verified against Flash's
 // real OpenAPI spec and a live quote (see lib/flash.ts).
-function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
+function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpdate }: {
   result: QuoteResult;
   onTxSubmitted?: (r: TxRecord) => void;
   onCorrectChain: boolean;
+  onResultUpdate?: (patch: Partial<QuoteResult>) => void;
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { login, authenticated } = usePrivy();
@@ -2364,10 +2393,15 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
   const flash = result.flash;
   const originChainId = result.intent.from.chainId;
 
+  const [wrapHash, setWrapHash] = useState<`0x${string}` | undefined>();
+  const { isSuccess: wrapConfirmed } = useWaitForTransactionReceipt({ hash: wrapHash, chainId: originChainId });
   const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>();
   const { isSuccess: approvalConfirmed } = useWaitForTransactionReceipt({ hash: approvalHash, chainId: originChainId });
   const [err, setErr]               = useState<string | null>(null);
-  const [orderId, setOrderId]       = useState<string | null>(null);
+  // Initialized from the persisted message, not just fresh local state — a
+  // reload after a completed order should show "submitted ✓" immediately,
+  // not the pre-execution card again.
+  const [orderId, setOrderId]       = useState<string | null>(flash?.completedOrderId ?? null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSwitching, setIsSwitching]   = useState(false);
 
@@ -2390,6 +2424,21 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
       setErr(msg.toLowerCase().includes("user rejected") ? "Rejected in wallet." : `Switch failed: ${msg.slice(0, 80)}`);
     } finally {
       setIsSwitching(false);
+    }
+  }
+
+  async function wrap() {
+    if (!flash?.wrapTx) return;
+    setErr(null);
+    try {
+      const hash = await sendTransaction({
+        to: flash.wrapTx.to as `0x${string}`, data: flash.wrapTx.data as `0x${string}`,
+        value: BigInt(flash.wrapTx.value || "0"), chainId: originChainId,
+      });
+      setWrapHash(hash);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
     }
   }
 
@@ -2449,6 +2498,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `Order submission failed (${res.status})`);
       setOrderId(data.orderId);
+      if (flash) onResultUpdate?.({ flash: { ...flash, completedOrderId: data.orderId } });
       onTxSubmitted?.({
         hash: data.orderId,
         label: `${result.intent.from.amount} ${result.intent.from.token} → ${result.intent.to.token}`,
@@ -2471,11 +2521,17 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
     );
   }
 
-  const needsApproval = !!flash?.approveTx && !approvalConfirmed;
+  const needsWrap     = !!flash?.wrapTx && !wrapConfirmed;
+  const needsApproval = !needsWrap && !!flash?.approveTx && !approvalConfirmed;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
+      {wrapConfirmed && !needsApproval && (
+        <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0 }}>
+          wrap confirmed ✓
+        </p>
+      )}
       {approvalConfirmed && (
         <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0 }}>
           approval confirmed ✓ — sign below
@@ -2490,6 +2546,11 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
         <button onClick={handleSwitchChain} disabled={isSwitching}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
           {isSwitching ? "Switching…" : "Switch to Robinhood Chain"}
+        </button>
+      ) : needsWrap ? (
+        <button onClick={wrap} disabled={isApproving || (!!wrapHash && !wrapConfirmed)}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isApproving ? "wait" : "pointer", opacity: (isApproving || (!!wrapHash && !wrapConfirmed)) ? 0.65 : 1 }}>
+          {isApproving ? "Wrapping…" : wrapHash && !wrapConfirmed ? "Confirming…" : `Wrap ${result.intent.from.token}`}
         </button>
       ) : needsApproval ? (
         <button onClick={approve} disabled={isApproving || (!!approvalHash && !approvalConfirmed)}
@@ -2514,10 +2575,11 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain }: {
 // (approve, then deposit, for an ERC-20 source) rather than one. All steps
 // run on the origin chain (intent.from.chainId) — a bridge deposit is
 // entirely client-side on the source; nothing is sent on the destination.
-function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain }: {
+function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpdate }: {
   result: QuoteResult;
   onTxSubmitted?: (r: TxRecord) => void;
   onCorrectChain: boolean;
+  onResultUpdate?: (patch: Partial<QuoteResult>) => void;
 }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { login, authenticated } = usePrivy();
@@ -2534,8 +2596,11 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain }: {
     useWaitForTransactionReceipt({ hash: txHash, chainId: originChainId });
   const [err, setErr] = useState<string | null>(null);
   const [isSwitching, setIsSwitching] = useState(false);
-  const [allDone, setAllDone] = useState(false);
-  const [finalHash, setFinalHash] = useState<`0x${string}` | undefined>();
+  // Initialized from the persisted message — a reload after the bridge
+  // already completed should show "confirmed ✓" immediately, not the
+  // pre-execution step sequence again.
+  const [allDone, setAllDone] = useState(!!relay?.completedTxHash);
+  const [finalHash, setFinalHash] = useState<`0x${string}` | undefined>(relay?.completedTxHash as `0x${string}` | undefined);
 
   const currentStep = steps[stepIndex];
 
@@ -2549,6 +2614,7 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain }: {
     setAllDone(true);
     setFinalHash(txHash);
     if (txHash) {
+      if (relay) onResultUpdate?.({ relay: { ...relay, completedTxHash: txHash } });
       onTxSubmitted?.({
         hash: txHash,
         label: `${result.intent.from.amount} ${result.intent.from.token} → ${result.intent.to.chain}`,
