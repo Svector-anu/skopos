@@ -2532,6 +2532,14 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
           funderAddress: flash.funderAddress, quoteId: flash.quoteId,
           flashIntegratorFeeBps: flash.flashIntegratorFeeBps,
           userSignature: signature, evmOrderTypedData: flash.orderTypedData,
+          // Flash's /order endpoint validates limit/trigger/twap fields
+          // independently of /quote — a limit order submitted without
+          // limitNotionalPrice 400s even though the quote already required
+          // one. triggers/twapBucketCount must echo the exact quote-time
+          // values, not be recomputed here.
+          ...(flash.orderType === "limit" && flash.triggerPrice ? { limitNotionalPrice: flash.triggerPrice } : {}),
+          ...(flash.triggerType && flash.triggerPrice ? { triggers: [{ notionalPrice: flash.triggerPrice, triggerType: flash.triggerType }] } : {}),
+          ...(flash.twapBucketCount ? { twapBucketCount: flash.twapBucketCount } : {}),
         }),
       });
       const data = await res.json();
