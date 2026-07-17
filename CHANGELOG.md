@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - **Robinhood Chain launch feed** — `what's launching on robinhood chain` returns a real card: colored risk badge leading every entry, liquidity color-coded (red ≤$5K, green >$50K), deployer handle and repeat-launch warning both linking to the live-verified noxa.fun profile (every token a wallet has launched) and per-token page, plus the upstream feed's Bankr terminal discover link. Honest about scope — the chain launches a token every 1–2 minutes, so "25 most recent" only ever spans about half an hour; no fake "past week" filtering pretending otherwise.
 - **Mintlify docs site** (docs.tryskopos.xyz) — 21 pages across 4 nav groups, replacing the old in-app `/docs` page.
 - **x402 payment UX fallback (swap-to-cover)** — when a connected wallet is short on Base USDC for a paid x402 endpoint, quotes a same-chain ETH→USDC swap through the same pipeline every other swap uses, shows the combined cost (payment + swap fee) upfront, and signs non-custodially like any other swap. No ETH to swap either → falls back to the existing Fund Wallet prompt.
+- `docs/paid-data-sources.md` — catalogs every external x402 endpoint Skopos itself pays as a client (Nansen, chain-intel, etc.) — the opposite direction from the agent-payable API it exposes to others.
 - **DAO treasury lookup** — `treasury of uniswap` returns a live, multi-chain treasury value computed on the spot from real on-chain holdings, reusing the existing multi-chain address scanner against a small hand-verified DAO address map (Uniswap, ENS, Arbitrum today).
 - **Standing alerts** — `alert me when eth hits $5000`, `monitor polymarket trump 2028`, `watch 0x… for activity`. Three watch types (price one-shot; Polymarket volume moves and on-chain wallet activity, both recurring), delivered via Web Push, evaluated on a daily cron.
 - **Token pick + picks tracker, now on Aeon's real skill** — the daily pick and its scorecard run on Aeon's own 7-day-dedup, 0–10-signal-scored engine (HIGH/MEDIUM/SKIP conviction, honest skip when nothing clears the bar), replacing the earlier first-candidate-that-clears-a-bar version.
@@ -42,6 +43,13 @@ All notable changes to this project will be documented in this file.
 - Composer "horizon" chips tag not-live features with `· soon`; the working ones (polymarket, yield scanner) lead.
 
 ### Fixed
+- x402 client — only the v2 Base payment scheme was registered, so any seller still issuing legacy v1 challenges failed client-side (`no client registered for x402 version: 1`) before any payment was attempted. This was silently the reason sniper detection had been returning null since it shipped. v1 support added alongside v2.
+- Agent-paid intel routes — rate limiting + CORS added across all 5 (smart-money/holders/flows/flow-intel/screener), one shared 5/min bucket so rotating between endpoints can't multiply the allowance.
+- "Read Docs" button pointed at the old internal `/docs` page, never updated after docs.tryskopos.xyz went live — now points to the real site.
+- Chat no longer falsely tells users MCP "isn't live" — it's a real, published npm package (`skopos-mcp`), actively promoted on the docs site.
+- Robinhood Chain launch feed disclaimer now explicitly warns that launched token names can impersonate real people or brands with zero affiliation (a user mistook a permissionless launch for the real person it referenced), not just flag repeat-launch count.
+- Token pick — a "want a deeper report?" follow-up message was being captured and shown instead of the actual daily pick.
+- Smart quotes — apostrophe-tolerant triggers (`what's trending`, `how's defi`) now normalize curly quotes from mac/iOS autocorrect before matching, instead of silently falling through to the generic reply.
 - Execution safety — re-simulate right before signing (single-leg, **rebalance legs**, and Solana), reject routes that would revert, surface failed-tx state, and guard Solana signing against a switched wallet account.
 - Ghost session — surface `logout()` failures instead of swallowing them.
 - Rebalance — `split 1 ETH across base and arbitrum` now divides the amount across legs and prompts for the source chain instead of a cryptic error.
