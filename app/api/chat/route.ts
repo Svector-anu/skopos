@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
-import { resolveRobinhoodToken, getFlashQuote, RH_CHAIN_STABLECOIN, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
+import { resolveRobinhoodToken, getFlashQuote, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
   parseIntent,
@@ -1491,6 +1491,53 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
                 : "$0.01 from your wallet pulls live smart-money flows · Nansen",
             }
           : { available: false, mode, label, price: agentPaid ? "Reveal" : "$0.01", note: "Not available for this token yet." },
+      });
+    }
+  }
+
+  // ── Guided Robinhood stock buy — "buy AAPL on robinhood", "buy some NVDA
+  // on robinhood chain", "buy $50 of TSLA on robinhood", "how do I buy GOOGL
+  // on robinhood chain". Must run BEFORE guided buy/sell right below —
+  // "buy AAPL on robinhood" would otherwise match guidedBuyMatch's generic
+  // "buy SYMBOL on CHAIN" pattern and get the generic swap-quote prompt
+  // ("swap 0.5 ETH from robinhood to AAPL"), which regexParse can't actually
+  // parse correctly (its "to WORD" slot only recovers known crypto symbols
+  // via KNOWN_DEST_TOKENS, not stock tickers — "AAPL" would get read as a
+  // destination CHAIN, not a token). Scoped to symbols actually in
+  // RH_STOCK_TOKENS so everything else (CASHCAT, WBTC, ...) falls through
+  // unchanged to guided buy/sell and the regular swap paths below.
+  const STOCK_BUY_RE = /\bbuy\s+(?:some\s+)?(?:\$(\d[\d,]*(?:\.\d+)?)\s+(?:of\s+)?)?([a-z]{1,6})\s+on\s+robinhood(?:\s+chain)?\b/i;
+  const stockBuyMatch = STOCK_BUY_RE.exec(trimmed);
+  if (stockBuyMatch) {
+    const [, rawSpend, rawSymbol] = stockBuyMatch;
+    const stockSymbol = rawSymbol.toUpperCase();
+    if (RH_STOCK_TOKENS[stockSymbol]) {
+      if (!rawSpend) {
+        return json({
+          type: "text",
+          text: `How much would you like to spend (in USD) on ${stockSymbol}? e.g. "buy $50 of ${stockSymbol} on robinhood"`,
+        });
+      }
+      const spend = stripCommas(rawSpend);
+      if (textMode) {
+        return json({
+          type: "quote", mode: "handoff",
+          intent: {
+            from: { chain: "robinhood", token: RH_CHAIN_STABLECOIN, amount: spend },
+            to:   { chain: "robinhood", token: stockSymbol },
+          },
+        });
+      }
+      const stockIntent: ParsedIntent = {
+        originChain: "robinhood", destinationChain: "robinhood",
+        token: RH_CHAIN_STABLECOIN, amount: spend, destinationToken: stockSymbol,
+      };
+      const result = await resolveFlashLeg(stockIntent, senderAddress);
+      if (!result.ok) return json({ type: "error", text: result.text });
+      return json({
+        type: "quote", mode: "preview", quotedAt: Date.now(),
+        intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
+        raw: null,
       });
     }
   }

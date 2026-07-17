@@ -35,27 +35,95 @@ const RH_ADDRESS_ALIASES: Record<string, string> = {
   WETH: NATIVE_ETH_SENTINEL,
 };
 
+// Canonical Robinhood Chain stock/ETF token addresses — source of truth is
+// Robinhood's own registry at https://docs.robinhood.com/chain/contracts,
+// NOT DexScreener search. This distinction matters: DexScreener indexes
+// every same-symbol token on the chain, official or not, and confirmed live
+// (2026-07-17) there is heavy impersonation activity around every one of
+// these tickers (copycat "AAPL"/"TSLA"/etc. tokens, some with tens of
+// thousands of dollars of their own liquidity). The registry page itself
+// warns of exactly this: "a token with a matching name/ticker but a
+// different contract address is not a Robinhood Stock Token." All 24
+// addresses below were cross-checked against the page directly, not
+// transcribed from a prior DexScreener resolution.
+//
+// Checked first in resolveRobinhoodToken() (below), before DexScreener —
+// see that function's comment for why the ordering matters.
+//
+// Per Robinhood's docs, these tokens implement ERC-8056 (uiMultiplier()) —
+// one token equals one underlying share at launch, with the multiplier
+// adjusting on corporate actions (splits, dividends). Unverified
+// independently: the contracts page itself has no mention of ERC-8056 or
+// uiMultiplier, and no linked page explains it either. Only the address is
+// needed for a Flash quote, so no multiplier handling in this map yet either
+// way — flagging so a future pass knows this claim came from outside these
+// docs, not confirmed within them.
+export const RH_STOCK_TOKENS: Record<string, string> = {
+  // Stock tokens (19)
+  AAPL: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+  AMD:  "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
+  AMZN: "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
+  BABA: "0xad25Ac6C84D497db898fa1E8387bf6Af3532a1c4",
+  BE:   "0x822CC93fFD030293E9842c30BBD678F530701867",
+  COIN: "0x6330D8C3178a418788dF01a47479c0ce7CCF450b",
+  CRCL: "0xdF0992E440dD0be65BD8439b609d6D4366bf1CB5",
+  CRWV: "0x5f10A1C971B69e47e059e1dC91901B59b3fB49C3",
+  GOOGL:"0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3",
+  INTC: "0xc72b96e0E48ecd4DC75E1e45396e26300BC39681",
+  META: "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
+  MSFT: "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
+  MU:   "0xfF080c8ce2E5feadaCa0Da81314Ae59D232d4afD",
+  NVDA: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+  ORCL: "0xb0992820E760d836549ba69BC7598b4af75dEE03",
+  PLTR: "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
+  SNDK: "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
+  SPCX: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+  TSLA: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+  USAR: "0xd917B029C761D264c6A312BBbcDA868658eF86a6",
+  // Tokenized ETFs (5)
+  QQQ:  "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+  SGOV: "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5",
+  SLV:  "0x411eFb0E7f985935DAec3D4C3ebaEa0d0AD7D89f",
+  SPY:  "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+  CUSO: "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
+};
+
 function cacheKey(symbol: string): string {
   return `rh:token:${symbol.toLowerCase()}`;
 }
 
 // Resolves a Robinhood Chain (chainId 4663) token symbol to its contract
-// address via DexScreener's search endpoint — same fetchWithTimeout +
-// /latest/dex/search call lib/dexscreener.ts's resolveTokenTarget()/
-// scanToken() use, filtered to chainId "robinhood" instead of ranked across
-// all chains. There is no other symbol->address resolver for this chain
-// anywhere in the codebase (lib/robinhoodLaunches.ts only ever sees
-// addresses the upstream launch feed happens to hand it).
+// address. Stock/ETF tickers hit RH_STOCK_TOKENS first — the verified map
+// sourced from Robinhood's own registry
+// (https://docs.robinhood.com/chain/contracts) — and return immediately,
+// never touching DexScreener. Everything else (memecoins, anything not in
+// that map) falls through to DexScreener's search endpoint, same
+// fetchWithTimeout + /latest/dex/search call lib/dexscreener.ts's
+// resolveTokenTarget()/scanToken() use, filtered to chainId "robinhood"
+// instead of ranked across all chains. There is no other symbol->address
+// resolver for this chain anywhere in the codebase (lib/robinhoodLaunches.ts
+// only ever sees addresses the upstream launch feed happens to hand it).
 //
-// Cached in Upstash (rh:token:{symbol}, 24h TTL) — popular symbols get
-// re-queried on every swap attempt and DexScreener's search doesn't need
-// hitting more than once a day per symbol. Fails open on cache errors (falls
-// through to a live lookup): this is a rate-limiting cache, not a spend
-// guard, unlike lib/usage.ts's fail-closed intel budgets — DexScreener's
-// search endpoint is free. Only successful resolutions are cached; a miss is
-// never cached, since a very-fresh launch can come back unindexed for a few
-// minutes and shouldn't be locked out of resolution for a day once indexed
-// (same reasoning as lib/robinhoodLaunches.ts's header comment).
+// The DexScreener path is deliberately the fallback, not the primary lookup,
+// for anything RH_STOCK_TOKENS already covers: live-confirmed (2026-07-17)
+// there is heavy ticker-impersonation activity on this chain (copycat
+// "AAPL"/"TSLA"/etc. tokens, some with real liquidity of their own), and
+// DexScreener's search has no way to distinguish the real Robinhood-issued
+// token from a same-symbol impersonator — it just returns the first result
+// above the liquidity floor. RH_STOCK_TOKENS sidesteps that entirely for the
+// 24 symbols it covers.
+//
+// DexScreener path cached in Upstash (rh:token:{symbol}, 24h TTL) — popular
+// symbols get re-queried on every swap attempt and DexScreener's search
+// doesn't need hitting more than once a day per symbol. Fails open on cache
+// errors (falls through to a live lookup): this is a rate-limiting cache,
+// not a spend guard, unlike lib/usage.ts's fail-closed intel budgets —
+// DexScreener's search endpoint is free. Only successful resolutions are
+// cached; a miss is never cached, since a very-fresh launch can come back
+// unindexed for a few minutes and shouldn't be locked out of resolution for
+// a day once indexed (same reasoning as lib/robinhoodLaunches.ts's header
+// comment). RH_STOCK_TOKENS hits skip the cache entirely — it's already an
+// in-memory map, a Redis round-trip would only add latency.
 export async function resolveRobinhoodToken(symbolOrAddress: string): Promise<string | null> {
   const q = symbolOrAddress.trim();
   if (/^0x[0-9a-fA-F]{40}$/.test(q)) return q;
@@ -63,6 +131,7 @@ export async function resolveRobinhoodToken(symbolOrAddress: string): Promise<st
 
   const upper = q.toUpperCase();
   if (RH_ADDRESS_ALIASES[upper]) return RH_ADDRESS_ALIASES[upper];
+  if (RH_STOCK_TOKENS[upper]) return RH_STOCK_TOKENS[upper];
 
   const symbol = RH_SYMBOL_ALIASES[upper] ?? q;
   const key = cacheKey(symbol);
