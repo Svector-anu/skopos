@@ -52,6 +52,14 @@ type FlashLegInfo = {
   // local state, so the success view survives a reload instead of resetting
   // to a fresh, already-stale quote card.
   completedOrderId?: string;
+  // Present only for orderType limit/stop-loss/take-profit (the USD level)
+  // and twap (the spend schedule) — route.ts's resolveFlashOrderLeg(). Purely
+  // for card display; FlashExecuteButton's sign/submit ladder is unchanged
+  // and identical for market and advanced orders alike.
+  triggerPrice?: string;
+  triggerType?: "upper" | "lower";
+  durationSeconds?: number;
+  twapBucketCount?: number;
 };
 
 // Relay leg — populated instead of approval/calldata when the intent moves
@@ -335,6 +343,13 @@ const FEATURE_SLIDES: FeatureCard[][] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function shortAddr(addr: string) { return `${addr.slice(0, 6)}…${addr.slice(-4)}`; }
+
+function formatDuration(seconds: number): string {
+  if (seconds >= 604800 && seconds % 604800 === 0) { const n = seconds / 604800; return `${n} week${n === 1 ? "" : "s"}`; }
+  if (seconds >= 86400 && seconds % 86400 === 0)   { const n = seconds / 86400;  return `${n} day${n === 1 ? "" : "s"}`; }
+  if (seconds >= 3600 && seconds % 3600 === 0)     { const n = seconds / 3600;   return `${n} hour${n === 1 ? "" : "s"}`; }
+  return `${Math.round(seconds / 60)} min`;
+}
 
 // Web Push wants the VAPID key as a Uint8Array, browsers hand it out as base64url.
 function urlBase64ToUint8Array(base64Url: string): Uint8Array {
@@ -2049,6 +2064,24 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     return isFinite(out) ? (out * (1 - slippage)).toFixed(6) : route.outputAmount;
   })();
 
+  // Advanced Flash order types (route.ts's resolveFlashOrderLeg) reuse the
+  // exact same card/sign/submit flow as a plain Flash market order — the
+  // only difference is this header label and the trigger/schedule banner
+  // below, both purely informational so the user sees exactly what they're
+  // about to sign before they sign it.
+  const orderTypeLabel: string | null =
+    result.flash?.orderType === "limit" ? "LIMIT ORDER PREVIEW" :
+    result.flash?.orderType === "stop-loss" ? "STOP LOSS PREVIEW" :
+    result.flash?.orderType === "take-profit" ? "TAKE PROFIT PREVIEW" :
+    result.flash?.orderType === "twap" ? "TWAP ORDER PREVIEW" : null;
+
+  const triggerToken = result.flash?.side === "buy" ? intent.to.token : intent.from.token;
+  const triggerBanner: string | null = result.flash?.triggerPrice
+    ? `Will execute when ${triggerToken} ${result.flash.triggerType === "lower" ? "drops to" : "hits"} $${Number(result.flash.triggerPrice).toLocaleString()}`
+    : result.flash?.durationSeconds
+      ? `Spreads ${intent.from.amount} ${intent.from.token} across ${formatDuration(result.flash.durationSeconds)}${result.flash.twapBucketCount ? ` in ${result.flash.twapBucketCount} buys` : ""}`
+      : null;
+
   const recipient = intent.to.receiver ?? connectedAddress;
   const summaryRows: { label: string; value: string }[] = [
     { label: "Via",           value: route.tool },
@@ -2068,7 +2101,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       {/* Header */}
       <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
-          {executionMode ? "TRANSACTION" : isSwap ? "SWAP PREVIEW" : "BRIDGE PREVIEW"}
+          {executionMode ? "TRANSACTION" : orderTypeLabel ?? (isSwap ? "SWAP PREVIEW" : "BRIDGE PREVIEW")}
         </span>
         {/* Flash/Relay flows realistically take longer than QUOTE_TTL to click
             through with real wallet confirmations (wrap, approve, sign are
@@ -2087,6 +2120,12 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
           </span>
         )}
       </div>
+
+      {!executionMode && triggerBanner && (
+        <div style={{ margin: "10px 14px 0", padding: "8px 12px", background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 8, textAlign: "center" }}>
+          <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(245,184,0,0.85)" }}>{triggerBanner}</span>
+        </div>
+      )}
 
       {/* Token pair hero */}
       {!executionMode && (
@@ -2493,6 +2532,14 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
           funderAddress: flash.funderAddress, quoteId: flash.quoteId,
           flashIntegratorFeeBps: flash.flashIntegratorFeeBps,
           userSignature: signature, evmOrderTypedData: flash.orderTypedData,
+          // Flash's /order endpoint validates limit/trigger/twap fields
+          // independently of /quote — a limit order submitted without
+          // limitNotionalPrice 400s even though the quote already required
+          // one. triggers/twapBucketCount must echo the exact quote-time
+          // values, not be recomputed here.
+          ...(flash.orderType === "limit" && flash.triggerPrice ? { limitNotionalPrice: flash.triggerPrice } : {}),
+          ...(flash.triggerType && flash.triggerPrice ? { triggers: [{ notionalPrice: flash.triggerPrice, triggerType: flash.triggerType }] } : {}),
+          ...(flash.twapBucketCount ? { twapBucketCount: flash.twapBucketCount } : {}),
         }),
       });
       const data = await res.json();

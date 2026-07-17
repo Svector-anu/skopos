@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
-import { resolveRobinhoodToken, getFlashQuote, RH_CHAIN_STABLECOIN } from "@/lib/flash";
+import { resolveRobinhoodToken, getFlashQuote, RH_CHAIN_STABLECOIN, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
   parseIntent,
@@ -606,6 +606,251 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
       approveTx: quote.evm.approveTx,
       permitTypedData: quote.evm.permitTypedData,
       orderTypedData: quote.evm.orderTypedData,
+    },
+  };
+}
+
+// ── Flash advanced order types (limit / stop-loss / take-profit / TWAP) ─────
+// Same /v1/quote -> /v1/order flow as resolveFlashLeg above — only the
+// FlashQuoteRequest fields differ. Confirmed directly against Flash's own
+// OpenAPI spec (flash.definitive.fi/v1/openapi.json), not assumed: `qty` is
+// "the asset being spent" for EVERY order type — contraAsset (USDG) units on
+// a buy, targetAsset units on a sell. That's why limit-buy/TWAP capture a `$`
+// spend amount below while limit-sell/stop-loss/take-profit capture a plain
+// token quantity — getting this backwards would silently mis-size a real
+// order. limitNotionalPrice is deliberately never set on stop-loss/
+// take-profit — the spec says doing so "promotes" the order to a limit
+// variant, which isn't what any of the supported phrasings ask for.
+export type FlashOrderIntent = {
+  side: FlashOrderSide;
+  orderType: Extract<FlashOrderType, "limit" | "stop-loss" | "take-profit" | "twap">;
+  token: string;
+  qty: string;
+  priceLevel?: string;             // limit price, or stop-loss/take-profit trigger price
+  triggerType?: "upper" | "lower"; // stop-loss = "lower", take-profit = "upper" — unset for limit
+  durationSeconds?: number;        // twap only
+  twapBucketCount?: number;        // twap only, optional — omitted lets Flash auto-derive
+};
+
+function stripCommas(raw: string): string {
+  return raw.replace(/,/g, "");
+}
+
+// "a"/"an" reads as 1 — "over a week" is the natural phrasing, not "over 1 week".
+function durationToSeconds(qty: string, unit: string): number {
+  const n = qty === "a" || qty === "an" ? 1 : parseFloat(qty);
+  const mult = /^hour/i.test(unit) ? 3600 : /^week/i.test(unit) ? 604800 : 86400;
+  return Math.round(n * mult);
+}
+
+// "when (the) price hits" / "when it hits" is reserved for BUY-side limit
+// orders only (matches the spec's own "buy X when price hits Y" example) —
+// on the sell side that exact phrase is take-profit's claim ("sell when ETH
+// hits $5000"), so LIMIT_SELL_RE only recognizes "at $price" to avoid the two
+// silently colliding (confirmed live: without this split, "sell 10000
+// CASHCAT when it hits $0.005" matched LIMIT_SELL_RE first and built a
+// "limit" order instead of "take-profit" with the wrong Flash orderType).
+const LIMIT_BUY_RE  = /\b(?:limit\s+)?buy\s+(?:\$(\d[\d,]*(?:\.\d+)?)\s+(?:of\s+)?)?([a-z][a-z0-9]*)\s+(?:at|when\s+(?:the\s+)?price\s+hits|when\s+it\s+hits)\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const LIMIT_SELL_RE = /\b(?:limit\s+)?sell\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+// Two natural orderings supported for stop-loss/take-profit: token right
+// after "sell" with a pronoun in the condition clause ("sell 2 ETH if it
+// drops below $2000"), and token inside the condition clause itself ("sell
+// if ETH drops below $2000") — the literal spec examples used the latter,
+// but the former reads at least as naturally and showed up as a real gap in
+// live testing (case A didn't exist yet, so that phrasing fell through to
+// the informational LLM instead of being recognized as a stop loss).
+const STOP_LOSS_RE_A = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+if\s+it\s+drops?\s+below\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const STOP_LOSS_RE_B = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?if\s+([a-z][a-z0-9]*)\s+drops?\s+below\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const STOP_LOSS_RE_C = /\b(?:set\s+)?stop[\s-]?loss(?:\s+(?:on|for)\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*))?\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const TAKE_PROFIT_RE_A = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+when\s+it\s+hits\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const TAKE_PROFIT_RE_B = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?when\s+([a-z][a-z0-9]*)\s+hits\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const TAKE_PROFIT_RE_C = /\b(?:set\s+)?take[\s-]?profit(?:\s+(?:on|for)\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*))?\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const TWAP_RE_A = /\bbuy\s+\$(\d[\d,]*(?:\.\d+)?)\s+of\s+([a-z][a-z0-9]*)\s+over\s+(a|an|\d+(?:\.\d+)?)\s*(hour|hours|day|days|week|weeks)\b(?:\s+(?:in|into)\s+(\d+)\s+(?:buckets|chunks|parts))?/i;
+const TWAP_RE_B = /\bdca\s+into\s+([a-z][a-z0-9]*)\s+over\s+(a|an|\d+(?:\.\d+)?)\s*(hour|hours|day|days|week|weeks)\b/i;
+
+const LOOSE_LIMIT_RE       = /\blimit\s+(?:buy|sell|order)\b|\bwhen\s+(?:the\s+)?price\s+hits\b/i;
+const LOOSE_STOP_LOSS_RE   = /\bstop[\s-]?loss\b/i;
+const LOOSE_TAKE_PROFIT_RE = /\btake[\s-]?profit\b/i;
+const LOOSE_TWAP_RE        = /\bdca\b|\btwap\b/i;
+
+export type FlashOrderParse = { order: FlashOrderIntent } | { ask: string } | null;
+
+// Ordered attempts, same "strict pattern, then loose keyword fallback" shape
+// as regexParse()'s pCross/p1/p2/... chain in lib/parseIntent.ts. A loose
+// match with a missing required field asks conversationally instead of
+// falling through to the informational LLM — same discipline as the guided
+// buy/sell and guided Robinhood bridge blocks above this function's call site.
+export function parseFlashOrderIntent(trimmed: string): FlashOrderParse {
+  let m: RegExpExecArray | null;
+
+  if ((m = LIMIT_BUY_RE.exec(trimmed))) {
+    const [, spend, token, price] = m;
+    const sym = token.toUpperCase();
+    if (!spend) return { ask: `How much would you like to spend (in USD) on ${sym} once it hits $${stripCommas(price)}? e.g. "buy $2000 of ${sym} at $${stripCommas(price)}"` };
+    return { order: { side: "buy", orderType: "limit", token, qty: stripCommas(spend), priceLevel: stripCommas(price) } };
+  }
+  if ((m = LIMIT_SELL_RE.exec(trimmed))) {
+    const [, qty, token, price] = m;
+    const sym = token.toUpperCase();
+    if (!qty) return { ask: `How much ${sym} would you like this limit sell to cover, at $${stripCommas(price)}? e.g. "sell 2 ${sym} at $${stripCommas(price)}"` };
+    return { order: { side: "sell", orderType: "limit", token, qty, priceLevel: stripCommas(price) } };
+  }
+  if (LOOSE_LIMIT_RE.test(trimmed)) {
+    return { ask: `Set a limit order — tell me the token, side, amount, and price. e.g. "buy $2000 of ETH at $1800" or "sell 2 ETH at $2500".` };
+  }
+
+  if ((m = STOP_LOSS_RE_A.exec(trimmed)) || (m = STOP_LOSS_RE_B.exec(trimmed)) || (m = STOP_LOSS_RE_C.exec(trimmed))) {
+    const [, qty, token, price] = m;
+    if (!token) return { ask: `Which token is this stop loss for? e.g. "sell if ETH drops below $2000"` };
+    const sym = token.toUpperCase();
+    if (!qty) return { ask: `How much ${sym} would you like this stop loss to cover? e.g. "sell 2 ${sym} if it drops below $${stripCommas(price)}"` };
+    return { order: { side: "sell", orderType: "stop-loss", token, qty, priceLevel: stripCommas(price), triggerType: "lower" } };
+  }
+  if (LOOSE_STOP_LOSS_RE.test(trimmed)) {
+    return { ask: `Set a stop loss — tell me the token, amount, and trigger price. e.g. "sell 2 ETH if it drops below $2000"` };
+  }
+
+  if ((m = TAKE_PROFIT_RE_A.exec(trimmed)) || (m = TAKE_PROFIT_RE_B.exec(trimmed)) || (m = TAKE_PROFIT_RE_C.exec(trimmed))) {
+    const [, qty, token, price] = m;
+    if (!token) return { ask: `Which token is this take profit for? e.g. "sell when ETH hits $5000"` };
+    const sym = token.toUpperCase();
+    if (!qty) return { ask: `How much ${sym} would you like this take profit to cover? e.g. "sell 2 ${sym} when it hits $${stripCommas(price)}"` };
+    return { order: { side: "sell", orderType: "take-profit", token, qty, priceLevel: stripCommas(price), triggerType: "upper" } };
+  }
+  if (LOOSE_TAKE_PROFIT_RE.test(trimmed)) {
+    return { ask: `Set a take profit — tell me the token, amount, and trigger price. e.g. "sell 2 ETH when it hits $5000"` };
+  }
+
+  if ((m = TWAP_RE_A.exec(trimmed))) {
+    const [, spend, token, durQty, durUnit, buckets] = m;
+    const sym = token.toUpperCase();
+    const durationSeconds = durationToSeconds(durQty, durUnit);
+    if (durationSeconds < 300) return { ask: `TWAP orders need to run for at least 5 minutes — try a longer window, e.g. "buy $${stripCommas(spend)} of ${sym} over 1 hour".` };
+    return {
+      order: {
+        side: "buy", orderType: "twap", token, qty: stripCommas(spend), durationSeconds,
+        ...(buckets ? { twapBucketCount: parseInt(buckets, 10) } : {}),
+      },
+    };
+  }
+  if ((m = TWAP_RE_B.exec(trimmed))) {
+    const [, token, durQty, durUnit] = m;
+    const sym = token.toUpperCase();
+    const durationSeconds = durationToSeconds(durQty, durUnit);
+    if (durationSeconds < 300) return { ask: `TWAP orders need to run for at least 5 minutes — try a longer window.` };
+    return { ask: `How much would you like to spend in total on ${sym}? e.g. "buy $500 of ${sym} over ${durQty} ${durUnit}"` };
+  }
+  if (LOOSE_TWAP_RE.test(trimmed)) {
+    return { ask: `Set up a TWAP — tell me the total to spend, the token, and the time window. e.g. "buy $500 of ETH over 7 days"` };
+  }
+
+  return null;
+}
+
+export type FlashOrderLegOk = {
+  ok: true;
+  intent: LegOk["intent"];
+  route: LegOk["route"];
+  flash: Omit<FlashLegOk["flash"], "side" | "orderType" | "qty"> & {
+    side: FlashOrderSide;
+    orderType: FlashOrderIntent["orderType"];
+    qty: string;
+    triggerPrice?: string;
+    triggerType?: "upper" | "lower";
+    durationSeconds?: number;
+    twapBucketCount?: number;
+  };
+};
+
+export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddress?: string): Promise<FlashOrderLegOk | LegErr> {
+  const parsedQty = parseFloat(order.qty);
+  if (!isFinite(parsedQty) || parsedQty <= 0) {
+    return { ok: false, text: `Invalid amount "${order.qty}". Amount must be greater than 0.` };
+  }
+  if (!senderAddress || !senderAddress.startsWith("0x")) {
+    return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
+  }
+
+  // No supported phrasing names a contra asset — same "no contra asset
+  // specified" default RH_CHAIN_STABLECOIN's own header comment (lib/flash.ts)
+  // anticipated for exactly this caller.
+  const [targetAsset, contraAsset] = await Promise.all([
+    resolveRobinhoodToken(order.token),
+    resolveRobinhoodToken(RH_CHAIN_STABLECOIN),
+  ]);
+  if (!targetAsset) return { ok: false, text: `Could not find ${order.token} on Robinhood Chain.` };
+  if (!contraAsset) return { ok: false, text: `Could not resolve ${RH_CHAIN_STABLECOIN} on Robinhood Chain.` };
+
+  const triggers: FlashPriceTrigger[] | undefined = order.triggerType
+    ? [{ notionalPrice: order.priceLevel!, triggerType: order.triggerType }]
+    : undefined;
+
+  let quote;
+  try {
+    quote = await getFlashQuote({
+      targetChain: "robinhood",
+      contraChain: "robinhood",
+      targetAsset,
+      contraAsset,
+      side: order.side,
+      qty: order.qty,
+      orderType: order.orderType,
+      funderAddress: senderAddress,
+      flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
+      ...(order.orderType === "limit" && order.priceLevel ? { limitNotionalPrice: order.priceLevel } : {}),
+      ...(triggers ? { triggers } : {}),
+      ...(order.durationSeconds ? { durationSeconds: order.durationSeconds } : {}),
+      ...(order.twapBucketCount ? { twapBucketCount: order.twapBucketCount } : {}),
+    });
+  } catch (err) {
+    console.error(`[resolveFlashOrderLeg] getFlashQuote failed: ${err instanceof Error ? err.message : err}`);
+    return {
+      ok: false,
+      text: `Could not get a Flash quote for this ${order.orderType} order — try a different amount or price, or the pricing feed may be temporarily unavailable for this token.`,
+    };
+  }
+
+  if (!quote.evm) {
+    return { ok: false, text: "Flash returned a quote with no signable payload — try again." };
+  }
+
+  const fromToken = order.side === "buy" ? RH_CHAIN_STABLECOIN : order.token.toUpperCase();
+  const toToken   = order.side === "buy" ? order.token.toUpperCase() : RH_CHAIN_STABLECOIN;
+
+  return {
+    ok: true,
+    intent: {
+      from: { chain: "Robinhood Chain", chainId: ROBINHOOD_CHAIN_ID, token: fromToken, amount: order.qty },
+      to:   { chain: "Robinhood Chain", chainId: ROBINHOOD_CHAIN_ID, token: toToken, receiver: senderAddress },
+    },
+    route: {
+      tool: "Flash",
+      outputAmount: Number(quote.to.amount).toFixed(6),
+      feesUSD: quote.fees.estimatedFeeNotional,
+      gasUSD: null,
+      inputUSD: Number(quote.from.notional) || null,
+      outputUSD: Number(quote.to.notional) || null,
+      etaSec: null,
+    },
+    flash: {
+      quoteId: quote.quoteId,
+      targetChain: "robinhood",
+      contraChain: "robinhood",
+      targetAsset,
+      contraAsset,
+      side: order.side,
+      qty: order.qty,
+      orderType: order.orderType,
+      funderAddress: senderAddress,
+      flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
+      wrapTx: quote.wrap?.evmTx ?? null,
+      approveTx: quote.evm.approveTx,
+      permitTypedData: quote.evm.permitTypedData,
+      orderTypedData: quote.evm.orderTypedData,
+      ...(order.priceLevel ? { triggerPrice: order.priceLevel } : {}),
+      ...(order.triggerType ? { triggerType: order.triggerType } : {}),
+      ...(order.durationSeconds ? { durationSeconds: order.durationSeconds } : {}),
+      ...(order.twapBucketCount ? { twapBucketCount: order.twapBucketCount } : {}),
     },
   };
 }
@@ -1306,6 +1551,40 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       type: "text",
       text: `How much would you like to bridge, and which token? Type an amount and both chains — e.g. "bridge 0.1 ETH from base to robinhood" (onto Robinhood Chain) or "bridge 0.1 ETH from robinhood to base" (off it).`,
     });
+  }
+
+  // ── Flash advanced order types — limit / stop-loss / take-profit / TWAP.
+  // Must run before the single-leg intent block (parseIntent()'s regexParse
+  // only recognizes move/bridge/send/transfer/swap/convert verbs, never
+  // buy/sell/dca, so these phrasings would never match it anyway — this is
+  // placed here alongside the other guided blocks for consistency, not out
+  // of strict necessity). Robinhood Chain / Flash is the only execution path
+  // in Skopos that supports non-market order types at all, so none of the
+  // supported phrasings need to say "on robinhood" explicitly.
+  if (textMode) {
+    // Headless clients have no wallet — same handoff shape as the single-leg
+    // intent block below, just without a resolved quote to hand off.
+    const parsed = parseFlashOrderIntent(trimmed);
+    if (parsed && "order" in parsed) {
+      return json({
+        type: "text",
+        text: `Advanced Flash orders (${parsed.order.orderType}) aren't available in headless mode yet — open the Skopos app to place this order.`,
+      });
+    }
+  } else {
+    const orderParse = parseFlashOrderIntent(trimmed);
+    if (orderParse) {
+      if ("ask" in orderParse) {
+        return json({ type: "text", text: orderParse.ask });
+      }
+      const result = await resolveFlashOrderLeg(orderParse.order, senderAddress);
+      if (!result.ok) return json({ type: "error", text: result.text });
+      return json({
+        type: "quote", mode: "preview", quotedAt: Date.now(),
+        intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
+        raw: null,
+      });
+    }
   }
 
   // ── Token deep-dive — "deep dive on $X" / "$X deep dive". Must run before the
@@ -2021,8 +2300,15 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   const NOT_LIVE: Array<[RegExp, string]> = [
     [/\b(dca|dollar[-\s]?cost\s*averag\w*|recurring|every\s+(?:day|week|month|hour|other\s+day)|set\s+up\s+an?\s+agent|automate\s+(?:my|a|the)\s+(?:buy|swap|purchase|dca))\b/i,
       `Recurring buys and DCA agents aren't live yet — that's on the roadmap. For now I can do one-off swaps and bridges, e.g. "swap $20 of USDC to ETH on base".`],
-    [/\b(limit\s+order|stop[-\s]?loss|take[-\s]?profit)\b|\bwhen\s+(?:the\s+)?(?:price|it|eth|btc|sol)\s+(?:drops?|hits?|reaches?|falls?|is)\b.*\$?\d/i,
-      `Limit and conditional orders aren't live yet — Skopos executes at the current market rate. You can swap or bridge now at live prices; price-triggered orders are coming.`],
+    // "limit order"/"stop-loss"/"take-profit" removed from this alternation —
+    // those order types shipped (parseFlashOrderIntent, above) and are always
+    // intercepted earlier with real quotes or a specific follow-up question.
+    // This entry now only catches phrasings that name a condition but no
+    // side, which parseFlashOrderIntent can't act on without guessing buy vs
+    // sell (e.g. "sell when the price hits $5000" — "the price" isn't a
+    // token, so no strict/loose pattern above matches it).
+    [/\bwhen\s+(?:the\s+)?(?:price|it|eth|btc|sol)\s+(?:drops?|hits?|reaches?|falls?|is)\b.*\$?\d/i,
+      `Add "buy" or "sell" and a token and I can place that as a real order — e.g. "sell 2 ETH when it hits $5000" or "sell if ETH drops below $2000". Want a passive notification instead? Try "alert me when eth hits $5000".`],
     [/\b(off[-\s]?ramp|cash\s*out|withdraw\s+to\s+(?:my\s+)?(?:bank|card|debit)|to\s+my\s+(?:debit|bank)\s+(?:card|account)?|fiat\s+out)\b/i,
       `Cashing out to a bank or card isn't live yet. Skopos handles on-chain swaps and bridges; fiat off-ramp is on the roadmap.`],
     [/\b(whale\s+(?:signals?|tracking|watch\w*|alerts?)|smart\s+money|top\s+wallets|what\s+(?:others|people|whales)\s+are\s+(?:bridging|buying|trading|doing))\b/i,

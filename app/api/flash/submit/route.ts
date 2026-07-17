@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { submitFlashOrder, type FlashChain, type FlashOrderSide, type FlashOrderType } from "@/lib/flash";
+import { submitFlashOrder, type FlashChain, type FlashOrderSide, type FlashOrderType, type FlashPriceTrigger } from "@/lib/flash";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,17 @@ interface SubmitBody {
   flashIntegratorFeeBps?: string;
   userSignature?: string;
   evmOrderTypedData?: string;
+  // Advanced order types (route.ts's resolveFlashOrderLeg) — Flash's /order
+  // endpoint validates these independently of /quote and rejects a limit
+  // order submitted without limitNotionalPrice even though the quote step
+  // already required and returned one (confirmed live: a 400
+  // VALIDATION_ERROR "limit orders require limitNotionalPrice" came back
+  // from a real submit attempt before this was wired through). triggers/
+  // twapBucketCount must echo the exact values used at quote time per
+  // Flash's own spec, not be recomputed here.
+  limitNotionalPrice?: string;
+  triggers?: FlashPriceTrigger[];
+  twapBucketCount?: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -55,6 +66,9 @@ export async function POST(req: NextRequest) {
       quoteId: body.quoteId,
       flashIntegratorFeeBps: body.flashIntegratorFeeBps,
       evmOrderTypedData: body.evmOrderTypedData,
+      limitNotionalPrice: body.limitNotionalPrice,
+      triggers: body.triggers,
+      twapBucketCount: body.twapBucketCount,
     });
     return Response.json(result);
   } catch (err) {
