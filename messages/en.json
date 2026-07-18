@@ -400,6 +400,13 @@
     },
     "suggestions": {
       "tryOneOfThese": "Try one of these"
+    },
+    "whatsNew": {
+      "title": "What's new",
+      "dismiss": "Dismiss",
+      "aeonReads": "Ask \"what's trending\" or \"top defi protocols\" — instant market reads, powered by Aeon",
+      "txFlags": "Paste any tx hash — now flags unlimited approvals and possible honeypots, across 10 chains",
+      "cleanerReplies": "Cleaner replies — structured, no more walls of text"
     }
   }
 }

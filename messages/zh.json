@@ -400,6 +400,13 @@
     },
     "suggestions": {
       "tryOneOfThese": "试试这些"
+    },
+    "whatsNew": {
+      "title": "更新内容",
+      "dismiss": "关闭",
+      "aeonReads": "问「什么是热门趋势」或「defi 协议排行」— 由 Aeon 提供的即时市场解读",
+      "txFlags": "粘贴任意交易哈希 — 现已支持跨 10 条链标记无限额授权和潜在蜜罐",
+      "cleanerReplies": "回复更简洁 — 结构化呈现，不再是大段文字墙"
     }
   }
 }

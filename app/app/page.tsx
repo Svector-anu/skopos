@@ -1749,9 +1749,9 @@ export default function AppPage() {
     <WhatsNewToast
       storageKey="skopos-whatsnew-v4"
       changes={[
-        "Ask \"what's trending\" or \"top defi protocols\" — instant market reads, powered by Aeon",
-        "Paste any tx hash — now flags unlimited approvals and possible honeypots, across 10 chains",
-        "Cleaner replies — structured, no more walls of text",
+        t("whatsNew.aeonReads"),
+        t("whatsNew.txFlags"),
+        t("whatsNew.cleanerReplies"),
       ]}
     />
     </>

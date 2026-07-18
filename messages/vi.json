@@ -400,6 +400,13 @@
     },
     "suggestions": {
       "tryOneOfThese": "Thử một trong số này"
+    },
+    "whatsNew": {
+      "title": "Có gì mới",
+      "dismiss": "Đóng",
+      "aeonReads": "Hỏi \"xu hướng hiện tại\" hoặc \"top giao thức defi\" — đọc thị trường tức thì, cung cấp bởi Aeon",
+      "txFlags": "Dán bất kỳ tx hash nào — giờ đã gắn cờ approval không giới hạn và honeypot tiềm ẩn, trên 10 chain",
+      "cleanerReplies": "Câu trả lời gọn gàng hơn — có cấu trúc, không còn tường chữ dài"
     }
   }
 }
