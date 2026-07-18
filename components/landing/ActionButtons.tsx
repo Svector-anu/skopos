@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 interface ButtonProps {
   href: string;
@@ -65,11 +66,12 @@ function OutlineButton({ href, label, icon, external }: ButtonProps) {
 }
 
 export function ActionButtons() {
+  const t = useTranslations("landing.actions");
   return (
     <div className="flex items-center gap-3 flex-wrap justify-center">
       <OutlineButton
         href="/app"
-        label="Open App"
+        label={t("openApp")}
         icon={
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
@@ -78,7 +80,7 @@ export function ActionButtons() {
       />
       <OutlineButton
         href="https://docs.tryskopos.xyz"
-        label="Read Docs"
+        label={t("readDocs")}
         external
         icon={
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">

@@ -1,13 +1,18 @@
 "use client";
 
+import { useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { useTypewriter } from "@/hooks/useTypewriter";
+import type { Command } from "@/lib/commands";
 
 const MONO: React.CSSProperties = {
   fontFamily: "var(--font-jetbrains-mono), monospace",
 };
 
 export function TerminalCard() {
-  const { userText, aiText, phase } = useTypewriter();
+  const t = useTranslations("landing");
+  const commands = useMemo(() => t.raw("demo.commands") as Command[], [t]);
+  const { userText, aiText, phase } = useTypewriter(commands);
 
   const showUser     = userText.length > 0;
   const showThinking = phase === "ai-thinking";
@@ -30,7 +35,7 @@ export function TerminalCard() {
         <span className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
         <span className="w-3 h-3 rounded-full bg-[#28C840]" />
         <span style={{ ...MONO, marginLeft: 8, fontSize: "0.65rem", color: "rgba(255,255,255,0.2)", letterSpacing: "0.08em" }}>
-          skopos — chat
+          {t("terminal.windowTitle")}
         </span>
       </div>
 

@@ -1,0 +1,412 @@
+{
+  "landing": {
+    "actions": {
+      "openApp": "Open App",
+      "readDocs": "Read Docs"
+    },
+    "nav": {
+      "changelog": "changelog"
+    },
+    "oracle": "Agents can query Skopos on-chain",
+    "terminal": {
+      "windowTitle": "skopos — chat"
+    },
+    "demo": {
+      "commands": [
+        {
+          "cmd": "what's launching on robinhood chain",
+          "response": "Live Robinhood Chain launch feed pulled\nFresh tokens, creator attribution, repeat-launch risk flagged"
+        },
+        {
+          "cmd": "move 2 eth from ethereum to base",
+          "response": "Routed — ETH to Base via best path\nOptimized for cost and speed · ready when you are"
+        },
+        {
+          "cmd": "swap 500 usdc to eth on base",
+          "response": "Best execution path found on Base\nSwapping USDC to ETH with minimal slippage"
+        },
+        {
+          "cmd": "what's sol looking like right now",
+          "response": "Live SOL market data pulled\nAggregated across major venues for accuracy"
+        },
+        {
+          "cmd": "any good yield on usdc rn",
+          "response": "Scanning stable yield across chains\nFound pools with strong liquidity and consistent performance"
+        },
+        {
+          "cmd": "what's my wallet looking like",
+          "response": "Synced your positions across chains\nTokens, balances, and recent activity all mapped"
+        },
+        {
+          "cmd": "bridge 1 sol to ethereum",
+          "response": "Cross-chain route ready — Solana to Ethereum\nHandling liquidity and compatibility behind the scenes"
+        }
+      ]
+    }
+  },
+  "app": {
+    "sidebar": {
+      "newChat": "New chat",
+      "recents": "RECENTS",
+      "history": "HISTORY",
+      "portfolio": "PORTFOLIO",
+      "myBalances": "My balances",
+      "bridge": "BRIDGE",
+      "swap": "SWAP"
+    },
+    "bridgeActions": {
+      "ethToBase": "ETH → Base",
+      "ethToArbitrum": "ETH → Arbitrum",
+      "usdcToPolygon": "USDC → Polygon",
+      "ethToOptimism": "ETH → Optimism"
+    },
+    "swapActions": {
+      "ethToUsdcBase": "ETH → USDC · Base",
+      "ethToUsdcArb": "ETH → USDC · Arb",
+      "usdcToEthBase": "USDC → ETH · Base"
+    },
+    "wallet": {
+      "eyebrow": "WALLET",
+      "noAssets": "no assets on this chain",
+      "fundWallet": "Fund Wallet",
+      "connecting": "Connecting wallet…",
+      "connect": "Connect Wallet",
+      "connectLower": "Connect wallet",
+      "clickAgainDisconnect": "click again to disconnect",
+      "addressDisconnect": "{address} — disconnect",
+      "clickAgainConfirm": "click again to confirm disconnect",
+      "addressClickDisconnect": "{address} — click to disconnect",
+      "disconnectConfirm": "disconnect?",
+      "connectDifferent": "Connect a different wallet",
+      "connectAnother": "connect another wallet"
+    },
+    "theme": "Theme",
+    "errorBoundary": {
+      "quote": "Quote failed to render.",
+      "rebalance": "Rebalance failed to render.",
+      "tx": "Transaction details failed to render.",
+      "pay": "Payment failed to render.",
+      "payments": "Payments failed to render.",
+      "address": "Address details failed to render.",
+      "tokenRisk": "Risk scan failed to render.",
+      "prebuy": "Pre-buy research failed to render.",
+      "yieldPools": "Yield data failed to render.",
+      "polymarket": "Polymarket data failed to render.",
+      "intel": "Intel card failed to render.",
+      "aeon": "Aeon card failed to render.",
+      "x402check": "Endpoint check failed to render.",
+      "robinhoodLaunches": "Robinhood launches failed to render.",
+      "paywall": "Paywall card failed to render.",
+      "price": "Price chart failed to render."
+    },
+    "noFundsDetected": "No funds detected on this chain",
+    "fundWalletArrow": "Fund Wallet →",
+    "banners": {
+      "offline": "no internet connection — reconnect to continue",
+      "updateAvailable": "new version available",
+      "refresh": "refresh"
+    },
+    "mobileSubtitle": "cross-chain copilot",
+    "alerts": {
+      "eyebrow": "ALERTS",
+      "enabled": "Alerts enabled — ask for your alert again and it'll register.",
+      "enableFailed": "Couldn't enable alerts — check your browser's notification permission and try again.",
+      "enabling": "Enabling…",
+      "enableButton": "Enable Alerts"
+    },
+    "sendFeedback": "Send feedback",
+    "greeting": "Hey, I'm <brand>Skopos</brand>, your non-custodial, cross-chain crypto copilot.",
+    "greetingSubtitle": "What can I help you with today?",
+    "composerPlaceholder": "ask skopos…",
+    "composerPlaceholderOffline": "no connection…",
+    "examplePrompts": {
+      "bridgeEthBase": "bridge 0.1 ETH from ethereum to base",
+      "swapUsdcEth": "swap 100 USDC to ETH on arbitrum",
+      "showPortfolio": "show my portfolio",
+      "whatChains": "what chains do you support?"
+    },
+    "horizonPills": {
+      "robinhoodLaunches": "robinhood launches",
+      "polymarket": "polymarket",
+      "yieldScanner": "yield scanner",
+      "agentMode": "agent mode",
+      "limitOrders": "limit orders",
+      "offrampCard": "offramp to card",
+      "deepResearch": "deep research",
+      "onchainMcp": "on-chain MCP",
+      "whaleSignals": "whale signals"
+    },
+    "soonSuffix": "· soon",
+    "soonToast": "soon ✦",
+    "tier": {
+      "chooseResponseTier": "Choose response tier"
+    },
+    "tiers": {
+      "smart": { "label": "✦ Smart", "desc": "frontier models · depth" },
+      "fast": { "label": "⚡ Fast", "desc": "quick & free" }
+    },
+    "aiDisclaimer": "Skopos is AI and can make mistakes. Please double-check responses.",
+    "featureSlides": {
+      "bridge": { "label": "Bridge", "sub": "25+ chains supported" },
+      "bestRoute": { "label": "Best Route", "sub": "AI finds cheapest path" },
+      "swap": { "label": "Swap", "sub": "Any token, any chain" },
+      "plainLanguage": { "label": "Plain Language", "sub": "Just describe what you want" },
+      "fiveBridges": { "label": "5 Bridges", "sub": "Relay, Across, Mayan & more" },
+      "liveQuotes": { "label": "Live Quotes", "sub": "Real-time cross-chain pricing" },
+      "txHistory": { "label": "Tx History", "sub": "Track all your moves" },
+      "portfolio": { "label": "Portfolio", "sub": "Balances across chains" }
+    },
+    "quote": {
+      "rejectedInWallet": "Transaction rejected in wallet.",
+      "errorPrefix": "Error: {msg}",
+      "routeFailedRecheck": "This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.",
+      "rejectedInWalletShort": "Rejected in wallet.",
+      "switchFailed": "Switch failed: {msg}",
+      "orderType": {
+        "limit": "LIMIT ORDER PREVIEW",
+        "stopLoss": "STOP LOSS PREVIEW",
+        "takeProfit": "TAKE PROFIT PREVIEW",
+        "twap": "TWAP ORDER PREVIEW"
+      },
+      "triggerBanner": {
+        "dropsTo": "Will execute when {token} drops to ${price}",
+        "hits": "Will execute when {token} hits ${price}",
+        "twap": "Spreads {amount} {token} across {duration}",
+        "twapWithCount": "Spreads {amount} {token} across {duration} in {count} buys"
+      },
+      "summary": {
+        "via": "Via",
+        "estTime": "Est. time",
+        "minutesEta": "~{n} min",
+        "secondsEta": "~{n} sec",
+        "minReceived": "Min. received",
+        "networkFee": "Network fee",
+        "recipient": "Recipient"
+      },
+      "header": {
+        "transaction": "TRANSACTION",
+        "swapPreview": "SWAP PREVIEW",
+        "bridgePreview": "BRIDGE PREVIEW"
+      },
+      "expired": "EXPIRED",
+      "secondsLeft": "{n}s",
+      "live": "LIVE",
+      "summaryLabel": "SUMMARY",
+      "slippage": "Slippage",
+      "approvalConfirmed": "approval confirmed ✓ — execute below",
+      "originConfirmed": "origin confirmed ✓ · view on explorer →",
+      "confirmed": "confirmed ✓ · view on explorer →",
+      "bridgingToMinutes": "bridging to {chain} · funds arrive in ~{n} min",
+      "bridgingToSeconds": "bridging to {chain} · funds arrive in ~{n} sec",
+      "transactionFailed": "transaction failed ✗ · view on explorer →",
+      "freshQuoteRetry": "get a fresh quote & retry",
+      "confirmingOnChain": "confirming on-chain…",
+      "submittedWaiting": "submitted · waiting…",
+      "ellipsis": "…",
+      "refreshArrow": "Refresh →",
+      "refresh": "Refresh",
+      "connectWallet": "Connect Wallet",
+      "switching": "Switching…",
+      "switchTo": "Switch to {chain}",
+      "approving": "Approving…",
+      "confirming": "Confirming…",
+      "approveToken": "Approve {token}",
+      "recheckingRoute": "re-checking route…",
+      "confirmInWallet": "Confirm in wallet…",
+      "quoteExpiredRefresh": "Quote expired — refresh",
+      "executeArrow": "Execute →"
+    },
+    "solana": {
+      "routeFailedRecheck": "This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.",
+      "wrongAccount": "This quote was built for a different Solana account. Reconnect with the wallet you started with, or refresh for a new quote.",
+      "transactionFailedDetail": "Transaction failed: {detail}",
+      "transactionFailed": "Transaction failed",
+      "viewOnSolscan": "view on solscan ↗",
+      "failedToConnect": "Failed to connect wallet",
+      "connectNamed": "connect {name}",
+      "connectPhantom": "connect phantom →",
+      "confirmInPhantom": "confirm in phantom…",
+      "executeViaPhantom": "execute via phantom →",
+      "phantomSolana": "phantom · solana"
+    },
+    "flash": {
+      "rejectedInWalletShort": "Rejected in wallet.",
+      "switchFailed": "Switch failed: {msg}",
+      "rejectedInWallet": "Transaction rejected in wallet.",
+      "errorPrefix": "Error: {msg}",
+      "orderSubmissionFailed": "Order submission failed ({status})",
+      "signatureRejected": "Signature rejected in wallet.",
+      "orderSubmitted": "order submitted ✓ · id {id}…",
+      "wrapConfirmed": "wrap confirmed ✓",
+      "approvalConfirmedSignBelow": "approval confirmed ✓ — sign below",
+      "connectWallet": "Connect Wallet",
+      "switching": "Switching…",
+      "switchToRobinhoodChain": "Switch to Robinhood Chain",
+      "wrapping": "Wrapping…",
+      "confirming": "Confirming…",
+      "wrapToken": "Wrap {token}",
+      "approving": "Approving…",
+      "approveToken": "Approve {token}",
+      "confirmInWallet": "Confirm in wallet…",
+      "submittingOrder": "Submitting order…",
+      "signAndExecute": "Sign & Execute →"
+    },
+    "relay": {
+      "rejectedInWalletShort": "Rejected in wallet.",
+      "switchFailed": "Switch failed: {msg}",
+      "rejectedInWallet": "Transaction rejected in wallet.",
+      "errorPrefix": "Error: {msg}",
+      "depositConfirmed": "deposit confirmed ✓ · view on explorer →",
+      "bridgingToMinutes": "bridging to {chain} · funds arrive in ~{n} min",
+      "bridgingToSeconds": "bridging to {chain} · funds arrive in ~{n} sec",
+      "transactionFailedRefresh": "Transaction failed — refresh the quote and try again.",
+      "approveToken": "Approve {token}",
+      "bridgeArrow": "Bridge →",
+      "executeArrow": "Execute →",
+      "stepOfWithDescription": "STEP {n} OF {total} — {description}",
+      "stepOf": "STEP {n} OF {total}",
+      "confirmingOnChain": "confirming on-chain…",
+      "submittedWaiting": "submitted · waiting…",
+      "connectWallet": "Connect Wallet",
+      "switching": "Switching…",
+      "switchTo": "Switch to {chain}",
+      "confirmInWallet": "Confirm in wallet…"
+    },
+    "rebalance": {
+      "routeCount": "{count, plural, one {route} other {routes}}",
+      "consolidatingTo": " · consolidating to {chain}",
+      "executeInOrder": " · execute in order",
+      "stepOf": "STEP {n} / {total}",
+      "feesAmount": "${amount} fees"
+    },
+    "payments": {
+      "eyebrow": "PAYMENTS RECEIVED",
+      "tagged": "{count} tagged",
+      "noneYet": "No tagged B20 payments to {address} yet. When someone pays you with a memo, it lands here — matched to its reference.",
+      "noMemo": "(no memo)",
+      "from": "from {address} · {chain}"
+    },
+    "pay": {
+      "payLabel": "Pay {amount} {token}",
+      "rejectedInWallet": "Payment rejected in wallet.",
+      "errorPrefix": "Error: {msg}",
+      "b20Payment": "B20 PAYMENT",
+      "payment": "PAYMENT",
+      "to": "To",
+      "memoHashed": "Memo (hashed)",
+      "memo": "Memo",
+      "memoSkipped": "skipped — {token} isn't a B20",
+      "token": "Token",
+      "paidConfirmed": "paid ✓ · view on explorer ↗",
+      "paymentFailed": "payment failed ✗ · view on explorer ↗",
+      "confirmInWallet": "confirm in wallet…",
+      "confirmingEllipsis": "confirming…",
+      "payArrow": "pay →"
+    },
+    "tx": {
+      "hash": "Hash",
+      "chain": "Chain",
+      "status": "Status",
+      "block": "Block",
+      "from": "From",
+      "to": "To",
+      "method": "Method",
+      "value": "Value",
+      "gas": "Gas",
+      "logs": "Logs",
+      "time": "Time",
+      "header": "Transaction",
+      "viewOnExplorer": "view on explorer →"
+    },
+    "address": {
+      "walletOverview": "WALLET OVERVIEW",
+      "etherscan": "etherscan ↗",
+      "totalValue": "TOTAL VALUE",
+      "symbolBalance": "{symbol} BALANCE",
+      "tokenHoldings": "TOKEN HOLDINGS",
+      "swapArrow": "swap →",
+      "recentBuys": "RECENT BUYS",
+      "recentActivity": "RECENT ACTIVITY",
+      "in": "IN",
+      "out": "OUT"
+    },
+    "price": {
+      "marketCap": "Market Cap",
+      "volume24h": "Volume (24h)",
+      "circulating": "Circulating",
+      "maxSupply": "Max Supply",
+      "oneDay": "(1d)",
+      "buySymbol": "Buy {symbol}",
+      "sellSymbol": "Sell {symbol}"
+    },
+    "risk": {
+      "risk": "RISK",
+      "oneDay": "(1d)",
+      "stats": {
+        "marketCap": "Market Cap",
+        "vol24h": "Vol (24h)",
+        "liquidity": "Liquidity",
+        "pools": "Pools",
+        "poolsValue": "{pairs} / {dex} DEX",
+        "top10Hold": "Top 10 Hold"
+      },
+      "riskFlags": "RISK FLAGS",
+      "viewOnDexscreener": "view on dexscreener · {dexId} · {chainId} ↗",
+      "flags": {
+        "noLiquidity": "No meaningful liquidity",
+        "volumeSpike": "Abnormal volume spike",
+        "singlePool": "Only 1 liquidity pool",
+        "newToken": "Token < 7 days old",
+        "highVolatility": "Price moved >50% in 24h",
+        "heavySelling": "Heavy sell pressure",
+        "possibleHoneypot": "Buys but no sells — possible honeypot",
+        "sniped": "Early buyers concentrated in the first blocks",
+        "concentrated": "Top 10 wallets hold over half the supply"
+      }
+    },
+    "paywall": {
+      "connectThenSubscribe": "Connect your wallet, then tap Subscribe again.",
+      "smartUnlocked": "Smart unlocked — resend your message.",
+      "subscriptionFailed": "Subscription failed.",
+      "paymentFailed": "Payment failed.",
+      "titleConnect": "Connect wallet for more Smart",
+      "titleLimitReached": "Daily Smart limit reached",
+      "bodyConnect": "You've used your {cap} free Smart {cap, plural, one {message} other {messages}}. Connect a wallet to keep going with Smart, or switch to Fast — always free.",
+      "bodyLimitReached": "You've used all {cap} free Smart messages today. Subscribe for unlimited Smart, or switch to Fast — always free.",
+      "smartTier": "SMART TIER",
+      "connectWallet": "Connect wallet",
+      "confirming": "Confirming…",
+      "subscribe": "✦ Subscribe",
+      "switchToFast": "⚡ Switch to Fast",
+      "needUsdcFundWallet": "Need USDC? Fund wallet →"
+    },
+    "yield": {
+      "eyebrow": "YIELD SCANNER",
+      "viaDefiLlama": "via DeFiLlama",
+      "rewards": "+{pct}% rewards",
+      "tvl": "{value} TVL",
+      "deposit": "deposit ↗"
+    },
+    "polymarket": {
+      "volumeM": "${n}M vol",
+      "volumeK": "${n}K vol",
+      "volume": "${n} vol",
+      "headerTopic": "PREDICTION MARKETS · {topic} · via Polymarket",
+      "headerTrending": "PREDICTION MARKETS · TRENDING · via Polymarket",
+      "depositWithAmount": "DEPOSIT TO POLYMARKET · ${amount} USDC",
+      "deposit": "DEPOSIT TO POLYMARKET",
+      "depositInstructions": "Send USDC to the address for your chain. Polymarket bridges it to pUSD automatically.",
+      "checkBalanceHint": "After sending, ask \"did my deposit land?\" to check your balance."
+    },
+    "suggestions": {
+      "tryOneOfThese": "Try one of these"
+    },
+    "whatsNew": {
+      "title": "What's new",
+      "dismiss": "Dismiss",
+      "aeonReads": "Ask \"what's trending\" or \"top defi protocols\" — instant market reads, powered by Aeon",
+      "txFlags": "Paste any tx hash — now flags unlimited approvals and possible honeypots, across 10 chains",
+      "cleanerReplies": "Cleaner replies — structured, no more walls of text"
+    }
+  }
+}

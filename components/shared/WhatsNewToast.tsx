@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslations } from "next-intl";
 
 const DEFAULT_KEY     = "skopos-whatsnew-v2";
 const TTL_MS          = 3 * 24 * 60 * 60 * 1000;
@@ -18,6 +19,7 @@ interface WhatsNewToastProps {
 }
 
 export function WhatsNewToast({ storageKey = DEFAULT_KEY, changes = DEFAULT_CHANGES }: WhatsNewToastProps) {
+  const t = useTranslations("app.whatsNew");
   const [isMobile] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 600 : false
   );
@@ -67,13 +69,13 @@ export function WhatsNewToast({ storageKey = DEFAULT_KEY, changes = DEFAULT_CHAN
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ color: "#000000", fontSize: "0.75rem" }}>✦</span>
               <span style={{ color: "#000000", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 700 }}>
-                What&apos;s new
+                {t("title")}
               </span>
             </div>
             <button
               onClick={dismiss}
               style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(0,0,0,0.45)", padding: 2, lineHeight: 1 }}
-              aria-label="Dismiss"
+              aria-label={t("dismiss")}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6">
                 <path d="M1 1l10 10M11 1L1 11" strokeLinecap="round"/>

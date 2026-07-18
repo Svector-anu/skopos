@@ -13,11 +13,11 @@ import {
   generateAddressSummary,
   classifyIntent,
   parseLaunchIntent,
-  detectLocale,
   ParsedIntent,
   type LlmTier,
   type LlmMeta,
 } from "@/lib/parseIntent";
+import { detectLocale } from "@/lib/locale";
 import { checkSmartQuota, incrSmart } from "@/lib/usage";
 import { checkRateLimit, trustedIp, corsHeadersFor } from "@/lib/rateLimit";
 import { isEntitled } from "@/lib/subscription";

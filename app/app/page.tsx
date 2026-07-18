@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet, useWallets, useConnectWallet } from "@privy-io/react-auth";
 import {
@@ -264,19 +265,23 @@ const EXPLORER_URLS: Record<string, string> = {
 // chain. See resolveFlashLeg() in app/api/chat/route.ts.
 const ROBINHOOD_CHAIN_ID = 4663;
 
+// `label` is the translated display text (looked up via t() at the render
+// site); `prompt` is sent verbatim to the backend's English-only regex intent
+// parser and must never be translated — a zh/vi prompt would fail to parse.
 const BRIDGE_ACTIONS = [
-  { label: "ETH → Base",     prompt: "bridge 0.1 ETH from ethereum to base" },
-  { label: "ETH → Arbitrum", prompt: "bridge 0.1 ETH from ethereum to arbitrum" },
-  { label: "USDC → Polygon", prompt: "bridge 100 USDC from base to polygon" },
-  { label: "ETH → Optimism", prompt: "bridge 0.1 ETH from ethereum to optimism" },
+  { key: "ethToBase",      label: "ETH → Base",     prompt: "bridge 0.1 ETH from ethereum to base" },
+  { key: "ethToArbitrum",  label: "ETH → Arbitrum", prompt: "bridge 0.1 ETH from ethereum to arbitrum" },
+  { key: "usdcToPolygon",  label: "USDC → Polygon", prompt: "bridge 100 USDC from base to polygon" },
+  { key: "ethToOptimism",  label: "ETH → Optimism", prompt: "bridge 0.1 ETH from ethereum to optimism" },
 ];
 
 const SWAP_ACTIONS = [
-  { label: "ETH → USDC · Base", prompt: "swap 0.1 ETH to USDC on base" },
-  { label: "ETH → USDC · Arb",  prompt: "swap 0.1 ETH to USDC on arbitrum" },
-  { label: "USDC → ETH · Base", prompt: "swap 100 USDC to ETH on base" },
+  { key: "ethToUsdcBase", label: "ETH → USDC · Base", prompt: "swap 0.1 ETH to USDC on base" },
+  { key: "ethToUsdcArb",  label: "ETH → USDC · Arb",  prompt: "swap 0.1 ETH to USDC on arbitrum" },
+  { key: "usdcToEthBase", label: "USDC → ETH · Base", prompt: "swap 100 USDC to ETH on base" },
 ];
 
+// Percentages — identical in every locale, no translation needed.
 const SLIPPAGE_OPTIONS = [
   { value: 0.003, label: "0.3%" },
   { value: 0.005, label: "0.5%" },
@@ -284,30 +289,33 @@ const SLIPPAGE_OPTIONS = [
 ];
 
 const TIER_OPTIONS = [
-  { id: "smart" as const, label: "✦ Smart", desc: "frontier models · depth" },
-  { id: "fast"  as const, label: "⚡ Fast",  desc: "quick & free" },
+  { id: "smart" as const, key: "smart", label: "✦ Smart", desc: "frontier models · depth" },
+  { id: "fast"  as const, key: "fast",  label: "⚡ Fast",  desc: "quick & free" },
 ];
 
+// label is the translated display text; prompt is the literal English command
+// submitted on click (see EXAMPLE_PROMPTS.map below) — same non-translation
+// rule as BRIDGE_ACTIONS/SWAP_ACTIONS above.
 const EXAMPLE_PROMPTS = [
-  "bridge 0.1 ETH from ethereum to base",
-  "swap 100 USDC to ETH on arbitrum",
-  "show my portfolio",
-  "what chains do you support?",
+  { key: "bridgeEthBase",  prompt: "bridge 0.1 ETH from ethereum to base" },
+  { key: "swapUsdcEth",    prompt: "swap 100 USDC to ETH on arbitrum" },
+  { key: "showPortfolio",  prompt: "show my portfolio" },
+  { key: "whatChains",     prompt: "what chains do you support?" },
 ];
 
 // `soon` features aren't live yet — shown as roadmap, visually tagged, and the
 // backend answers them honestly if triggered. Live ones (no `soon`) fill the
 // composer with a working prompt the user can send.
-const HORIZON_PILLS: { label: string; prompt: string; soon?: boolean }[] = [
-  { label: "robinhood launches", prompt: "what's launching on robinhood chain" },
-  { label: "polymarket",       prompt: "what are the current odds ETH hits $5k this year?" },
-  { label: "yield scanner",    prompt: "find the highest yield for USDC on base" },
-  { label: "agent mode",       prompt: "set up an agent to DCA $20 into ETH every week on base", soon: true },
-  { label: "limit orders",     prompt: "buy 0.05 ETH when price drops to $2800 on arbitrum",     soon: true },
-  { label: "offramp to card",  prompt: "cash out 200 USDC to my debit card",                     soon: true },
-  { label: "deep research",    prompt: "compare gas costs across all supported bridges for 1 ETH", soon: true },
-  { label: "on-chain MCP",     prompt: "connect skopos to my claude desktop via MCP",            soon: true },
-  { label: "whale signals",    prompt: "show me what top wallets are bridging this week",         soon: true },
+const HORIZON_PILLS: { key: string; label: string; prompt: string; soon?: boolean }[] = [
+  { key: "robinhoodLaunches", label: "robinhood launches", prompt: "what's launching on robinhood chain" },
+  { key: "polymarket",        label: "polymarket",       prompt: "what are the current odds ETH hits $5k this year?" },
+  { key: "yieldScanner",      label: "yield scanner",    prompt: "find the highest yield for USDC on base" },
+  { key: "agentMode",         label: "agent mode",       prompt: "set up an agent to DCA $20 into ETH every week on base", soon: true },
+  { key: "limitOrders",       label: "limit orders",     prompt: "buy 0.05 ETH when price drops to $2800 on arbitrum",     soon: true },
+  { key: "offrampCard",       label: "offramp to card",  prompt: "cash out 200 USDC to my debit card",                     soon: true },
+  { key: "deepResearch",      label: "deep research",    prompt: "compare gas costs across all supported bridges for 1 ETH", soon: true },
+  { key: "onchainMcp",        label: "on-chain MCP",     prompt: "connect skopos to my claude desktop via MCP",            soon: true },
+  { key: "whaleSignals",      label: "whale signals",    prompt: "show me what top wallets are bridging this week",         soon: true },
 ];
 
 // ─── Feature carousel ─────────────────────────────────────────────────────────
@@ -322,21 +330,21 @@ const IcClock   = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="no
 const IcWallet  = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M16 14h2"/><path d="M2 10h20"/></svg>;
 
 
-type FeatureCard = { label: string; sub: string; icon: React.ReactNode };
+type FeatureCard = { key: string; label: string; sub: string; icon: React.ReactNode };
 const FEATURE_SLIDES: FeatureCard[][] = [
   [
-    { label: "Bridge",      sub: "25+ chains supported",   icon: <IcBridge /> },
-    { label: "Best Route",  sub: "AI finds cheapest path",  icon: <IcZap /> },
-    { label: "Swap",        sub: "Any token, any chain",    icon: <IcSwap /> },
+    { key: "bridge",    label: "Bridge",      sub: "25+ chains supported",   icon: <IcBridge /> },
+    { key: "bestRoute", label: "Best Route",  sub: "AI finds cheapest path",  icon: <IcZap /> },
+    { key: "swap",      label: "Swap",        sub: "Any token, any chain",    icon: <IcSwap /> },
   ],
   [
-    { label: "Plain Language", sub: "Just describe what you want", icon: <IcChat /> },
-    { label: "5 Bridges",      sub: "Relay, Across, Mayan & more", icon: <IcNet /> },
-    { label: "Live Quotes",    sub: "Real-time cross-chain pricing", icon: <IcChart /> },
+    { key: "plainLanguage", label: "Plain Language", sub: "Just describe what you want", icon: <IcChat /> },
+    { key: "fiveBridges",   label: "5 Bridges",      sub: "Relay, Across, Mayan & more", icon: <IcNet /> },
+    { key: "liveQuotes",    label: "Live Quotes",    sub: "Real-time cross-chain pricing", icon: <IcChart /> },
   ],
   [
-    { label: "Tx History",  sub: "Track all your moves",    icon: <IcClock /> },
-    { label: "Portfolio",   sub: "Balances across chains",  icon: <IcWallet /> },
+    { key: "txHistory", label: "Tx History",  sub: "Track all your moves",    icon: <IcClock /> },
+    { key: "portfolio", label: "Portfolio",   sub: "Balances across chains",  icon: <IcWallet /> },
   ],
 ];
 
@@ -409,6 +417,7 @@ class ErrorBoundary extends Component<
 // ─── AppPage ──────────────────────────────────────────────────────────────────
 
 export default function AppPage() {
+  const t = useTranslations("app");
   const inputRef     = useRef<HTMLInputElement>(null);
   const bottomRef    = useRef<HTMLDivElement>(null);
   const abortRef     = useRef<AbortController | null>(null);
@@ -878,7 +887,7 @@ export default function AppPage() {
           padding: "8px 16px", fontSize: "0.8rem", fontFamily: "var(--font-jetbrains-mono), monospace",
           letterSpacing: "0.04em",
         }}>
-          ● no internet connection — reconnect to continue
+          ● {t("banners.offline")}
         </div>
       )}
 
@@ -893,7 +902,7 @@ export default function AppPage() {
           fontFamily: "var(--font-jetbrains-mono), monospace",
           color: "rgba(245,184,0,0.9)", whiteSpace: "nowrap",
         }}>
-          <span>new version available</span>
+          <span>{t("banners.updateAvailable")}</span>
           <button
             onClick={() => window.location.reload()}
             style={{
@@ -902,7 +911,7 @@ export default function AppPage() {
               fontFamily: "var(--font-jetbrains-mono), monospace", fontWeight: 600,
             }}
           >
-            refresh
+            {t("banners.refresh")}
           </button>
           <button
             onClick={() => setUpdateAvailable(false)}
@@ -959,14 +968,14 @@ export default function AppPage() {
         <div style={{ paddingLeft: 8, paddingRight: 8, paddingBottom: 8, flexShrink: 0 }}>
           <button onClick={newChat} style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, border: "none", background: "none", color: "var(--drawer-action)", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M8 3v10M3 8h10"/></svg>
-            <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>New chat</span>
+            <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>{t("sidebar.newChat")}</span>
           </button>
         </div>
 
         {/* Nav sections — fade in when expanded */}
         <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.1s", pointerEvents: sidebarExpanded ? "auto" : "none" }}>
           {recentSessions.length > 0 && (
-            <DrawerSection label="RECENTS">
+            <DrawerSection label={t("sidebar.recents")}>
               {recentSessions.map(s => (
                 <button key={s.id} onClick={() => { openSession(s); if (isMobile) setSidebarExpanded(false); }} style={{
                   ...MONO, width: "100%", textAlign: "left", padding: "7px 12px", fontSize: "0.72rem",
@@ -981,7 +990,7 @@ export default function AppPage() {
             </DrawerSection>
           )}
           {txHistory.length > 0 && (
-            <DrawerSection label="HISTORY">
+            <DrawerSection label={t("sidebar.history")}>
               {txHistory.slice(0, 4).map(tx => (
                 <a key={tx.hash} href={tx.explorerUrl} target="_blank" rel="noopener noreferrer" style={{
                   ...MONO, display: "block", padding: "7px 12px", fontSize: "0.72rem",
@@ -993,17 +1002,17 @@ export default function AppPage() {
               ))}
             </DrawerSection>
           )}
-          <DrawerSection label="PORTFOLIO">
-            <DrawerAction label="My balances" onClick={() => submit("show my portfolio")} />
+          <DrawerSection label={t("sidebar.portfolio")}>
+            <DrawerAction label={t("sidebar.myBalances")} onClick={() => submit("show my portfolio")} />
           </DrawerSection>
-          <DrawerSection label="BRIDGE">
-            {BRIDGE_ACTIONS.map(({ label, prompt }) => (
-              <DrawerAction key={label} label={label} onClick={() => submit(prompt)} />
+          <DrawerSection label={t("sidebar.bridge")}>
+            {BRIDGE_ACTIONS.map(({ key, prompt }) => (
+              <DrawerAction key={key} label={t(`bridgeActions.${key}`)} onClick={() => submit(prompt)} />
             ))}
           </DrawerSection>
-          <DrawerSection label="SWAP">
-            {SWAP_ACTIONS.map(({ label, prompt }) => (
-              <DrawerAction key={label} label={label} onClick={() => submit(prompt)} />
+          <DrawerSection label={t("sidebar.swap")}>
+            {SWAP_ACTIONS.map(({ key, prompt }) => (
+              <DrawerAction key={key} label={t(`swapActions.${key}`)} onClick={() => submit(prompt)} />
             ))}
           </DrawerSection>
         </div>
@@ -1020,7 +1029,7 @@ export default function AppPage() {
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                 <div style={{ width: 6, height: 6, borderRadius: 999, background: "#F5B800", flexShrink: 0 }} />
-                <span style={{ ...MONO, fontSize: "0.62rem", color: "rgba(245,184,0,0.75)", letterSpacing: "0.08em" }}>WALLET</span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "rgba(245,184,0,0.75)", letterSpacing: "0.08em" }}>{t("wallet.eyebrow")}</span>
               </div>
               {balanceLoading ? (
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 18, marginBottom: 10 }}>
@@ -1037,7 +1046,7 @@ export default function AppPage() {
                     <p style={{ ...MONO, fontSize: "0.68rem", color: T.textDim, margin: "0 0 10px" }}>{usdcDisplay}</p>
                   )}
                   {!nativeDisplay && !usdcDisplay && (
-                    <p style={{ ...MONO, fontSize: "0.68rem", color: T.textFaint, margin: "0 0 10px" }}>no assets on this chain</p>
+                    <p style={{ ...MONO, fontSize: "0.68rem", color: T.textFaint, margin: "0 0 10px" }}>{t("wallet.noAssets")}</p>
                   )}
                 </>
               )}
@@ -1051,7 +1060,7 @@ export default function AppPage() {
                 }}
               >
                 <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 1v10M1 6h10"/></svg>
-                Fund Wallet
+                {t("wallet.fundWallet")}
               </button>
             </div>
           )}
@@ -1067,7 +1076,7 @@ export default function AppPage() {
                 border: "none", borderRadius: 10, cursor: walletLoading ? "wait" : "pointer",
               }}
             >
-              {walletLoading ? "Connecting wallet…" : "Connect Wallet"}
+              {walletLoading ? t("wallet.connecting") : t("wallet.connect")}
             </button>
           )}
 
@@ -1076,7 +1085,7 @@ export default function AppPage() {
             <button
               onClick={walletLoading ? undefined : (authenticated && connectedAddress ? handleDisconnectClick : handleWalletAction)}
               style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: walletLoading ? "wait" : "pointer" }}
-              title={authenticated && connectedAddress ? (confirmDisconnect ? "click again to disconnect" : `${shortAddr(connectedAddress)} — disconnect`) : walletLoading ? "Connecting wallet…" : "Connect wallet"}
+              title={authenticated && connectedAddress ? (confirmDisconnect ? t("wallet.clickAgainDisconnect") : t("wallet.addressDisconnect", { address: shortAddr(connectedAddress) })) : walletLoading ? t("wallet.connecting") : t("wallet.connectLower")}
             >
               <div style={{ width: 8, height: 8, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : (authenticated && connectedAddress) ? "#F5B800" : walletLoading ? "rgba(245,184,0,0.4)" : T.textFaint }} className={walletLoading ? "animate-pulse" : undefined} />
             </button>
@@ -1087,11 +1096,11 @@ export default function AppPage() {
             <button
               onClick={handleDisconnectClick}
               style={{ width: "100%", height: 32, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 8, background: confirmDisconnect ? "rgba(255,107,107,0.06)" : "none", border: confirmDisconnect ? "1px solid rgba(255,107,107,0.2)" : "none", cursor: "pointer", transition: "background 0.2s" }}
-              title={confirmDisconnect ? "click again to confirm disconnect" : `${shortAddr(connectedAddress)} — click to disconnect`}
+              title={confirmDisconnect ? t("wallet.clickAgainConfirm") : t("wallet.addressClickDisconnect", { address: shortAddr(connectedAddress) })}
             >
               <div style={{ width: 7, height: 7, borderRadius: 999, background: confirmDisconnect ? "#ff6b6b" : "#F5B800", flexShrink: 0, transition: "background 0.2s" }} />
               <span style={{ ...MONO, fontSize: "0.68rem", color: confirmDisconnect ? "#ff6b6b" : T.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "color 0.2s" }}>
-                {confirmDisconnect ? "disconnect?" : shortAddr(connectedAddress)}
+                {confirmDisconnect ? t("wallet.disconnectConfirm") : shortAddr(connectedAddress)}
               </span>
             </button>
           )}
@@ -1100,7 +1109,7 @@ export default function AppPage() {
           {ready && connectedAddress && sidebarExpanded && (
             <button
               onClick={() => connectWallet()}
-              title="Connect a different wallet"
+              title={t("wallet.connectDifferent")}
               style={{
                 ...MONO, width: "100%", height: 28, marginBottom: 2, borderRadius: 8,
                 display: "flex", alignItems: "center", paddingLeft: 10, gap: 8,
@@ -1109,7 +1118,7 @@ export default function AppPage() {
               }}
             >
               <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M6 1v10M1 6h10"/></svg>
-              connect another wallet
+              {t("wallet.connectAnother")}
             </button>
           )}
 
@@ -1136,7 +1145,7 @@ export default function AppPage() {
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
               </svg>
             )}
-            <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>Theme</span>
+            <span style={{ ...MONO, fontSize: "0.72rem", opacity: sidebarExpanded ? 1 : 0, transition: "opacity 0.12s" }}>{t("theme")}</span>
           </button>
 
         </div>
@@ -1167,7 +1176,7 @@ export default function AppPage() {
               <span style={{ fontFamily: "var(--font-display), serif", fontSize: "1.1rem", fontWeight: 700, letterSpacing: "0.07em", color: T.textPrimary, lineHeight: 1 }}>
                 SKOP<span style={{ color: "#F5B800" }}>OS</span>
               </span>
-              <span style={{ ...MONO, fontSize: "0.58rem", color: T.textDim, letterSpacing: "0.04em" }}>cross-chain copilot</span>
+              <span style={{ ...MONO, fontSize: "0.58rem", color: T.textDim, letterSpacing: "0.04em" }}>{t("mobileSubtitle")}</span>
             </div>
 
             {/* Circular wallet / connect button */}
@@ -1214,12 +1223,12 @@ export default function AppPage() {
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {hasNoFunds && (
                           <div style={{ background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                            <span style={{ ...MONO, fontSize: "0.74rem", color: T.textMuted }}>No funds detected on this chain</span>
+                            <span style={{ ...MONO, fontSize: "0.74rem", color: T.textMuted }}>{t("noFundsDetected")}</span>
                             <button
                               onClick={() => fundWallet({ address })}
                               style={{ ...MONO, fontSize: "0.7rem", fontWeight: 700, background: "#F5B800", color: "#000", border: "none", borderRadius: 7, padding: "6px 14px", cursor: "pointer", whiteSpace: "nowrap" }}
                             >
-                              Fund Wallet →
+                              {t("fundWalletArrow")}
                             </button>
                           </div>
                         )}
@@ -1240,7 +1249,7 @@ export default function AppPage() {
                             {msg.result.analysis}
                           </p>
                         )}
-                        <ErrorBoundary label="Quote failed to render.">
+                        <ErrorBoundary label={t("errorBoundary.quote")}>
                           <QuoteDisplay
                             result={msg.result} connectedAddress={connectedAddress} onTxSubmitted={saveTx} slippage={slippage}
                             onSlippageChange={setSlippage}
@@ -1290,15 +1299,15 @@ export default function AppPage() {
                       </div>
                     )}
                     {msg.result.type === "rebalance" && (
-                      <ErrorBoundary label="Rebalance failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.rebalance")}>
                         {hasNoFunds && (
                           <div style={{ background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-                            <span style={{ ...MONO, fontSize: "0.74rem", color: T.textMuted }}>No funds detected on this chain</span>
+                            <span style={{ ...MONO, fontSize: "0.74rem", color: T.textMuted }}>{t("noFundsDetected")}</span>
                             <button
                               onClick={() => fundWallet({ address })}
                               style={{ ...MONO, fontSize: "0.7rem", fontWeight: 700, background: "#F5B800", color: "#000", border: "none", borderRadius: 7, padding: "6px 14px", cursor: "pointer", whiteSpace: "nowrap" }}
                             >
-                              Fund Wallet →
+                              {t("fundWalletArrow")}
                             </button>
                           </div>
                         )}
@@ -1353,42 +1362,42 @@ export default function AppPage() {
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "tx" && (
-                      <ErrorBoundary label="Transaction details failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.tx")}>
                         <TxDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "pay" && (
-                      <ErrorBoundary label="Payment failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.pay")}>
                         <PayDisplay result={msg.result} onTxSubmitted={saveTx} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "payments" && (
-                      <ErrorBoundary label="Payments failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.payments")}>
                         <PaymentsDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "address" && (
-                      <ErrorBoundary label="Address details failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.address")}>
                         <AddressDisplay result={msg.result} onSwap={prompt => submit(prompt)} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "token_risk" && (
-                      <ErrorBoundary label="Risk scan failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.tokenRisk")}>
                         <TokenRiskDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "prebuy" && (
-                      <ErrorBoundary label="Pre-buy research failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.prebuy")}>
                         <PrebuyDisplay result={msg.result} connectedAddress={connectedAddress} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "yield_pools" && (
-                      <ErrorBoundary label="Yield data failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.yieldPools")}>
                         <YieldPoolsDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "polymarket" && (
-                      <ErrorBoundary label="Polymarket data failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.polymarket")}>
                         <PolymarketDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
@@ -1396,27 +1405,27 @@ export default function AppPage() {
                       <SuggestionsDisplay result={msg.result} onSelect={(cmd: string) => submit(cmd)} />
                     )}
                     {msg.result.type === "intel" && (
-                      <ErrorBoundary label="Intel card failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.intel")}>
                         <IntelDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "aeon" && (
-                      <ErrorBoundary label="Aeon card failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.aeon")}>
                         <AeonDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "x402check" && (
-                      <ErrorBoundary label="Endpoint check failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.x402check")}>
                         <X402CheckDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "robinhood_launches" && (
-                      <ErrorBoundary label="Robinhood launches failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.robinhoodLaunches")}>
                         <RobinhoodLaunchesDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "paywall" && (
-                      <ErrorBoundary label="Paywall card failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.paywall")}>
                         <PaywallDisplay
                           result={msg.result}
                           onConnect={handleWalletAction}
@@ -1425,7 +1434,7 @@ export default function AppPage() {
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "price" && (
-                      <ErrorBoundary label="Price chart failed to render.">
+                      <ErrorBoundary label={t("errorBoundary.price")}>
                         <PriceDisplay result={msg.result} onSubmit={(text) => submit(text)} />
                       </ErrorBoundary>
                     )}
@@ -1442,7 +1451,7 @@ export default function AppPage() {
                               </svg>
                             </div>
                             <div>
-                              <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.07em", margin: "0 0 5px" }}>ALERTS</p>
+                              <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.07em", margin: "0 0 5px" }}>{t("alerts.eyebrow")}</p>
                               <p style={{ ...MONO, fontSize: "0.82rem", color: T.textMuted, margin: 0, lineHeight: 1.55 }}>{msg.result.text}</p>
                             </div>
                           </div>
@@ -1451,12 +1460,12 @@ export default function AppPage() {
                               const ok = await subscribeToPush();
                               setMessages(prev => [...prev, {
                                 role: "assistant",
-                                result: { type: "text", text: ok ? "Alerts enabled — ask for your alert again and it'll register." : "Couldn't enable alerts — check your browser's notification permission and try again." },
+                                result: { type: "text", text: ok ? t("alerts.enabled") : t("alerts.enableFailed") },
                               }]);
                             }}
                             style={{ ...MONO, width: "100%", padding: "9px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.04em", color: "#000", background: "#F5B800", border: "none", borderRadius: 9, cursor: "pointer" }}
                           >
-                            {pushLoading ? "Enabling…" : "Enable Alerts"}
+                            {pushLoading ? t("alerts.enabling") : t("alerts.enableButton")}
                           </button>
                         </div>
                       ) : /wallet|reconnect/i.test(msg.result.text) ? (
@@ -1468,7 +1477,7 @@ export default function AppPage() {
                               </svg>
                             </div>
                             <div>
-                              <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.07em", margin: "0 0 5px" }}>WALLET</p>
+                              <p style={{ ...MONO, fontSize: "0.68rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.07em", margin: "0 0 5px" }}>{t("wallet.eyebrow")}</p>
                               <p style={{ ...MONO, fontSize: "0.82rem", color: T.textMuted, margin: 0, lineHeight: 1.55 }}>{msg.result.text}</p>
                             </div>
                           </div>
@@ -1476,7 +1485,7 @@ export default function AppPage() {
                             onClick={handleWalletAction}
                             style={{ ...MONO, width: "100%", padding: "9px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.04em", color: "#000", background: "#F5B800", border: "none", borderRadius: 9, cursor: "pointer" }}
                           >
-                            {walletLoading ? "Connecting wallet…" : "Connect Wallet"}
+                            {walletLoading ? t("wallet.connecting") : t("wallet.connect")}
                           </button>
                         </div>
                       ) : (
@@ -1498,7 +1507,7 @@ export default function AppPage() {
                         <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
                           <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
                         </svg>
-                        Send feedback
+                        {t("sendFeedback")}
                       </a>
                     </div>
                   </div>
@@ -1541,25 +1550,23 @@ export default function AppPage() {
                   </svg>
                 </div>
                 <p style={{ ...MONO, fontSize: "0.95rem", color: T.textMuted, lineHeight: 1.65, margin: 0, maxWidth: 440 }}>
-                  Hey, I&apos;m{" "}
-                  <span style={{ color: "#F5B800", fontWeight: 600 }}>Skopos</span>
-                  , your non-custodial, cross-chain crypto copilot.
+                  {t.rich("greeting", { brand: (chunks) => <span style={{ color: "#F5B800", fontWeight: 600 }}>{chunks}</span> })}
                 </p>
                 <p style={{ ...MONO, fontSize: "0.82rem", color: T.textDim, marginTop: 10, marginBottom: 0 }}>
-                  What can I help you with today?
+                  {t("greetingSubtitle")}
                 </p>
               </>
             )}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: isMobile ? 20 : 0, maxWidth: 520 }}>
               {EXAMPLE_PROMPTS.map(p => (
                 <button
-                  key={p}
-                  onClick={() => submit(p)}
+                  key={p.key}
+                  onClick={() => submit(p.prompt)}
                   style={{ ...MONO, padding: "6px 14px", fontSize: "0.7rem", background: T.surface, border: `1px solid ${T.borderStrong}`, borderRadius: 999, color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", transition: "border-color 0.15s, color 0.15s" }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.3)"; e.currentTarget.style.color = "rgba(245,184,0,0.7)"; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = T.borderStrong; e.currentTarget.style.color = T.textDim; }}
                 >
-                  {p}
+                  {t(`examplePrompts.${p.key}`)}
                 </button>
               ))}
             </div>
@@ -1592,7 +1599,7 @@ export default function AppPage() {
                   onChange={e => setValue(e.target.value)}
                   onFocus={() => setInputFocused(true)}
                   onBlur={() => setInputFocused(false)}
-                  placeholder={isOnline ? "ask skopos…" : "no connection…"}
+                  placeholder={isOnline ? t("composerPlaceholder") : t("composerPlaceholderOffline")}
                   disabled={!isOnline}
                   className={isDark ? "placeholder:text-white/15" : "placeholder:text-black/20"}
                   style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: T.textPrimary, caretColor: T.textPrimary, fontSize: "0.95rem", opacity: isOnline ? 1 : 0.4 }}
@@ -1625,7 +1632,7 @@ export default function AppPage() {
                           onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
                           onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textFaint; }}
                         >
-                          ◆ {pill.label}{pill.soon && <span style={{ opacity: 0.55, marginLeft: 4 }}>· soon</span>}
+                          ◆ {t(`horizonPills.${pill.key}`)}{pill.soon && <span style={{ opacity: 0.55, marginLeft: 4 }}>{t("soonSuffix")}</span>}
                         </button>
                       ))}
                     </div>
@@ -1635,14 +1642,14 @@ export default function AppPage() {
                   {/* Toast */}
                   {horizonToast && (
                     <span style={{ ...MONO, fontSize: "0.58rem", color: "rgba(245,184,0,0.5)", whiteSpace: "nowrap", flexShrink: 0 }}>
-                      soon ✦
+                      {t("soonToast")}
                     </span>
                   )}
                   <div style={{ position: "relative" }}>
                     <button
                       type="button"
                       onClick={() => setTierMenuOpen(o => !o)}
-                      title="Choose response tier"
+                      title={t("tier.chooseResponseTier")}
                       style={{
                         ...MONO, fontSize: "0.6rem", padding: "3px 8px", borderRadius: 4, whiteSpace: "nowrap",
                         display: "flex", alignItems: "center", gap: 4,
@@ -1652,7 +1659,7 @@ export default function AppPage() {
                         cursor: "pointer",
                       }}
                     >
-                      {llmTier === "smart" ? "✦ Smart" : "⚡ Fast"}
+                      {t(llmTier === "smart" ? "tiers.smart.label" : "tiers.fast.label")}
                       <span style={{ fontSize: "0.5rem", opacity: 0.7, transform: tierMenuOpen ? "rotate(180deg)" : "none" }}>▾</span>
                     </button>
                     {tierMenuOpen && (
@@ -1688,10 +1695,10 @@ export default function AppPage() {
                               >
                                 <span style={{ flex: 1 }}>
                                   <span style={{ display: "block", fontSize: "0.66rem", color: active ? "rgba(245,184,0,0.9)" : T.textDim }}>
-                                    {opt.label}
+                                    {t(`tiers.${opt.key}.label`)}
                                   </span>
                                   <span style={{ display: "block", fontSize: "0.55rem", color: T.textFaint, marginTop: 2 }}>
-                                    {opt.desc}
+                                    {t(`tiers.${opt.key}.desc`)}
                                   </span>
                                 </span>
                                 {active && <span style={{ fontSize: "0.66rem", color: "rgba(245,184,0,0.9)", lineHeight: "0.66rem" }}>✓</span>}
@@ -1733,7 +1740,7 @@ export default function AppPage() {
               </div>
             </form>
             <p style={{ ...MONO, fontSize: "0.6rem", color: T.textFaint, textAlign: "center", marginTop: 10, lineHeight: 1.5 }}>
-              Skopos is AI and can make mistakes. Please double-check responses.
+              {t("aiDisclaimer")}
             </p>
           </div>
         </div>
@@ -1742,9 +1749,9 @@ export default function AppPage() {
     <WhatsNewToast
       storageKey="skopos-whatsnew-v4"
       changes={[
-        "Ask \"what's trending\" or \"top defi protocols\" — instant market reads, powered by Aeon",
-        "Paste any tx hash — now flags unlimited approvals and possible honeypots, across 10 chains",
-        "Cleaner replies — structured, no more walls of text",
+        t("whatsNew.aeonReads"),
+        t("whatsNew.txFlags"),
+        t("whatsNew.cleanerReplies"),
       ]}
     />
     </>
@@ -1780,6 +1787,7 @@ function AutoSubmit({ onSubmit }: { onSubmit: (q: string) => void }) {
 // ─── FeatureCarousel ──────────────────────────────────────────────────────────
 
 function FeatureCarousel({ slide, setSlide }: { slide: number; setSlide: (i: number) => void }) {
+  const t = useTranslations("app.featureSlides");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const cards = FEATURE_SLIDES[slide];
 
@@ -1787,14 +1795,14 @@ function FeatureCarousel({ slide, setSlide }: { slide: number; setSlide: (i: num
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         {cards.map(card => (
-          <div key={card.label} style={{
+          <div key={card.key} style={{
             flex: 1, background: "var(--recent-active-bg)",
             border: "1px solid var(--drawer-label)",
             borderRadius: 14, padding: "16px",
           }}>
             <div style={{ color: "var(--drawer-action)", marginBottom: 12 }}>{card.icon}</div>
-            <p style={{ ...MONO, fontSize: "0.75rem", color: "var(--drawer-action-hover)", margin: 0 }}>{card.label}</p>
-            <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--drawer-action)", marginTop: 3 }}>{card.sub}</p>
+            <p style={{ ...MONO, fontSize: "0.75rem", color: "var(--drawer-action-hover)", margin: 0 }}>{t(`${card.key}.label`)}</p>
+            <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--drawer-action)", marginTop: 3 }}>{t(`${card.key}.sub`)}</p>
           </div>
         ))}
       </div>
@@ -1893,6 +1901,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   onResultUpdate?: (patch: Partial<QuoteResult>) => void;
   slippage?: number;
 }) {
+  const t = useTranslations("app.quote");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { address }                  = useAccount();
   const { mutateAsync: switchChain } = useSwitchChain();
@@ -1998,7 +2007,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       setApprovalHash(hash);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+      setSwitchErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 120) }));
     }
   }
 
@@ -2018,7 +2027,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
         let fresh: QuoteResult | null;
         try { fresh = await onRevalidate(); } finally { setIsRevalidating(false); }
         if (!fresh) {
-          setSwitchErr("This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.");
+          setSwitchErr(t("routeFailedRecheck"));
           return;
         }
         if (fresh.calldata) cd = fresh.calldata;
@@ -2028,7 +2037,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       setTxHash(hash);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+      setSwitchErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 120) }));
     }
   }
 
@@ -2050,7 +2059,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setSwitchErr(msg.toLowerCase().includes("user rejected") ? "Rejected in wallet." : `Switch failed: ${msg.slice(0, 80)}`);
+      setSwitchErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWalletShort") : t("switchFailed", { msg: msg.slice(0, 80) }));
     } finally {
       setIsSwitching(false);
     }
@@ -2070,25 +2079,25 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   // below, both purely informational so the user sees exactly what they're
   // about to sign before they sign it.
   const orderTypeLabel: string | null =
-    result.flash?.orderType === "limit" ? "LIMIT ORDER PREVIEW" :
-    result.flash?.orderType === "stop-loss" ? "STOP LOSS PREVIEW" :
-    result.flash?.orderType === "take-profit" ? "TAKE PROFIT PREVIEW" :
-    result.flash?.orderType === "twap" ? "TWAP ORDER PREVIEW" : null;
+    result.flash?.orderType === "limit" ? t("orderType.limit") :
+    result.flash?.orderType === "stop-loss" ? t("orderType.stopLoss") :
+    result.flash?.orderType === "take-profit" ? t("orderType.takeProfit") :
+    result.flash?.orderType === "twap" ? t("orderType.twap") : null;
 
   const triggerToken = result.flash?.side === "buy" ? intent.to.token : intent.from.token;
   const triggerBanner: string | null = result.flash?.triggerPrice
-    ? `Will execute when ${triggerToken} ${result.flash.triggerType === "lower" ? "drops to" : "hits"} $${Number(result.flash.triggerPrice).toLocaleString()}`
+    ? t(result.flash.triggerType === "lower" ? "triggerBanner.dropsTo" : "triggerBanner.hits", { token: triggerToken, price: Number(result.flash.triggerPrice).toLocaleString() })
     : result.flash?.durationSeconds
-      ? `Spreads ${intent.from.amount} ${intent.from.token} across ${formatDuration(result.flash.durationSeconds)}${result.flash.twapBucketCount ? ` in ${result.flash.twapBucketCount} buys` : ""}`
+      ? t(result.flash.twapBucketCount ? "triggerBanner.twapWithCount" : "triggerBanner.twap", { amount: intent.from.amount, token: intent.from.token, duration: formatDuration(result.flash.durationSeconds), count: result.flash.twapBucketCount ?? 0 })
       : null;
 
   const recipient = intent.to.receiver ?? connectedAddress;
   const summaryRows: { label: string; value: string }[] = [
-    { label: "Via",           value: route.tool },
-    ...(route.etaSec ? [{ label: "Est. time", value: route.etaSec >= 60 ? `~${Math.round(route.etaSec / 60)} min` : `~${Math.round(route.etaSec)} sec` }] : []),
-    { label: "Min. received", value: `~${minReceived} ${intent.to.token}` },
-    ...(route.feesUSD ? [{ label: "Network fee", value: `~$${Number(route.feesUSD).toFixed(2)}` }] : []),
-    ...(recipient ? [{ label: "Recipient", value: shortAddr(recipient) }] : []),
+    { label: t("summary.via"),           value: route.tool },
+    ...(route.etaSec ? [{ label: t("summary.estTime"), value: route.etaSec >= 60 ? t("summary.minutesEta", { n: Math.round(route.etaSec / 60) }) : t("summary.secondsEta", { n: Math.round(route.etaSec) }) }] : []),
+    { label: t("summary.minReceived"), value: `~${minReceived} ${intent.to.token}` },
+    ...(route.feesUSD ? [{ label: t("summary.networkFee"), value: `~$${Number(route.feesUSD).toFixed(2)}` }] : []),
+    ...(recipient ? [{ label: t("summary.recipient"), value: shortAddr(recipient) }] : []),
   ];
 
   return (
@@ -2101,7 +2110,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       {/* Header */}
       <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
-          {executionMode ? "TRANSACTION" : orderTypeLabel ?? (isSwap ? "SWAP PREVIEW" : "BRIDGE PREVIEW")}
+          {executionMode ? t("header.transaction") : orderTypeLabel ?? (isSwap ? t("header.swapPreview") : t("header.bridgePreview"))}
         </span>
         {/* Flash/Relay flows realistically take longer than QUOTE_TTL to click
             through with real wallet confirmations (wrap, approve, sign are
@@ -2116,7 +2125,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             background: "var(--card-border-faint, rgba(255,255,255,0.05))",
             color: isExpired ? "#F5B800" : secondsLeft <= 10 ? "rgba(245,184,0,0.65)" : "var(--card-text-faint, rgba(255,255,255,0.3))",
           }}>
-            {isExpired ? "EXPIRED" : secondsLeft <= 15 ? `${secondsLeft}s` : "LIVE"}
+            {isExpired ? t("expired") : secondsLeft <= 15 ? t("secondsLeft", { n: secondsLeft }) : t("live")}
           </span>
         )}
       </div>
@@ -2160,7 +2169,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
 
       {/* Summary card */}
       <div style={{ margin: "0 14px 14px", padding: "12px 14px", background: "var(--card-bg)", border: "1px solid var(--card-border-faint)", borderRadius: 12 }}>
-        <p style={{ ...MONO, fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.25))", margin: "0 0 9px" }}>SUMMARY</p>
+        <p style={{ ...MONO, fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.25))", margin: "0 0 9px" }}>{t("summaryLabel")}</p>
         {summaryRows.map(({ label, value }, i) => (
           <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: i > 0 ? "1px solid var(--card-bg)" : undefined }}>
             <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{label}</span>
@@ -2169,7 +2178,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
         ))}
         {/* Slippage — adjustable before execution (re-quotes on change), read-only after */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: "1px solid var(--card-bg)" }}>
-          <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>Slippage</span>
+          <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("slippage")}</span>
           {!executionMode && onSlippageChange ? (
             <div style={{ display: "flex", gap: 4 }}>
               {SLIPPAGE_OPTIONS.map(({ value, label }) => {
@@ -2206,7 +2215,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
         )}
         {approvalConfirmed && !txHash && (
           <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0 }}>
-            approval confirmed ✓ — execute below
+            {t("approvalConfirmed")}
           </p>
         )}
 
@@ -2215,11 +2224,11 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <a href={explorerUrl ?? "#"} target="_blank" rel="noopener noreferrer"
                 style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80", textDecoration: "none" }}>
-                {route.etaSec ? "origin confirmed ✓ · view on explorer →" : "confirmed ✓ · view on explorer →"}
+                {route.etaSec ? t("originConfirmed") : t("confirmed")}
               </a>
               {route.etaSec ? (
                 <div style={{ ...MONO, width: "100%", padding: "10px 0", fontSize: "0.68rem", letterSpacing: "0.04em", textAlign: "center", background: "rgba(245,184,0,0.05)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, color: "rgba(245,184,0,0.8)" }}>
-                  bridging to {intent.to.chain} · funds arrive in ~{route.etaSec >= 60 ? `${Math.round(route.etaSec / 60)} min` : `${Math.round(route.etaSec)} sec`}
+                  {route.etaSec >= 60 ? t("bridgingToMinutes", { chain: intent.to.chain, n: Math.round(route.etaSec / 60) }) : t("bridgingToSeconds", { chain: intent.to.chain, n: Math.round(route.etaSec) })}
                 </div>
               ) : null}
             </div>
@@ -2227,19 +2236,19 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <a href={explorerUrl ?? "#"} target="_blank" rel="noopener noreferrer"
                 style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(255,107,107,0.07)", border: "1px solid rgba(255,107,107,0.35)", borderRadius: 10, color: "#ff6b6b", textDecoration: "none" }}>
-                transaction failed ✗ · view on explorer →
+                {t("transactionFailed")}
               </a>
               {onRefresh && (
                 <button onClick={() => { setTxHash(undefined); void handleRefresh(); }}
                   style={{ ...MONO, width: "100%", padding: "10px 0", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.03em", background: "none", border: "1px solid var(--card-border)", borderRadius: 10, color: "var(--card-text-dim)", cursor: "pointer" }}>
-                  get a fresh quote &amp; retry
+                  {t("freshQuoteRetry")}
                 </button>
               )}
             </div>
           ) : (
             <div style={{ ...MONO, width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(245,184,0,0.04)", border: "1px solid rgba(245,184,0,0.15)", borderRadius: 10, color: "rgba(245,184,0,0.5)" }}
               className={isConfirming ? "animate-pulse" : ""}>
-              {isConfirming ? "confirming on-chain…" : "submitted · waiting…"}
+              {isConfirming ? t("confirmingOnChain") : t("submittedWaiting")}
             </div>
           )
         ) : isRelayLeg ? (
@@ -2261,28 +2270,28 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
               }}
               className={isRefreshing ? "animate-pulse" : ""}
             >
-              {isRefreshing ? "…" : isExpired ? "Refresh →" : "Refresh"}
+              {isRefreshing ? t("ellipsis") : isExpired ? t("refreshArrow") : t("refresh")}
             </button>
 
             {!authenticated ? (
               <button onClick={login}
                 style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: "pointer" }}>
-                Connect Wallet
+                {t("connectWallet")}
               </button>
             ) : !onCorrectChain && !isSolanaOrigin ? (
               <button onClick={handleSwitchChain} disabled={isSwitching}
                 style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
-                {isSwitching ? "Switching…" : `Switch to ${intent.from.chain.charAt(0).toUpperCase() + intent.from.chain.slice(1)}`}
+                {isSwitching ? t("switching") : t("switchTo", { chain: intent.from.chain.charAt(0).toUpperCase() + intent.from.chain.slice(1) })}
               </button>
             ) : needsApproval ? (
               <button onClick={approve} disabled={isApproving || (!!approvalHash && !approvalConfirmed)}
                 style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isApproving ? "wait" : "pointer", opacity: (isApproving || (!!approvalHash && !approvalConfirmed)) ? 0.65 : 1 }}>
-                {isApproving ? "Approving…" : approvalHash && !approvalConfirmed ? "Confirming…" : `Approve ${intent.from.token}`}
+                {isApproving ? t("approving") : approvalHash && !approvalConfirmed ? t("confirming") : t("approveToken", { token: intent.from.token })}
               </button>
             ) : (
               <button onClick={execute} disabled={!calldata || isSending || isRevalidating || isExpired}
                 style={{ ...MONO, flex: 1, padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: calldata && !isExpired ? "#F5B800" : "var(--card-surface)", border: calldata && !isExpired ? "none" : "1px solid var(--card-border)", borderRadius: 10, color: calldata && !isExpired ? "#000" : "var(--card-text-faint)", cursor: calldata && !isSending && !isRevalidating && !isExpired ? "pointer" : "not-allowed" }}>
-                {isRevalidating ? "re-checking route…" : isSending ? "Confirm in wallet…" : isExpired ? "Quote expired — refresh" : "Execute →"}
+                {isRevalidating ? t("recheckingRoute") : isSending ? t("confirmInWallet") : isExpired ? t("quoteExpiredRefresh") : t("executeArrow")}
               </button>
             )}
           </div>
@@ -2299,6 +2308,7 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
   onTxSubmitted?: (r: TxRecord) => void;
   onRevalidate?: () => Promise<QuoteResult | null>;
 }) {
+  const t = useTranslations("app.solana");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { publicKey, connected, connect, select, wallets, signTransaction, wallet } = useSolanaWallet();
   const { connection } = useSolanaConnection();
@@ -2317,7 +2327,7 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
       if (onRevalidate) {
         const fresh = await onRevalidate();
         if (!fresh) {
-          setErr("This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.");
+          setErr(t("routeFailedRecheck"));
           return;
         }
         if (fresh.calldata) cd = fresh.calldata;
@@ -2331,7 +2341,7 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
         .slice(0, tx.message.header.numRequiredSignatures)
         .map(k => k.toBase58());
       if (!requiredSigners.includes(publicKey.toBase58())) {
-        throw new Error("This quote was built for a different Solana account. Reconnect with the wallet you started with, or refresh for a new quote.");
+        throw new Error(t("wrongAccount"));
       }
 
       const signed = await signTransaction(tx);
@@ -2345,7 +2355,7 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
         { signature, blockhash, lastValidBlockHeight },
         "confirmed"
       );
-      if (confirmation.value.err) throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      if (confirmation.value.err) throw new Error(t("transactionFailedDetail", { detail: JSON.stringify(confirmation.value.err) }));
 
       setSig(signature);
       onTxSubmitted?.({
@@ -2357,7 +2367,7 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
         timestamp: Date.now(),
       });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Transaction failed");
+      setErr(e instanceof Error ? e.message : t("transactionFailed"));
     } finally {
       setSending(false);
     }
@@ -2367,7 +2377,7 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
     return (
       <a href={`https://solscan.io/tx/${sig}`} target="_blank" rel="noopener noreferrer"
         style={{ ...MONO, display: "block", width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: "pointer", textAlign: "center", textDecoration: "none" }}>
-        view on solscan ↗
+        {t("viewOnSolscan")}
       </a>
     );
   }
@@ -2388,22 +2398,22 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
                 await connect();
               }
             } catch (e) {
-              setErr(e instanceof Error ? e.message : "Failed to connect wallet");
+              setErr(e instanceof Error ? e.message : t("failedToConnect"));
             }
           }}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.08)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: "pointer" }}>
-          {wallet ? `connect ${wallet.adapter.name}` : "connect phantom →"}
+          {wallet ? t("connectNamed", { name: wallet.adapter.name }) : t("connectPhantom")}
         </button>
       ) : (
         <button
           onClick={execute}
           disabled={sending || !result.calldata}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: result.calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${result.calldata ? "rgba(245,184,0,0.3)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 10, color: result.calldata ? "#F5B800" : "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: sending || !result.calldata ? "not-allowed" : "pointer" }}>
-          {sending ? "confirm in phantom…" : "execute via phantom →"}
+          {sending ? t("confirmInPhantom") : t("executeViaPhantom")}
         </button>
       )}
       <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, textAlign: "center" }}>
-        {publicKey ? `${publicKey.toBase58().slice(0, 6)}…${publicKey.toBase58().slice(-4)}` : "phantom · solana"}
+        {publicKey ? `${publicKey.toBase58().slice(0, 6)}…${publicKey.toBase58().slice(-4)}` : t("phantomSolana")}
       </p>
     </div>
   );
@@ -2424,6 +2434,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
   onCorrectChain: boolean;
   onResultUpdate?: (patch: Partial<QuoteResult>) => void;
 }) {
+  const t = useTranslations("app.flash");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { login, authenticated } = usePrivy();
   const { mutateAsync: switchChain } = useSwitchChain();
@@ -2460,7 +2471,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErr(msg.toLowerCase().includes("user rejected") ? "Rejected in wallet." : `Switch failed: ${msg.slice(0, 80)}`);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWalletShort") : t("switchFailed", { msg: msg.slice(0, 80) }));
     } finally {
       setIsSwitching(false);
     }
@@ -2477,7 +2488,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       setWrapHash(hash);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 120) }));
     }
   }
 
@@ -2495,7 +2506,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       setApprovalHash(hash);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 120) }));
     }
   }
 
@@ -2543,7 +2554,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || `Order submission failed (${res.status})`);
+      if (!res.ok) throw new Error(data?.error || t("orderSubmissionFailed", { status: res.status }));
       setOrderId(data.orderId);
       if (flash) onResultUpdate?.({ flash: { ...flash, completedOrderId: data.orderId } });
       onTxSubmitted?.({
@@ -2554,7 +2565,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErr(msg.toLowerCase().includes("user rejected") ? "Signature rejected in wallet." : msg.slice(0, 160));
+      setErr(msg.toLowerCase().includes("user rejected") ? t("signatureRejected") : msg.slice(0, 160));
     } finally {
       setIsSubmitting(false);
     }
@@ -2563,7 +2574,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
   if (orderId) {
     return (
       <div style={{ ...MONO, width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80" }}>
-        order submitted ✓ · id {orderId.slice(0, 8)}…
+        {t("orderSubmitted", { id: orderId.slice(0, 8) })}
       </div>
     );
   }
@@ -2576,38 +2587,38 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
       {wrapConfirmed && !needsApproval && (
         <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0 }}>
-          wrap confirmed ✓
+          {t("wrapConfirmed")}
         </p>
       )}
       {approvalConfirmed && (
         <p style={{ ...MONO, fontSize: "0.65rem", color: "#4ade80", textAlign: "center", margin: 0 }}>
-          approval confirmed ✓ — sign below
+          {t("approvalConfirmedSignBelow")}
         </p>
       )}
       {!authenticated ? (
         <button onClick={login}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: "pointer" }}>
-          Connect Wallet
+          {t("connectWallet")}
         </button>
       ) : !onCorrectChain ? (
         <button onClick={handleSwitchChain} disabled={isSwitching}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
-          {isSwitching ? "Switching…" : "Switch to Robinhood Chain"}
+          {isSwitching ? t("switching") : t("switchToRobinhoodChain")}
         </button>
       ) : needsWrap ? (
         <button onClick={wrap} disabled={isApproving || (!!wrapHash && !wrapConfirmed)}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isApproving ? "wait" : "pointer", opacity: (isApproving || (!!wrapHash && !wrapConfirmed)) ? 0.65 : 1 }}>
-          {isApproving ? "Wrapping…" : wrapHash && !wrapConfirmed ? "Confirming…" : `Wrap ${result.intent.from.token}`}
+          {isApproving ? t("wrapping") : wrapHash && !wrapConfirmed ? t("confirming") : t("wrapToken", { token: result.intent.from.token })}
         </button>
       ) : needsApproval ? (
         <button onClick={approve} disabled={isApproving || (!!approvalHash && !approvalConfirmed)}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isApproving ? "wait" : "pointer", opacity: (isApproving || (!!approvalHash && !approvalConfirmed)) ? 0.65 : 1 }}>
-          {isApproving ? "Approving…" : approvalHash && !approvalConfirmed ? "Confirming…" : `Approve ${result.intent.from.token}`}
+          {isApproving ? t("approving") : approvalHash && !approvalConfirmed ? t("confirming") : t("approveToken", { token: result.intent.from.token })}
         </button>
       ) : (
         <button onClick={signAndSubmit} disabled={isSigning || isSubmitting || !flash}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: (isSigning || isSubmitting) ? "wait" : "pointer", opacity: (isSigning || isSubmitting) ? 0.65 : 1 }}>
-          {isSigning ? "Confirm in wallet…" : isSubmitting ? "Submitting order…" : "Sign & Execute →"}
+          {isSigning ? t("confirmInWallet") : isSubmitting ? t("submittingOrder") : t("signAndExecute")}
         </button>
       )}
     </div>
@@ -2628,6 +2639,7 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
   onCorrectChain: boolean;
   onResultUpdate?: (patch: Partial<QuoteResult>) => void;
 }) {
+  const t = useTranslations("app.relay");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { login, authenticated } = usePrivy();
   const { mutateAsync: switchChain } = useSwitchChain();
@@ -2688,7 +2700,7 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErr(msg.toLowerCase().includes("user rejected") ? "Rejected in wallet." : `Switch failed: ${msg.slice(0, 80)}`);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWalletShort") : t("switchFailed", { msg: msg.slice(0, 80) }));
     } finally {
       setIsSwitching(false);
     }
@@ -2707,7 +2719,7 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
       setTxHash(hash);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErr(msg.toLowerCase().includes("user rejected") ? "Transaction rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 120) }));
     }
   }
 
@@ -2718,11 +2730,11 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <a href={explorerUrl} target="_blank" rel="noopener noreferrer"
           style={{ ...MONO, display: "block", width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(40,200,100,0.07)", border: "1px solid rgba(40,200,100,0.35)", borderRadius: 10, color: "#4ade80", textDecoration: "none" }}>
-          deposit confirmed ✓ · view on explorer →
+          {t("depositConfirmed")}
         </a>
         {eta != null && (
           <div style={{ ...MONO, width: "100%", padding: "10px 0", fontSize: "0.68rem", letterSpacing: "0.04em", textAlign: "center", background: "rgba(245,184,0,0.05)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 10, color: "rgba(245,184,0,0.8)" }}>
-            bridging to {result.intent.to.chain} · funds arrive in ~{eta >= 60 ? `${Math.round(eta / 60)} min` : `${Math.round(eta)} sec`}
+            {eta >= 60 ? t("bridgingToMinutes", { chain: result.intent.to.chain, n: Math.round(eta / 60) }) : t("bridgingToSeconds", { chain: result.intent.to.chain, n: Math.round(eta) })}
           </div>
         )}
       </div>
@@ -2733,45 +2745,45 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>
-          Transaction failed — refresh the quote and try again.
+          {t("transactionFailedRefresh")}
         </p>
       </div>
     );
   }
 
   const stepLabel = currentStep?.id === "approve"
-    ? `Approve ${result.intent.from.token}`
+    ? t("approveToken", { token: result.intent.from.token })
     : currentStep?.id === "deposit"
-      ? "Bridge →"
-      : currentStep?.action ?? "Execute →";
+      ? t("bridgeArrow")
+      : currentStep?.action ?? t("executeArrow");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {totalSteps > 1 && (
         <p style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.06em", color: "var(--card-text-faint, rgba(255,255,255,0.35))", textAlign: "center", margin: 0 }}>
-          STEP {stepIndex + 1} OF {totalSteps}{currentStep ? ` — ${currentStep.description}` : ""}
+          {currentStep ? t("stepOfWithDescription", { n: stepIndex + 1, total: totalSteps, description: currentStep.description }) : t("stepOf", { n: stepIndex + 1, total: totalSteps })}
         </p>
       )}
       {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
       {txHash ? (
         <div style={{ ...MONO, width: "100%", padding: "12px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textAlign: "center", background: "rgba(245,184,0,0.04)", border: "1px solid rgba(245,184,0,0.15)", borderRadius: 10, color: "rgba(245,184,0,0.5)" }}
           className={isConfirming ? "animate-pulse" : ""}>
-          {isConfirming ? "confirming on-chain…" : "submitted · waiting…"}
+          {isConfirming ? t("confirmingOnChain") : t("submittedWaiting")}
         </div>
       ) : !authenticated ? (
         <button onClick={login}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: "pointer" }}>
-          Connect Wallet
+          {t("connectWallet")}
         </button>
       ) : !onCorrectChain ? (
         <button onClick={handleSwitchChain} disabled={isSwitching}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
-          {isSwitching ? "Switching…" : `Switch to ${result.intent.from.chain}`}
+          {isSwitching ? t("switching") : t("switchTo", { chain: result.intent.from.chain })}
         </button>
       ) : (
         <button onClick={sendCurrentStep} disabled={isSending || !currentStep}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSending ? "wait" : "pointer", opacity: isSending ? 0.65 : 1 }}>
-          {isSending ? "Confirm in wallet…" : stepLabel}
+          {isSending ? t("confirmInWallet") : stepLabel}
         </button>
       )}
     </div>
@@ -2781,6 +2793,7 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
 // ─── RebalanceDisplay ─────────────────────────────────────────────────────────
 
 function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage, onLegRefresh, onLegRevalidate, onSlippageChange }: { result: RebalanceResult; connectedAddress: string | null; onTxSubmitted?: (r: TxRecord) => void; slippage?: number; onLegRefresh?: (legIndex: number, slippageOverride?: number) => Promise<void>; onLegRevalidate?: (legIndex: number) => Promise<QuoteResult | null>; onSlippageChange?: (v: number) => void }) {
+  const t = useTranslations("app.rebalance");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const total     = result.legs.length;
   const okLegs    = result.legs.filter(l => l.type === "quote").length;
@@ -2793,16 +2806,16 @@ function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage, o
       {/* Summary header */}
       <p style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: 0 }}>
         <span style={{ color: "#F5B800" }}>{okLegs}</span>
-        {` route${okLegs !== 1 ? "s" : ""}`}
-        {destChain ? ` · consolidating to ${destChain}` : ""}
-        {" · execute in order"}
+        {` ${t("routeCount", { count: okLegs })}`}
+        {destChain ? t("consolidatingTo", { chain: destChain }) : ""}
+        {t("executeInOrder")}
       </p>
 
       {/* One card per leg */}
       {result.legs.map((leg, i) => (
         <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
-            STEP {i + 1} / {total}
+            {t("stepOf", { n: i + 1, total })}
           </span>
           {leg.type === "quote" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2814,7 +2827,7 @@ function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage, o
                 </span>
                 {leg.route.feesUSD && (
                   <span style={{ color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>
-                    {"  ·  "}${Number(leg.route.feesUSD).toFixed(2)} fees
+                    {"  ·  "}{t("feesAmount", { amount: Number(leg.route.feesUSD).toFixed(2) })}
                   </span>
                 )}
               </p>
@@ -2848,6 +2861,7 @@ function timeAgo(ts: number | null): string {
 }
 
 function PaymentsDisplay({ result }: { result: PaymentsResult }) {
+  const t = useTranslations("app.payments");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
   const explorer = (chainName: string, hash: string) => `${EXPLORER_URLS[chainName] ?? "https://basescan.org/tx/"}${hash}`;
@@ -2856,14 +2870,14 @@ function PaymentsDisplay({ result }: { result: PaymentsResult }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", borderRadius: 12, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-bg, rgba(255,255,255,0.02))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>PAYMENTS RECEIVED</span>
+        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>{t("eyebrow")}</span>
         <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
-          {payments.length} tagged
+          {t("tagged", { count: payments.length })}
         </span>
       </div>
       {payments.length === 0 ? (
         <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: 0 }}>
-          No tagged B20 payments to {short(result.address)} yet. When someone pays you with a memo, it lands here — matched to its reference.
+          {t("noneYet", { address: short(result.address) })}
         </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2871,11 +2885,11 @@ function PaymentsDisplay({ result }: { result: PaymentsResult }) {
             <a key={p.txHash} href={explorer(p.chainName, p.txHash)} target="_blank" rel="noopener noreferrer"
               style={{ display: "flex", flexDirection: "column", gap: 5, padding: "11px 13px", borderRadius: 10, border: "1px solid var(--card-border, rgba(255,255,255,0.07))", background: "rgba(245,184,0,0.03)", textDecoration: "none" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                <span style={{ ...MONO, fontSize: "0.82rem", color: "#F5B800", fontWeight: 600 }}>{p.memoText || "(no memo)"}</span>
+                <span style={{ ...MONO, fontSize: "0.82rem", color: "#F5B800", fontWeight: 600 }}>{p.memoText || t("noMemo")}</span>
                 <span style={{ ...MONO, fontSize: "0.78rem", color: "var(--card-text, #fff)" }}>{p.amount} {p.tokenSymbol}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>from {short(p.from)} · {p.chainName}</span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{t("from", { address: short(p.from), chain: p.chainName })}</span>
                 <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{timeAgo(p.timestamp)} ↗</span>
               </div>
             </a>
@@ -2899,6 +2913,7 @@ function PayRow({ label, value, mono = true }: { label: string; value: React.Rea
 }
 
 function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitted?: (r: TxRecord) => void }) {
+  const t = useTranslations("app.pay");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { mutateAsync: writeContract, isPending } = useWriteContract();
   const { mutateAsync: switchChain } = useSwitchChain();
@@ -2933,28 +2948,28 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
           });
       setHash(h);
       onTxSubmitted?.({ hash: h, chainId: result.chainId, chain: result.chainName,
-        label: `Pay ${result.amountDisplay} ${result.tokenSymbol}`, timestamp: Date.now(),
+        label: t("payLabel", { amount: result.amountDisplay, token: result.tokenSymbol }), timestamp: Date.now(),
         explorerUrl: `${explorerBase}${h}` });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErr(msg.toLowerCase().includes("user rejected") ? "Payment rejected in wallet." : `Error: ${msg.slice(0, 120)}`);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 120) }));
     }
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", borderRadius: 12, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-bg, rgba(255,255,255,0.02))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>{result.isB20 ? "B20 PAYMENT" : "PAYMENT"}</span>
+        <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>{result.isB20 ? t("b20Payment") : t("payment")}</span>
         <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{result.chainName}</span>
       </div>
       <div style={{ ...MONO, fontSize: "1.1rem", color: "var(--card-text, #fff)" }}>
         {result.amountDisplay} <span style={{ color: "#F5B800" }}>{result.tokenSymbol}</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4, borderTop: "1px solid var(--card-border, rgba(255,255,255,0.06))" }}>
-        <PayRow label="To" value={short(result.to)} />
-        {result.memoApplied && <PayRow label={result.memoHashed ? "Memo (hashed)" : "Memo"} value={result.memoText} mono={false} />}
-        {result.memoText && !result.isB20 && <PayRow label="Memo" value={`skipped — ${result.tokenSymbol} isn't a B20`} mono={false} />}
-        <PayRow label="Token" value={`${result.tokenSymbol} · ${short(result.token)}${result.isB20 ? " · B20" : ""}`} />
+        <PayRow label={t("to")} value={short(result.to)} />
+        {result.memoApplied && <PayRow label={result.memoHashed ? t("memoHashed") : t("memo")} value={result.memoText} mono={false} />}
+        {result.memoText && !result.isB20 && <PayRow label={t("memo")} value={t("memoSkipped", { token: result.tokenSymbol })} mono={false} />}
+        <PayRow label={t("token")} value={`${result.tokenSymbol} · ${short(result.token)}${result.isB20 ? " · B20" : ""}`} />
       </div>
 
       {err && <p style={{ ...MONO, fontSize: "0.65rem", color: "#ff5555", margin: 0 }}>{err}</p>}
@@ -2962,17 +2977,17 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
       {confirmed ? (
         <a href={`${explorerBase}${hash}`} target="_blank" rel="noopener noreferrer"
           style={{ ...MONO, display: "block", width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", textAlign: "center", textDecoration: "none" }}>
-          paid ✓ · view on explorer ↗
+          {t("paidConfirmed")}
         </a>
       ) : failed ? (
         <a href={`${explorerBase}${hash}`} target="_blank" rel="noopener noreferrer"
           style={{ ...MONO, display: "block", width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(255,85,85,0.06)", border: "1px solid rgba(255,85,85,0.3)", borderRadius: 10, color: "#ff5555", textAlign: "center", textDecoration: "none" }}>
-          payment failed ✗ · view on explorer ↗
+          {t("paymentFailed")}
         </a>
       ) : (
         <button onClick={pay} disabled={isPending || confirming}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: "rgba(245,184,0,0.08)", border: "1px solid rgba(245,184,0,0.3)", borderRadius: 10, color: "#F5B800", cursor: isPending || confirming ? "wait" : "pointer" }}>
-          {isPending ? "confirm in wallet…" : confirming ? "confirming…" : "pay →"}
+          {isPending ? t("confirmInWallet") : confirming ? t("confirmingEllipsis") : t("payArrow")}
         </button>
       )}
     </div>
@@ -2980,6 +2995,7 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
 }
 
 function TxDisplay({ result }: { result: TxResult }) {
+  const t = useTranslations("app.tx");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { tx, summary } = result;
 
@@ -2988,24 +3004,24 @@ function TxDisplay({ result }: { result: TxResult }) {
 
   type Row = { label: string; value: React.ReactNode };
   const rows: Row[] = [
-    { label: "Hash",    value: <span title={tx.hash}>{tx.hash.slice(0, 12)}…{tx.hash.slice(-8)}</span> },
-    { label: "Chain",   value: tx.chainName },
-    { label: "Status",  value: <span style={{ color: statusColor }}>{tx.status}</span> },
-    { label: "Block",   value: tx.blockNumber ? `#${tx.blockNumber.toLocaleString()}` : "—" },
-    { label: "From",    value: <span title={tx.from}>{tx.from.slice(0, 8)}…{tx.from.slice(-6)}</span> },
-    ...(tx.to ? [{ label: "To", value: <span title={tx.to}>{tx.to.slice(0, 8)}…{tx.to.slice(-6)}</span> }] : []),
-    ...(tx.method ? [{ label: "Method", value: <span style={{ color: "#F5B800" }}>{tx.method}</span> }] : []),
-    { label: "Value",   value: `${tx.valueEth} ETH` },
-    { label: "Gas",     value: `${tx.gasCostEth} ETH` },
-    { label: "Logs",    value: tx.logCount.toString() },
-    ...(ts ? [{ label: "Time", value: ts.toLocaleString() }] : []),
+    { label: t("hash"),    value: <span title={tx.hash}>{tx.hash.slice(0, 12)}…{tx.hash.slice(-8)}</span> },
+    { label: t("chain"),   value: tx.chainName },
+    { label: t("status"),  value: <span style={{ color: statusColor }}>{tx.status}</span> },
+    { label: t("block"),   value: tx.blockNumber ? `#${tx.blockNumber.toLocaleString()}` : "—" },
+    { label: t("from"),    value: <span title={tx.from}>{tx.from.slice(0, 8)}…{tx.from.slice(-6)}</span> },
+    ...(tx.to ? [{ label: t("to"), value: <span title={tx.to}>{tx.to.slice(0, 8)}…{tx.to.slice(-6)}</span> }] : []),
+    ...(tx.method ? [{ label: t("method"), value: <span style={{ color: "#F5B800" }}>{tx.method}</span> }] : []),
+    { label: t("value"),   value: `${tx.valueEth} ETH` },
+    { label: t("gas"),     value: `${tx.gasCostEth} ETH` },
+    { label: t("logs"),    value: tx.logCount.toString() },
+    ...(ts ? [{ label: t("time"), value: ts.toLocaleString() }] : []),
   ];
 
   return (
     <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 16, overflow: "hidden" }}>
       <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
-          Transaction
+          {t("header")}
         </p>
         <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 4, background: "var(--card-border-faint, rgba(255,255,255,0.05))", color: statusColor }}>
           {tx.chainName}
@@ -3034,7 +3050,7 @@ function TxDisplay({ result }: { result: TxResult }) {
           rel="noopener noreferrer"
           style={{ ...MONO, display: "block", width: "100%", padding: "10px 0", fontSize: "0.72rem", letterSpacing: "0.08em", textTransform: "uppercase", textAlign: "center", background: "var(--card-header-bg, rgba(255,255,255,0.04))", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 10, color: "var(--card-text-muted, rgba(255,255,255,0.7))", textDecoration: "none" }}
         >
-          view on explorer →
+          {t("viewOnExplorer")}
         </a>
       </div>
     </div>
@@ -3044,6 +3060,7 @@ function TxDisplay({ result }: { result: TxResult }) {
 // ─── AddressDisplay ───────────────────────────────────────────────────────────
 
 function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (prompt: string) => void }) {
+  const t = useTranslations("app.address");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { data, summary, ensName } = result;
 
@@ -3079,11 +3096,11 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       <div style={{ padding: "14px 20px 12px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
           <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
-            {ensName ? `${ensName} · ` : ""}WALLET OVERVIEW
+            {ensName ? `${ensName} · ` : ""}{t("walletOverview")}
           </span>
           <a href={`https://etherscan.io/address/${data.address}`} target="_blank" rel="noopener noreferrer"
             style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", textDecoration: "none" }}>
-            etherscan ↗
+            {t("etherscan")}
           </a>
         </div>
         <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.42))", letterSpacing: "0.02em" }}>
@@ -3095,12 +3112,12 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {total > 0 && (
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", gap: 28 }}>
           <div>
-            <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 5px" }}>TOTAL VALUE</p>
+            <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 5px" }}>{t("totalValue")}</p>
             <p style={{ ...MONO, fontSize: "1.45rem", fontWeight: 700, color: "var(--card-text-muted, rgba(255,255,255,0.85))", margin: 0, letterSpacing: "-0.01em" }}>{fmtUsd(total)}</p>
           </div>
           {nativeRows[0] && (
             <div style={{ borderLeft: "1px solid var(--card-border, rgba(255,255,255,0.07))", paddingLeft: 28 }}>
-              <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 5px" }}>{nativeRows[0].nativeSymbol} BALANCE</p>
+              <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 5px" }}>{t("symbolBalance", { symbol: nativeRows[0].nativeSymbol })}</p>
               <p style={{ ...MONO, fontSize: "1rem", color: "var(--card-text-muted, rgba(255,255,255,0.65))", margin: 0 }}>{nativeRows[0].native}</p>
             </div>
           )}
@@ -3118,7 +3135,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {(nativeRows.length > 0 || tokenRows.length > 0) && (
         <div style={{ borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
           <div style={{ padding: "10px 20px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>TOKEN HOLDINGS</span>
+            <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{t("tokenHoldings")}</span>
             {total > 0 && <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.38))" }}>{fmtUsd(total)}</span>}
           </div>
 
@@ -3130,12 +3147,12 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
               priceChange24h: null as number | null,
               onSwapStr: null as string | null,
             })),
-            ...tokenRows.map(t => ({
-              key: `t-${t.chainId}-${t.contractAddress}`, sym: t.symbol, name: t.name,
-              amount: `${t.balance} ${t.symbol}`, usdValue: t.usdValue,
-              chain: t.chainName, isNative: false,
-              priceChange24h: t.priceChange24h ?? null as number | null,
-              onSwapStr: onSwap ? `swap ${t.balance} ${t.symbol} to USDC on ${t.chainName.toLowerCase()}` : null,
+            ...tokenRows.map(tok => ({
+              key: `t-${tok.chainId}-${tok.contractAddress}`, sym: tok.symbol, name: tok.name,
+              amount: `${tok.balance} ${tok.symbol}`, usdValue: tok.usdValue,
+              chain: tok.chainName, isNative: false,
+              priceChange24h: tok.priceChange24h ?? null as number | null,
+              onSwapStr: onSwap ? `swap ${tok.balance} ${tok.symbol} to USDC on ${tok.chainName.toLowerCase()}` : null,
             })),
           ].map(row => {
             const pct   = total > 0 && row.usdValue ? (row.usdValue / total) * 100 : 0;
@@ -3183,7 +3200,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
                           onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.45)"; e.currentTarget.style.color = "rgba(245,184,0,0.9)"; }}
                           onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.2)"; e.currentTarget.style.color = "rgba(245,184,0,0.5)"; }}
                         >
-                          swap →
+                          {t("swapArrow")}
                         </button>
                       )}
                     </div>
@@ -3198,7 +3215,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {/* Recent buys */}
       {recentBuys.length > 0 && (
         <div style={{ padding: "10px 20px 14px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 8 }}>RECENT BUYS</p>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 8 }}>{t("recentBuys")}</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {recentBuys.map(r => (
               <a key={r.hash} href={`https://etherscan.io/tx/${r.hash}`} target="_blank" rel="noopener noreferrer"
@@ -3214,18 +3231,18 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {/* Recent activity */}
       {data.recentTransfers.length > 0 && (
         <div style={{ padding: "10px 20px 14px" }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 8 }}>RECENT ACTIVITY</p>
-          {data.recentTransfers.slice(0, 6).map((t, i) => (
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 8 }}>{t("recentActivity")}</p>
+          {data.recentTransfers.slice(0, 6).map((transfer, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: i > 0 ? "1px solid var(--card-header-bg, rgba(255,255,255,0.04))" : undefined, minWidth: 0 }}>
-              <span style={{ ...MONO, fontSize: "0.58rem", color: t.direction === "in" ? "#4ade80" : "#F5B800", letterSpacing: "0.04em", flexShrink: 0, width: 24 }}>
-                {t.direction === "in" ? "IN" : "OUT"}
+              <span style={{ ...MONO, fontSize: "0.58rem", color: transfer.direction === "in" ? "#4ade80" : "#F5B800", letterSpacing: "0.04em", flexShrink: 0, width: 24 }}>
+                {transfer.direction === "in" ? t("in") : t("out")}
               </span>
               <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.62))", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {t.value} {t.asset}
+                {transfer.value} {transfer.asset}
               </span>
-              <a href={`https://etherscan.io/tx/${t.hash}`} target="_blank" rel="noopener noreferrer"
+              <a href={`https://etherscan.io/tx/${transfer.hash}`} target="_blank" rel="noopener noreferrer"
                 style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.26))", textDecoration: "none", flexShrink: 0 }}>
-                {t.hash.slice(0, 7)}…
+                {transfer.hash.slice(0, 7)}…
               </a>
             </div>
           ))}
@@ -3273,6 +3290,7 @@ const SYMBOL_CHAIN: Record<string, string> = {
 };
 
 function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (text: string) => void }) {
+  const t = useTranslations("app.price");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const chainId = useChainId();
   const detectedChain = EVM_CHAIN_NAMES[chainId] ?? null;
@@ -3326,10 +3344,10 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
   };
 
   const stats: [string, string][] = [];
-  if (marketCap         && marketCap         > 0) stats.push(["Market Cap",    fmtUsd(marketCap)]);
-  if (volume24h         && volume24h         > 0) stats.push(["Volume (24h)",  fmtUsd(volume24h)]);
-  if (circulatingSupply && circulatingSupply > 0) stats.push(["Circulating",   fmtSupply(circulatingSupply)]);
-  if (maxSupply         && maxSupply         > 0) stats.push(["Max Supply",    fmtSupply(maxSupply)]);
+  if (marketCap         && marketCap         > 0) stats.push([t("marketCap"),   fmtUsd(marketCap)]);
+  if (volume24h         && volume24h         > 0) stats.push([t("volume24h"),   fmtUsd(volume24h)]);
+  if (circulatingSupply && circulatingSupply > 0) stats.push([t("circulating"), fmtSupply(circulatingSupply)]);
+  if (maxSupply         && maxSupply         > 0) stats.push([t("maxSupply"),   fmtSupply(maxSupply)]);
 
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
 
@@ -3363,7 +3381,7 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
               border: `1px solid ${lineColor}30`,
               borderRadius: 6, padding: "2px 8px", display: "inline-block", marginTop: 4,
             }}>
-              {positive ? "▲" : "▼"} {Math.abs(change24h).toFixed(2)}% (1d)
+              {positive ? "▲" : "▼"} {Math.abs(change24h).toFixed(2)}% {t("oneDay")}
             </span>
           )}
         </div>
@@ -3414,7 +3432,7 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
           }}
           style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: "#F5B800", color: "#000", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
         >
-          Buy {symbol}
+          {t("buySymbol", { symbol })}
         </button>
         <button
           onClick={() => {
@@ -3424,7 +3442,7 @@ function PriceDisplay({ result, onSubmit }: { result: PriceResult; onSubmit: (te
           }}
           style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid var(--card-border)", background: "transparent", color: "var(--card-text-muted)", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer" }}
         >
-          Sell {symbol}
+          {t("sellSymbol", { symbol })}
         </button>
       </div>
     </div>
@@ -3597,6 +3615,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
   onConnect: () => void;
   onSwitchToFast: () => void;
 }) {
+  const t = useTranslations("app.paywall");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const ACCENT = "#F5B800";
   const isConnect = result.reason === "connect";
@@ -3610,7 +3629,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
   // Untested at live settlement — first real run needs a connected, funded wallet.
   async function handleSubscribe() {
     if (!walletClient) {
-      setSubMessage("Connect your wallet, then tap Subscribe again.");
+      setSubMessage(t("connectThenSubscribe"));
       if (authenticated) await logout().catch(() => {});
       login();
       return;
@@ -3621,21 +3640,21 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
       const res = await subscribe(walletClient);
       if (res.ok) {
         setSubState("done");
-        setSubMessage("Smart unlocked — resend your message.");
+        setSubMessage(t("smartUnlocked"));
       } else {
         setSubState("error");
-        setSubMessage(res.error ?? "Subscription failed.");
+        setSubMessage(res.error ?? t("subscriptionFailed"));
       }
     } catch (err) {
       setSubState("error");
-      setSubMessage(err instanceof Error ? err.message : "Payment failed.");
+      setSubMessage(err instanceof Error ? err.message : t("paymentFailed"));
     }
   }
 
-  const title = isConnect ? "Connect wallet for more Smart" : "Daily Smart limit reached";
+  const title = isConnect ? t("titleConnect") : t("titleLimitReached");
   const body = isConnect
-    ? `You've used your ${result.cap} free Smart ${result.cap === 1 ? "message" : "messages"}. Connect a wallet to keep going with Smart, or switch to Fast — always free.`
-    : `You've used all ${result.cap} free Smart messages today. Subscribe for unlimited Smart, or switch to Fast — always free.`;
+    ? t("bodyConnect", { cap: result.cap })
+    : t("bodyLimitReached", { cap: result.cap });
 
   const note = subState === "done" || subState === "error" ? subMessage : body;
   const noteColor =
@@ -3653,7 +3672,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
       <div style={{ padding: "14px 18px 4px", display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: "0.78rem", color: ACCENT }}>✦</span>
         <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>
-          SMART TIER
+          {t("smartTier")}
         </span>
       </div>
       <div style={{ padding: "0 18px 16px" }}>
@@ -3670,7 +3689,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
               onClick={onConnect}
               style={{ ...btnBase, borderColor: "rgba(245,184,0,0.4)", background: "rgba(245,184,0,0.1)", color: ACCENT }}
             >
-              Connect wallet
+              {t("connectWallet")}
             </button>
           ) : subState !== "done" && (
             <button
@@ -3679,7 +3698,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
               disabled={subState === "loading"}
               style={{ ...btnBase, borderColor: "rgba(245,184,0,0.4)", background: "rgba(245,184,0,0.1)", color: ACCENT, opacity: subState === "loading" ? 0.6 : 1 }}
             >
-              {subState === "loading" ? "Confirming…" : "✦ Subscribe"}
+              {subState === "loading" ? t("confirming") : t("subscribe")}
             </button>
           )}
           <button
@@ -3687,7 +3706,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
             onClick={onSwitchToFast}
             style={{ ...btnBase, borderColor: "var(--card-border, rgba(255,255,255,0.12))", background: "transparent", color: "var(--card-text-dim, rgba(255,255,255,0.6))" }}
           >
-            ⚡ Switch to Fast
+            {t("switchToFast")}
           </button>
         </div>
         {!isConnect && subState === "error" && walletClient?.account && (
@@ -3696,7 +3715,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
             onClick={() => fundWallet({ address: walletClient.account!.address })}
             style={{ ...MONO, fontSize: "0.6rem", fontWeight: 600, color: ACCENT, background: "transparent", border: "none", cursor: "pointer", margin: "12px 0 0", padding: 0, width: "100%", textAlign: "center" }}
           >
-            Need USDC? Fund wallet →
+            {t("needUsdcFundWallet")}
           </button>
         )}
       </div>
@@ -4596,6 +4615,7 @@ function ScreenerPanel({ data, tf }: { data: unknown; tf?: string }) {
 }
 
 function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
+  const t = useTranslations("app.risk");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { risk } = result;
 
@@ -4618,15 +4638,15 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
   };
 
   const FLAG_LABELS: Record<string, string> = {
-    NO_LIQUIDITY:    "No meaningful liquidity",
-    VOLUME_SPIKE:    "Abnormal volume spike",
-    SINGLE_POOL:     "Only 1 liquidity pool",
-    NEW_TOKEN:       "Token < 7 days old",
-    HIGH_VOLATILITY: "Price moved >50% in 24h",
-    HEAVY_SELLING:   "Heavy sell pressure",
-    POSSIBLE_HONEYPOT: "Buys but no sells — possible honeypot",
-    SNIPED:          "Early buyers concentrated in the first blocks",
-    CONCENTRATED:    "Top 10 wallets hold over half the supply",
+    NO_LIQUIDITY:    t("flags.noLiquidity"),
+    VOLUME_SPIKE:    t("flags.volumeSpike"),
+    SINGLE_POOL:     t("flags.singlePool"),
+    NEW_TOKEN:       t("flags.newToken"),
+    HIGH_VOLATILITY: t("flags.highVolatility"),
+    HEAVY_SELLING:   t("flags.heavySelling"),
+    POSSIBLE_HONEYPOT: t("flags.possibleHoneypot"),
+    SNIPED:          t("flags.sniped"),
+    CONCENTRATED:    t("flags.concentrated"),
   };
 
   return (
@@ -4639,7 +4659,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
           <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))", marginLeft: 8 }}>{risk.name}</span>
         </div>
         <span style={{ ...MONO, fontSize: "0.65rem", fontWeight: 700, color: riskColor, background: `${riskColor}18`, border: `1px solid ${riskColor}35`, borderRadius: 6, padding: "3px 10px" }}>
-          {risk.label} RISK
+          {risk.label} {t("risk")}
         </span>
       </div>
 
@@ -4657,7 +4677,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
               border: `1px solid ${changeColor}30`,
               borderRadius: 6, padding: "2px 8px", display: "inline-block", marginTop: 6,
             }}>
-              {changePositive ? "+" : ""}{risk.priceChange24h.toFixed(2)}% (1d)
+              {changePositive ? "+" : ""}{risk.priceChange24h.toFixed(2)}% {t("oneDay")}
             </span>
           )}
         </div>
@@ -4673,11 +4693,11 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
       {/* Stats grid */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: "var(--card-surface)", margin: "0" }}>
         {[
-          ["Market Cap",  risk.marketCap ? fmt(risk.marketCap) : "—"],
-          ["Vol (24h)",   fmt(risk.volume24h)],
-          ["Liquidity",   fmt(risk.totalLiquidityUsd)],
-          ["Pools",       `${risk.pairCount} / ${risk.dexCount} DEX`],
-          ...(risk.top10HolderPct != null ? [["Top 10 Hold", `${risk.top10HolderPct.toFixed(1)}%`]] : []),
+          [t("stats.marketCap"),  risk.marketCap ? fmt(risk.marketCap) : "—"],
+          [t("stats.vol24h"),     fmt(risk.volume24h)],
+          [t("stats.liquidity"),  fmt(risk.totalLiquidityUsd)],
+          [t("stats.pools"),      t("stats.poolsValue", { pairs: risk.pairCount, dex: risk.dexCount })],
+          ...(risk.top10HolderPct != null ? [[t("stats.top10Hold"), `${risk.top10HolderPct.toFixed(1)}%`]] : []),
         ].map(([label, val]) => (
           <div key={label} style={{ padding: "11px 16px", background: "var(--card-container-bg, #0D0D0D)" }}>
             <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: "0 0 3px", letterSpacing: "0.07em" }}>{label!.toUpperCase()}</p>
@@ -4689,7 +4709,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
       {/* Risk flags */}
       {risk.flags.length > 0 && (
         <div style={{ padding: "12px 18px", borderTop: `1px solid ${riskColor}20` }}>
-          <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginBottom: 8, letterSpacing: "0.07em" }}>RISK FLAGS</p>
+          <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginBottom: 8, letterSpacing: "0.07em" }}>{t("riskFlags")}</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {risk.flags.map(f => (
               <div key={f} style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -4709,7 +4729,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
             onMouseEnter={e => (e.currentTarget.style.color = "var(--card-text-muted)")}
             onMouseLeave={e => (e.currentTarget.style.color = "var(--card-text-dim)")}
           >
-            view on dexscreener · {risk.topPair.dexId} · {risk.topPair.chainId} ↗
+            {t("viewOnDexscreener", { dexId: risk.topPair.dexId, chainId: risk.topPair.chainId })}
           </a>
         </div>
       )}
@@ -4967,6 +4987,7 @@ const PROJECT_URLS: Record<string, string> = {
 };
 
 function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
+  const t = useTranslations("app.yield");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { symbol, pools } = result;
 
@@ -4988,9 +5009,9 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
   return (
     <div style={{ border: "1px solid rgba(245,184,0,0.2)", borderRadius: 14, overflow: "hidden", maxWidth: 480 }}>
       <div style={{ padding: "13px 18px 11px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>YIELD SCANNER</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{t("eyebrow")}</span>
         <span style={{ ...MONO, fontSize: "0.72rem", color: "#F5B800", fontWeight: 700 }}>{symbol}</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginLeft: "auto" }}>via DeFiLlama</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginLeft: "auto" }}>{t("viaDefiLlama")}</span>
       </div>
 
       <div>
@@ -5002,13 +5023,13 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
               <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: "2px 0 0" }}>
                 {pool.chain}
                 {pool.apyReward != null && pool.apyReward > 0 && (
-                  <span style={{ color: "#F5B800", marginLeft: 6 }}>+{pool.apyReward.toFixed(2)}% rewards</span>
+                  <span style={{ color: "#F5B800", marginLeft: 6 }}>{t("rewards", { pct: pool.apyReward.toFixed(2) })}</span>
                 )}
               </p>
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <p style={{ ...MONO, fontSize: "0.85rem", color: "#22c55e", fontWeight: 700, margin: 0 }}>{pool.apy.toFixed(2)}%</p>
-              <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "2px 0 0" }}>{fmtTvl(pool.tvlUsd)} TVL</p>
+              <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "2px 0 0" }}>{t("tvl", { value: fmtTvl(pool.tvlUsd) })}</p>
             </div>
             {PROJECT_URLS[pool.project] && (
               <a
@@ -5019,7 +5040,7 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
                 onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.5)"; e.currentTarget.style.color = "#F5B800"; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(245,184,0,0.25)"; e.currentTarget.style.color = "rgba(245,184,0,0.6)"; }}
               >
-                deposit ↗
+                {t("deposit")}
               </a>
             )}
           </div>
@@ -5040,12 +5061,13 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
 // ─── PolymarketDisplay ────────────────────────────────────────────────────────
 
 function PolymarketDisplay({ result }: { result: PolymarketResult }) {
+  const t = useTranslations("app.polymarket");
   const { topic, markets, deposit } = result;
 
   function fmtVolume(v: number): string {
-    if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M vol`;
-    if (v >= 1_000)     return `$${(v / 1_000).toFixed(0)}K vol`;
-    return `$${v.toFixed(0)} vol`;
+    if (v >= 1_000_000) return t("volumeM", { n: (v / 1_000_000).toFixed(1) });
+    if (v >= 1_000)     return t("volumeK", { n: (v / 1_000).toFixed(0) });
+    return t("volume", { n: v.toFixed(0) });
   }
 
   function fmtPrice(price: string): string {
@@ -5058,7 +5080,7 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
     <div style={{ width: "100%" }}>
       <div style={{ marginBottom: 12 }}>
         <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-          PREDICTION MARKETS {topic ? `· ${topic.toUpperCase()}` : "· TRENDING"} · via Polymarket
+          {topic ? t("headerTopic", { topic: topic.toUpperCase() }) : t("headerTrending")}
         </span>
       </div>
       {deposit && (deposit.evm || deposit.svm || deposit.btc) && (
@@ -5068,10 +5090,10 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
           background: "rgba(245,184,0,0.04)",
         }}>
           <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 8px" }}>
-            DEPOSIT TO POLYMARKET{deposit.amount ? ` · $${deposit.amount} USDC` : ""}
+            {deposit.amount ? t("depositWithAmount", { amount: deposit.amount }) : t("deposit")}
           </p>
           <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: "0 0 8px", lineHeight: 1.5 }}>
-            Send USDC to the address for your chain. Polymarket bridges it to pUSD automatically.
+            {t("depositInstructions")}
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {deposit.evm && (
@@ -5094,7 +5116,7 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
             )}
           </div>
           <p style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "8px 0 0", lineHeight: 1.5 }}>
-            After sending, ask &ldquo;did my deposit land?&rdquo; to check your balance.
+            {t("checkBalanceHint")}
           </p>
         </div>
       )}
@@ -5165,10 +5187,11 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
 // ─── SuggestionsDisplay ───────────────────────────────────────────────────────
 
 function SuggestionsDisplay({ result, onSelect }: { result: SuggestionsResult; onSelect: (cmd: string) => void }) {
+  const t = useTranslations("app.suggestions");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-        Try one of these
+        {t("tryOneOfThese")}
       </span>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {result.prompts.map((p, i) => (
