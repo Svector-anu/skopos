@@ -584,6 +584,13 @@ export async function parseIntent(input: string): Promise<ParsedIntent | null> {
 }
 
 export async function generateTxSummary(tx: import("./alchemy").TxData): Promise<string> {
+  // Blockscout's PRO API summary is grounded in the actual decoded trace
+  // (internal txs, token transfers, decoded calldata) — prefer it over the
+  // Groq guess below, which only has the sparse metadata already extracted
+  // from the tx. Falls through silently when null (key unset, chain not
+  // covered, or the call failed).
+  if (tx.aiSummary) return tx.aiSummary;
+
   const groq = getGroq();
   if (!groq) return "";
   const prompt = [
@@ -613,8 +620,16 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
 }
 
 export async function generateAddressSummary(data: import("./alchemy").AddressData): Promise<string> {
+  // Blockscout's public tags (e.g. "Binance 14", "Scammer") — independent of
+  // Groq, so this still shows even when Groq is unconfigured or its call
+  // fails below. Additive prefix, same pattern as route.ts's unlimited-
+  // approval flag on the tx card.
+  const reputationLine = data.reputation?.tags.length
+    ? `Known as: ${data.reputation.tags.map(t => t.name).join(", ")} (Blockscout public tag)\n\n`
+    : "";
+
   const groq = getGroq();
-  if (!groq) return "";
+  if (!groq) return reputationLine.trim();
   const fmtUsd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const totalUsd = data.totalUsdValue ? fmtUsd(data.totalUsdValue) : "unknown";
   // Show a $ value per holding only where one is actually known (tokenBalances is
@@ -641,9 +656,9 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
         { role: "user", content: prompt },
       ],
     });
-    return completion.choices[0]?.message?.content?.trim() ?? "";
+    return reputationLine + (completion.choices[0]?.message?.content?.trim() ?? "");
   } catch {
-    return "";
+    return reputationLine.trim();
   }
 }
 
