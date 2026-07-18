@@ -22,6 +22,27 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   {
+    date: "Jul 18, 2026",
+    title: "Skopos now speaks Chinese and Vietnamese",
+    lede:
+      "Skopos auto-detects your browser's language and responds in it — no toggle, no settings to find. Chat replies, the whole app, even the landing page adapt to 中文 or Tiếng Việt on their own. Token names, chain names, and addresses always stay in their original form.",
+    highlights: [
+      "Auto-detected from your browser — nothing to switch on, nothing to configure.",
+      "Covers real conversation and the full app: wallet connection, swap and bridge cards, error states, all of it.",
+      "Numbers, tickers, and addresses never get lost in translation — only the words around them do.",
+    ],
+  },
+  {
+    date: "Jul 17, 2026",
+    title: "Portfolio and tx lookups now reach Robinhood Chain",
+    lede:
+      "Paste a Robinhood Chain address or transaction hash and Skopos reads it now — balances, holdings, and tx details, on a chain no major indexer covered before. Eight more chains came along for the ride: Unichain, World Chain, HyperEVM, Soneium, MegaETH, Celo, Ink, and Scroll.",
+    highlights: [
+      "Transaction summaries are now grounded in the real decoded on-chain trace, not a guess from sparse metadata.",
+      "Wallet lookups surface known-entity tags (like a labeled exchange wallet) when there's a real match — never a guess.",
+    ],
+  },
+  {
     date: "Jul 11, 2026",
     title: "Pay any x402 endpoint yourself",
     lede:
