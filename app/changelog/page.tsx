@@ -43,6 +43,38 @@ const ENTRIES: Entry[] = [
     ],
   },
   {
+    date: "Jul 16, 2026",
+    title: "Buy real, tokenized stocks on Robinhood Chain",
+    lede:
+      "\"buy $10 of NVDA on robinhood\" now works like any other trade. Skopos resolves the ticker against Robinhood's own official contract registry first — AAPL, NVDA, TSLA, GOOGL, AMZN, MSFT, and 18 more, plus a handful of ETFs — so a copycat token with the same symbol can't get matched by accident.",
+    highlights: [
+      "Official registry, checked first — not a generic DEX search that a look-alike token could win.",
+      "Same non-custodial flow as any other Robinhood Chain trade: you sign, Skopos never holds the funds.",
+    ],
+  },
+  {
+    date: "Jul 15, 2026",
+    title: "Robinhood Chain, natively — swaps, limit orders, and bridging",
+    lede:
+      "Robinhood Chain isn't supported by Skopos's usual quote provider, so it got its own execution path. Swap natively on the chain, set a limit, stop-loss, take-profit, or TWAP order, or bridge funds on and off — all through the same non-custodial sign flow as everywhere else.",
+    highlights: [
+      "Market swaps (\"swap 0.01 USDG to ETH on robinhood\") settle through Definitive's Flash API.",
+      "Limit, stop-loss, take-profit, and TWAP orders — \"sell 2 ETH if it drops below $2000\", \"buy $500 of ETH over 7 days\" — same sign flow as a market order, the trigger or schedule shown clearly before you sign.",
+      "Bridge onto or off the chain in either direction via Relay — the only way to get funds there before trading.",
+    ],
+  },
+  {
+    date: "Jul 14, 2026",
+    title: "See what's launching on Robinhood Chain",
+    lede:
+      "\"what's launching on robinhood chain\" returns a real feed — every new token risk-scored and color-coded by liquidity, with the deployer's full launch history one tap away, so a serial-launcher pattern is obvious before you touch anything.",
+    highlights: [
+      "Liquidity color-coded at a glance: red under $5K, green over $50K.",
+      "Every deployer links to their full on-chain launch history — repeat launches flagged, not hidden.",
+      "Honest about scope: the chain launches a token every 1–2 minutes, so \"25 most recent\" is really the last half hour, not a curated \"best of the week.\"",
+    ],
+  },
+  {
     date: "Jul 11, 2026",
     title: "Pay any x402 endpoint yourself",
     lede:
