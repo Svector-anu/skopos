@@ -130,6 +130,7 @@ DELORA_INTEGRATOR        # default "ANU"
 FLASH_API_KEY            # optional — Robinhood Chain (4663) swaps via Flash; unset → falls back to Definitive's shared public dev key, fine for dev, not production
 GROQ_API_KEY
 ALCHEMY_API_KEY
+BLOCKSCOUT_API_KEY       # optional — lib/blockscout.ts fallback for chains Alchemy/Ankr don't cover (RH Chain, Unichain, World Chain, HyperEVM, Soneium, MegaETH, Celo, Ink, Scroll); unset → REST v2 calls go out unauthenticated
 NEXT_PUBLIC_PRIVY_APP_ID
 NEXT_PUBLIC_PRIVY_CLIENT_ID
 NEXT_PUBLIC_SOLANA_RPC   # optional
@@ -193,6 +194,7 @@ RELAY_SECRET             # required to authenticate /api/vara (the relay/ Vara b
 | Flash (`flash.definitive.fi`) | Robinhood Chain (4663) swap quotes + EIP-712 order signing — Delora doesn't support this chain | `FLASH_API_KEY` (falls back to Definitive's own published shared dev key if unset — get a real key before production traffic) |
 | Groq | LLM (all calls) | `GROQ_API_KEY` |
 | Alchemy | Portfolio, tx lookup, ENS | `ALCHEMY_API_KEY` |
+| Blockscout | Portfolio + tx lookup fallback for chains Alchemy/Ankr don't cover (`lib/blockscout.ts` — `BLOCKSCOUT_CHAINS`) | `BLOCKSCOUT_API_KEY` (optional) |
 | CoinGecko (free tier) | Price data (primary) | none |
 | DexScreener | Price fallback + token risk | none |
 | DeFiLlama | Yield pools | none |

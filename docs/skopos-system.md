@@ -31,8 +31,10 @@ app/api/version/route.ts  Returns current Vercel BUILD_ID (force-dynamic)
 
 lib/parseIntent.ts        Intent classifier + Groq LLM wrappers
 lib/delora.ts             Delora bridge/swap aggregator client
-lib/alchemy.ts            Portfolio + tx lookup (Alchemy + Ankr)
-lib/alchemy-types.ts      Shared TypeScript types for Alchemy data
+lib/alchemy.ts            Portfolio + tx lookup (Alchemy + Ankr + Blockscout)
+lib/alchemy-types.ts      Shared TypeScript types for Alchemy/Blockscout data
+lib/blockscout.ts         Portfolio + tx lookup fallback for chains Alchemy/Ankr don't cover (Robinhood Chain, Unichain, World Chain, HyperEVM, Soneium, MegaETH, Celo, Ink, Scroll)
+lib/evmTx.ts              Shared EVM tx-decoding helpers (method sigs, approve() decoder) — used by both alchemy.ts and blockscout.ts, kept separate to avoid a circular import
 lib/chains.ts             NLP alias map: "ethereum" → 1, "base" → 8453, etc.
 lib/priceCache.ts         Price fetching: CoinGecko (primary) → DexScreener (fallback)
 lib/defillama.ts          Yield pool scanner (DeFiLlama)
@@ -91,6 +93,7 @@ User types message
 | Groq | SDK | GROQ_API_KEY | LLM: intent, chat, summaries | SDK default |
 | Alchemy | `*.g.alchemy.com/v2/{KEY}` | ALCHEMY_API_KEY in URL | Portfolio, tx lookup, ENS | 8s |
 | Ankr | `rpc.ankr.com/multichain` | None | ERC-20 on BSC/Avax/Gnosis | 8s |
+| Blockscout | per-chain instance (`lib/blockscout.ts` → `BLOCKSCOUT_CHAINS`) | None required; optional `apikey` query param via BLOCKSCOUT_API_KEY | Native + ERC-20 balances, tx lookup on chains Alchemy/Ankr don't cover (RH Chain, Unichain, World Chain, HyperEVM, Soneium, MegaETH, Celo, Ink, Scroll) | 8s |
 | CoinGecko (free) | `api.coingecko.com` | None | Price data (primary) | 8s |
 | DexScreener | `api.dexscreener.com` | None | Price fallback + token risk | 8s |
 | DeFiLlama | `yields.llama.fi` | None | Yield pools | 10s |
@@ -102,6 +105,7 @@ DELORA_API_KEY
 DELORA_INTEGRATOR        (default: "ANU")
 GROQ_API_KEY
 ALCHEMY_API_KEY
+BLOCKSCOUT_API_KEY       (optional — see lib/blockscout.ts)
 NEXT_PUBLIC_PRIVY_APP_ID
 NEXT_PUBLIC_PRIVY_CLIENT_ID
 NEXT_PUBLIC_SOLANA_RPC   (optional, defaults to mainnet-beta)
@@ -119,6 +123,7 @@ When adding a new chain, ALL FOUR must be updated:
 | `lib/wagmi.ts` → `SUPPORTED_CHAINS` | Wallet connection + tx signing | Required to connect wallet and send txs |
 | `app/app/page.tsx` → `EXPLORER_URLS` | Block explorer tx links | Required for tx confirmation links |
 | `lib/alchemy.ts` → `ALCHEMY_CHAINS` | Portfolio balance lookups | Optional — add only if Alchemy supports the chain |
+| `lib/blockscout.ts` → `BLOCKSCOUT_CHAINS` | Portfolio + tx lookup fallback | Optional — add only if the chain isn't already in `ALCHEMY_CHAINS`/Ankr AND you've verified live that its explorer runs the actual Blockscout v2 REST schema (some listings in the public chain registry are legacy/custom forks under a different host — Metis was excluded for exactly this reason) |
 
 **Currently supported chains (NLP-resolvable):**
 ethereum (1), optimism (10), cronos (25), bsc (56), gnosis (100), unichain (130),
