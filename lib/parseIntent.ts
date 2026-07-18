@@ -798,12 +798,34 @@ function redactLiveNumbers(text: string): string {
 const AGENT_CONCISE_RULE =
   "\n\nThis reply is posted to an on-chain agent chat with a hard length cap. Answer in at most 2 short sentences, well under 400 characters. No bullets, no headers.";
 
+export type SupportedLocale = "zh" | "vi";
+const SUPPORTED_LOCALES = new Set<SupportedLocale>(["zh", "vi"]);
+const LOCALE_NAMES: Record<SupportedLocale, string> = { zh: "Chinese", vi: "Vietnamese" };
+
+// Localization phase 1 (system prompt only) — zh/vi, auto-detected from the
+// browser's Accept-Language header, no manual toggle. Everything else stays
+// English by design: undefined here means "don't inject a locale directive
+// at all", not "default to some other language".
+export function detectLocale(acceptLanguage: string | null | undefined): SupportedLocale | undefined {
+  if (!acceptLanguage) return undefined;
+  for (const part of acceptLanguage.split(",")) {
+    const tag = part.trim().split(";")[0]?.split("-")[0]?.toLowerCase();
+    if (tag && SUPPORTED_LOCALES.has(tag as SupportedLocale)) return tag as SupportedLocale;
+  }
+  return undefined;
+}
+
+function localeDirective(locale: SupportedLocale | undefined): string {
+  if (!locale) return "";
+  return `\n\nThe user's preferred language is ${LOCALE_NAMES[locale]} (${locale}). Respond in that language for all text responses. Do not translate token names, chain names, contract addresses, or numeric values — keep those in English/original form.`;
+}
+
 export async function getInformationalReply(
   input: string,
   history?: { role: "user" | "assistant"; content: string }[],
   tier: LlmTier = "fast",
   meta?: LlmMeta,
-  opts?: { concise?: boolean; liveData?: string },
+  opts?: { concise?: boolean; liveData?: string; locale?: SupportedLocale },
 ): Promise<string> {
   const FALLBACK = "I don't have reliable information on that right now.";
   // Only "breathe" when Smart is actually going to the gateway. If Smart was
@@ -825,7 +847,7 @@ export async function getInformationalReply(
       max_tokens: concise ? 220 : useSmart ? 900 : 200,
       temperature: 0,
       messages: [
-        { role: "system", content: concise ? baseSystem + AGENT_CONCISE_RULE : baseSystem },
+        { role: "system", content: (concise ? baseSystem + AGENT_CONCISE_RULE : baseSystem) + localeDirective(opts?.locale) },
         ...(grounded
           ? [{
               role: "system" as const,

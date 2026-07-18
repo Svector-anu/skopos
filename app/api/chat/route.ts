@@ -13,6 +13,7 @@ import {
   generateAddressSummary,
   classifyIntent,
   parseLaunchIntent,
+  detectLocale,
   ParsedIntent,
   type LlmTier,
   type LlmMeta,
@@ -1135,6 +1136,11 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
 
   const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage, llmTier, anonId, format } = await req.json();
   const textMode = format === "text";
+  // Localization phase 1 (system prompt only): auto-detected from the browser's
+  // Accept-Language header, zh/vi only. Headless/text-mode clients (agents,
+  // curl, MCP) stay English regardless of what header they happen to send —
+  // this is a browser-UI feature, not a headless one.
+  const locale = textMode ? undefined : detectLocale(req.headers.get("accept-language"));
 
   // Fast (Groq) vs Smart (Bankr gateway). Default fast → behaviour unchanged.
   const tier: LlmTier = llmTier === "smart" ? "smart" : "fast";
@@ -2655,6 +2661,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
           if (tier === "smart") {
             const text = await getInformationalReply(message, history, tier, meterMeta, {
               liveData: formatLiveData(symbol, priceResult),
+              locale,
             });
             await recordSmart();
             return json({ type: "text", text });
@@ -2711,6 +2718,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     const liveData = tier === "smart" ? await gatherLiveData(trimmed) : null;
     const text = await getInformationalReply(message, history, tier, meterMeta, {
       ...(liveData ? { liveData } : {}),
+      locale,
     });
     await recordSmart();
     return json({ type: "text", text });
@@ -2831,6 +2839,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   const liveData = tier === "smart" ? await gatherLiveData(trimmed) : null;
   const text = await getInformationalReply(message, history, tier, meterMeta, {
     ...(liveData ? { liveData } : {}),
+    locale,
   });
   await recordSmart();
   return json({ type: "text", text });
