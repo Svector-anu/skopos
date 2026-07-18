@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 export function OracleChip() {
+  const t = useTranslations("landing");
   function handleEnter(e: React.MouseEvent<HTMLAnchorElement>) {
     e.currentTarget.style.color = "rgba(255,255,255,0.7)";
     e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
@@ -41,7 +43,7 @@ export function OracleChip() {
           flexShrink: 0,
         }}
       />
-      Agents can query Skopos on-chain
+      {t("oracle")}
     </Link>
   );
 }

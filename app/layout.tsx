@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Source_Serif_4, Source_Sans_3, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getMessages } from "next-intl/server";
 import { PageTransitionWrapper } from "@/components/shared/PageTransitionWrapper";
 import "./globals.css";
 
@@ -69,19 +71,24 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const locale = await getLocale();
+  const messages = await getMessages();
+
   return (
     <html
-      lang="en"
+      lang={locale}
       suppressHydrationWarning
       className={`${sourceSerif.variable} ${sourceSans.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="h-full antialiased">
-        <PageTransitionWrapper>{children}</PageTransitionWrapper>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <PageTransitionWrapper>{children}</PageTransitionWrapper>
+        </NextIntlClientProvider>
         <Script src="/_vercel/insights/script.js" strategy="afterInteractive" />
         <Script src="/_vercel/speed-insights/script.js" strategy="afterInteractive" />
       </body>

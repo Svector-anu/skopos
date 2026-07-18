@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 
-export function HeaderIcons() {
+export async function HeaderIcons() {
+  const t = await getTranslations("landing.nav");
   return (
     <div className="flex items-center gap-3">
       <Link
@@ -33,7 +35,7 @@ export function HeaderIcons() {
       <Link
         href="/changelog"
         className="group relative opacity-40 hover:opacity-100 transition-opacity duration-200"
-        aria-label="Changelog"
+        aria-label={t("changelog")}
       >
         <div className="p-1 border border-transparent group-hover:border-yellow transition-colors duration-200">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -42,7 +44,7 @@ export function HeaderIcons() {
           </svg>
         </div>
         <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-          changelog
+          {t("changelog")}
         </span>
       </Link>
     </div>

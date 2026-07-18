@@ -1,0 +1,405 @@
+{
+  "landing": {
+    "actions": {
+      "openApp": "Mở ứng dụng",
+      "readDocs": "Xem tài liệu"
+    },
+    "nav": {
+      "changelog": "nhật ký thay đổi"
+    },
+    "oracle": "Các agent có thể truy vấn Skopos on-chain",
+    "terminal": {
+      "windowTitle": "skopos — trò chuyện"
+    },
+    "demo": {
+      "commands": [
+        {
+          "cmd": "có token nào sắp ra mắt trên robinhood chain không",
+          "response": "Đã lấy dữ liệu launch trực tiếp từ Robinhood Chain\nToken mới, thông tin người tạo, rủi ro launch lặp lại đều được gắn cờ"
+        },
+        {
+          "cmd": "chuyển 2 eth từ ethereum sang base",
+          "response": "Đã định tuyến —— ETH sang Base theo đường đi tối ưu nhất\nTối ưu cả chi phí lẫn tốc độ · sẵn sàng khi bạn cần"
+        },
+        {
+          "cmd": "đổi 500 usdc sang eth trên base",
+          "response": "Đã tìm được đường thực thi tốt nhất trên Base\nĐổi USDC sang ETH với trượt giá tối thiểu"
+        },
+        {
+          "cmd": "sol đang biến động thế nào lúc này",
+          "response": "Đã lấy dữ liệu thị trường SOL trực tiếp\nTổng hợp từ các sàn lớn để đảm bảo độ chính xác"
+        },
+        {
+          "cmd": "usdc bây giờ có yield nào ngon không",
+          "response": "Đang quét yield ổn định trên nhiều chain\nĐã tìm thấy các pool thanh khoản tốt, hiệu suất ổn định"
+        },
+        {
+          "cmd": "ví của tôi đang thế nào",
+          "response": "Đã đồng bộ vị thế của bạn trên các chain\nToken, số dư và hoạt động gần đây đều đã được ánh xạ đầy đủ"
+        },
+        {
+          "cmd": "bridge 1 sol sang ethereum",
+          "response": "Đường đi cross-chain đã sẵn sàng —— Solana sang Ethereum\nThanh khoản và khả năng tương thích đã được xử lý phía sau"
+        }
+      ]
+    }
+  },
+  "app": {
+    "sidebar": {
+      "newChat": "Cuộc trò chuyện mới",
+      "recents": "GẦN ĐÂY",
+      "history": "LỊCH SỬ",
+      "portfolio": "DANH MỤC",
+      "myBalances": "Số dư của tôi",
+      "bridge": "BRIDGE",
+      "swap": "SWAP"
+    },
+    "bridgeActions": {
+      "ethToBase": "ETH → Base",
+      "ethToArbitrum": "ETH → Arbitrum",
+      "usdcToPolygon": "USDC → Polygon",
+      "ethToOptimism": "ETH → Optimism"
+    },
+    "swapActions": {
+      "ethToUsdcBase": "ETH → USDC · Base",
+      "ethToUsdcArb": "ETH → USDC · Arb",
+      "usdcToEthBase": "USDC → ETH · Base"
+    },
+    "wallet": {
+      "eyebrow": "VÍ",
+      "noAssets": "không có tài sản trên chain này",
+      "fundWallet": "Nạp tiền vào ví",
+      "connecting": "Đang kết nối ví…",
+      "connect": "Kết nối ví",
+      "connectLower": "Kết nối ví",
+      "clickAgainDisconnect": "nhấn lại để ngắt kết nối",
+      "addressDisconnect": "{address} — ngắt kết nối",
+      "clickAgainConfirm": "nhấn lại để xác nhận ngắt kết nối",
+      "addressClickDisconnect": "{address} — nhấn để ngắt kết nối",
+      "disconnectConfirm": "ngắt kết nối?",
+      "connectDifferent": "Kết nối ví khác",
+      "connectAnother": "kết nối ví khác"
+    },
+    "theme": "Giao diện",
+    "errorBoundary": {
+      "quote": "Không thể hiển thị báo giá.",
+      "rebalance": "Không thể hiển thị tái cân bằng.",
+      "tx": "Không thể hiển thị chi tiết giao dịch.",
+      "pay": "Không thể hiển thị thanh toán.",
+      "payments": "Không thể hiển thị các khoản đã nhận.",
+      "address": "Không thể hiển thị chi tiết địa chỉ.",
+      "tokenRisk": "Không thể hiển thị quét rủi ro.",
+      "prebuy": "Không thể hiển thị nghiên cứu trước khi mua.",
+      "yieldPools": "Không thể hiển thị dữ liệu yield.",
+      "polymarket": "Không thể hiển thị dữ liệu Polymarket.",
+      "intel": "Không thể hiển thị thẻ intel.",
+      "aeon": "Không thể hiển thị thẻ Aeon.",
+      "x402check": "Không thể hiển thị kiểm tra endpoint.",
+      "robinhoodLaunches": "Không thể hiển thị danh sách launch trên Robinhood.",
+      "paywall": "Không thể hiển thị thẻ đăng ký.",
+      "price": "Không thể hiển thị biểu đồ giá."
+    },
+    "noFundsDetected": "Không phát hiện quỹ trên chain này",
+    "fundWalletArrow": "Nạp tiền vào ví →",
+    "banners": {
+      "offline": "mất kết nối mạng — kết nối lại để tiếp tục",
+      "updateAvailable": "đã có phiên bản mới",
+      "refresh": "làm mới"
+    },
+    "mobileSubtitle": "trợ lý cross-chain",
+    "alerts": {
+      "eyebrow": "CẢNH BÁO",
+      "enabled": "Đã bật cảnh báo — hãy yêu cầu lại cảnh báo của bạn để đăng ký.",
+      "enableFailed": "Không thể bật cảnh báo — kiểm tra quyền thông báo trên trình duyệt rồi thử lại.",
+      "enabling": "Đang bật…",
+      "enableButton": "Bật cảnh báo"
+    },
+    "sendFeedback": "Gửi phản hồi",
+    "greeting": "Chào bạn, tôi là <brand>Skopos</brand>, trợ lý crypto cross-chain phi tập trung của bạn.",
+    "greetingSubtitle": "Hôm nay tôi có thể giúp gì cho bạn?",
+    "composerPlaceholder": "hỏi skopos…",
+    "composerPlaceholderOffline": "không có kết nối…",
+    "examplePrompts": {
+      "bridgeEthBase": "bridge 0.1 ETH từ ethereum sang base",
+      "swapUsdcEth": "đổi 100 USDC sang ETH trên arbitrum",
+      "showPortfolio": "hiển thị danh mục của tôi",
+      "whatChains": "bạn hỗ trợ những chain nào?"
+    },
+    "horizonPills": {
+      "robinhoodLaunches": "launch trên robinhood",
+      "polymarket": "polymarket",
+      "yieldScanner": "quét yield",
+      "agentMode": "chế độ agent",
+      "limitOrders": "lệnh giới hạn",
+      "offrampCard": "rút tiền ra thẻ",
+      "deepResearch": "nghiên cứu chuyên sâu",
+      "onchainMcp": "MCP on-chain",
+      "whaleSignals": "tín hiệu cá voi"
+    },
+    "soonSuffix": "· sắp ra mắt",
+    "soonToast": "sắp ra mắt ✦",
+    "tier": {
+      "chooseResponseTier": "Chọn mức phản hồi"
+    },
+    "tiers": {
+      "smart": { "label": "✦ Smart", "desc": "mô hình tiên tiến · chuyên sâu" },
+      "fast": { "label": "⚡ Fast", "desc": "nhanh & miễn phí" }
+    },
+    "aiDisclaimer": "Skopos là AI và có thể mắc sai sót. Vui lòng tự kiểm tra lại các câu trả lời.",
+    "featureSlides": {
+      "bridge": { "label": "Bridge", "sub": "Hỗ trợ 25+ chain" },
+      "bestRoute": { "label": "Đường đi tốt nhất", "sub": "AI tìm đường rẻ nhất" },
+      "swap": { "label": "Swap", "sub": "Bất kỳ token, bất kỳ chain" },
+      "plainLanguage": { "label": "Ngôn ngữ tự nhiên", "sub": "Chỉ cần mô tả điều bạn muốn" },
+      "fiveBridges": { "label": "5 Bridge", "sub": "Relay, Across, Mayan & nhiều hơn" },
+      "liveQuotes": { "label": "Báo giá trực tiếp", "sub": "Định giá cross-chain theo thời gian thực" },
+      "txHistory": { "label": "Lịch sử giao dịch", "sub": "Theo dõi mọi giao dịch của bạn" },
+      "portfolio": { "label": "Danh mục", "sub": "Số dư trên các chain" }
+    },
+    "quote": {
+      "rejectedInWallet": "Giao dịch bị từ chối trong ví.",
+      "errorPrefix": "Lỗi: {msg}",
+      "routeFailedRecheck": "Đường đi này vừa không qua được kiểm tra on-chain mới nhất — báo giá đã được làm mới. Hãy xem lại và thử lại.",
+      "rejectedInWalletShort": "Đã từ chối trong ví.",
+      "switchFailed": "Chuyển mạng thất bại: {msg}",
+      "orderType": {
+        "limit": "XEM TRƯỚC LỆNH GIỚI HẠN",
+        "stopLoss": "XEM TRƯỚC LỆNH STOP LOSS",
+        "takeProfit": "XEM TRƯỚC LỆNH TAKE PROFIT",
+        "twap": "XEM TRƯỚC LỆNH TWAP"
+      },
+      "triggerBanner": {
+        "dropsTo": "Sẽ thực thi khi {token} giảm còn ${price}",
+        "hits": "Sẽ thực thi khi {token} đạt ${price}",
+        "twap": "Chia nhỏ {amount} {token} trong {duration}",
+        "twapWithCount": "Chia nhỏ {amount} {token} trong {duration} thành {count} lần mua"
+      },
+      "summary": {
+        "via": "Qua",
+        "estTime": "Thời gian dự kiến",
+        "minutesEta": "~{n} phút",
+        "secondsEta": "~{n} giây",
+        "minReceived": "Nhận tối thiểu",
+        "networkFee": "Phí mạng",
+        "recipient": "Người nhận"
+      },
+      "header": {
+        "transaction": "GIAO DỊCH",
+        "swapPreview": "XEM TRƯỚC SWAP",
+        "bridgePreview": "XEM TRƯỚC BRIDGE"
+      },
+      "expired": "HẾT HẠN",
+      "secondsLeft": "{n}s",
+      "live": "TRỰC TIẾP",
+      "summaryLabel": "TÓM TẮT",
+      "slippage": "Trượt giá",
+      "approvalConfirmed": "đã xác nhận approval ✓ — thực thi bên dưới",
+      "originConfirmed": "đã xác nhận ở chain gốc ✓ · xem trên explorer →",
+      "confirmed": "đã xác nhận ✓ · xem trên explorer →",
+      "bridgingToMinutes": "đang bridge sang {chain} · tiền về sau ~{n} phút",
+      "bridgingToSeconds": "đang bridge sang {chain} · tiền về sau ~{n} giây",
+      "transactionFailed": "giao dịch thất bại ✗ · xem trên explorer →",
+      "freshQuoteRetry": "lấy báo giá mới & thử lại",
+      "confirmingOnChain": "đang xác nhận on-chain…",
+      "submittedWaiting": "đã gửi · đang chờ…",
+      "ellipsis": "…",
+      "refreshArrow": "Làm mới →",
+      "refresh": "Làm mới",
+      "connectWallet": "Kết nối ví",
+      "switching": "Đang chuyển mạng…",
+      "switchTo": "Chuyển sang {chain}",
+      "approving": "Đang approve…",
+      "confirming": "Đang xác nhận…",
+      "approveToken": "Approve {token}",
+      "recheckingRoute": "đang kiểm tra lại đường đi…",
+      "confirmInWallet": "Xác nhận trong ví…",
+      "quoteExpiredRefresh": "Báo giá hết hạn — làm mới",
+      "executeArrow": "Thực thi →"
+    },
+    "solana": {
+      "routeFailedRecheck": "Đường đi này vừa không qua được kiểm tra on-chain mới nhất — báo giá đã được làm mới. Hãy xem lại và thử lại.",
+      "wrongAccount": "Báo giá này được tạo cho một tài khoản Solana khác. Hãy kết nối lại đúng ví ban đầu, hoặc làm mới để lấy báo giá mới.",
+      "transactionFailedDetail": "Giao dịch thất bại: {detail}",
+      "transactionFailed": "Giao dịch thất bại",
+      "viewOnSolscan": "xem trên solscan ↗",
+      "failedToConnect": "Kết nối ví thất bại",
+      "connectNamed": "kết nối {name}",
+      "connectPhantom": "kết nối phantom →",
+      "confirmInPhantom": "xác nhận trong phantom…",
+      "executeViaPhantom": "thực thi qua phantom →",
+      "phantomSolana": "phantom · solana"
+    },
+    "flash": {
+      "rejectedInWalletShort": "Đã từ chối trong ví.",
+      "switchFailed": "Chuyển mạng thất bại: {msg}",
+      "rejectedInWallet": "Giao dịch bị từ chối trong ví.",
+      "errorPrefix": "Lỗi: {msg}",
+      "orderSubmissionFailed": "Gửi lệnh thất bại ({status})",
+      "signatureRejected": "Chữ ký bị từ chối trong ví.",
+      "orderSubmitted": "đã gửi lệnh ✓ · id {id}…",
+      "wrapConfirmed": "đã xác nhận wrap ✓",
+      "approvalConfirmedSignBelow": "đã xác nhận approval ✓ — ký bên dưới",
+      "connectWallet": "Kết nối ví",
+      "switching": "Đang chuyển mạng…",
+      "switchToRobinhoodChain": "Chuyển sang Robinhood Chain",
+      "wrapping": "Đang wrap…",
+      "confirming": "Đang xác nhận…",
+      "wrapToken": "Wrap {token}",
+      "approving": "Đang approve…",
+      "approveToken": "Approve {token}",
+      "confirmInWallet": "Xác nhận trong ví…",
+      "submittingOrder": "Đang gửi lệnh…",
+      "signAndExecute": "Ký & Thực thi →"
+    },
+    "relay": {
+      "rejectedInWalletShort": "Đã từ chối trong ví.",
+      "switchFailed": "Chuyển mạng thất bại: {msg}",
+      "rejectedInWallet": "Giao dịch bị từ chối trong ví.",
+      "errorPrefix": "Lỗi: {msg}",
+      "depositConfirmed": "đã xác nhận nạp tiền ✓ · xem trên explorer →",
+      "bridgingToMinutes": "đang bridge sang {chain} · tiền về sau ~{n} phút",
+      "bridgingToSeconds": "đang bridge sang {chain} · tiền về sau ~{n} giây",
+      "transactionFailedRefresh": "Giao dịch thất bại — hãy làm mới báo giá rồi thử lại.",
+      "approveToken": "Approve {token}",
+      "bridgeArrow": "Bridge →",
+      "executeArrow": "Thực thi →",
+      "stepOfWithDescription": "BƯỚC {n}/{total} — {description}",
+      "stepOf": "BƯỚC {n}/{total}",
+      "confirmingOnChain": "đang xác nhận on-chain…",
+      "submittedWaiting": "đã gửi · đang chờ…",
+      "connectWallet": "Kết nối ví",
+      "switching": "Đang chuyển mạng…",
+      "switchTo": "Chuyển sang {chain}",
+      "confirmInWallet": "Xác nhận trong ví…"
+    },
+    "rebalance": {
+      "routeCount": "{count, plural, other {đường đi}}",
+      "consolidatingTo": " · gộp về {chain}",
+      "executeInOrder": " · thực thi theo thứ tự",
+      "stepOf": "BƯỚC {n}/{total}",
+      "feesAmount": "phí ${amount}"
+    },
+    "payments": {
+      "eyebrow": "CÁC KHOẢN ĐÃ NHẬN",
+      "tagged": "{count} đã gắn thẻ",
+      "noneYet": "Chưa có khoản thanh toán B20 nào có gắn thẻ đến {address}. Khi ai đó thanh toán cho bạn kèm memo, nó sẽ xuất hiện ở đây — khớp với tham chiếu của nó.",
+      "noMemo": "(không có memo)",
+      "from": "từ {address} · {chain}"
+    },
+    "pay": {
+      "payLabel": "Thanh toán {amount} {token}",
+      "rejectedInWallet": "Thanh toán bị từ chối trong ví.",
+      "errorPrefix": "Lỗi: {msg}",
+      "b20Payment": "THANH TOÁN B20",
+      "payment": "THANH TOÁN",
+      "to": "Đến",
+      "memoHashed": "Memo (đã hash)",
+      "memo": "Memo",
+      "memoSkipped": "đã bỏ qua — {token} không phải là B20",
+      "token": "Token",
+      "paidConfirmed": "đã thanh toán ✓ · xem trên explorer ↗",
+      "paymentFailed": "thanh toán thất bại ✗ · xem trên explorer ↗",
+      "confirmInWallet": "xác nhận trong ví…",
+      "confirmingEllipsis": "đang xác nhận…",
+      "payArrow": "thanh toán →"
+    },
+    "tx": {
+      "hash": "Hash",
+      "chain": "Chain",
+      "status": "Trạng thái",
+      "block": "Block",
+      "from": "Từ",
+      "to": "Đến",
+      "method": "Phương thức",
+      "value": "Giá trị",
+      "gas": "Gas",
+      "logs": "Logs",
+      "time": "Thời gian",
+      "header": "Giao dịch",
+      "viewOnExplorer": "xem trên explorer →"
+    },
+    "address": {
+      "walletOverview": "TỔNG QUAN VÍ",
+      "etherscan": "etherscan ↗",
+      "totalValue": "TỔNG GIÁ TRỊ",
+      "symbolBalance": "SỐ DƯ {symbol}",
+      "tokenHoldings": "TÀI SẢN NẮM GIỮ",
+      "swapArrow": "swap →",
+      "recentBuys": "GIAO DỊCH MUA GẦN ĐÂY",
+      "recentActivity": "HOẠT ĐỘNG GẦN ĐÂY",
+      "in": "VÀO",
+      "out": "RA"
+    },
+    "price": {
+      "marketCap": "Vốn hóa",
+      "volume24h": "Khối lượng (24h)",
+      "circulating": "Lưu hành",
+      "maxSupply": "Cung tối đa",
+      "oneDay": "(1 ngày)",
+      "buySymbol": "Mua {symbol}",
+      "sellSymbol": "Bán {symbol}"
+    },
+    "risk": {
+      "risk": "RỦI RO",
+      "oneDay": "(1 ngày)",
+      "stats": {
+        "marketCap": "Vốn hóa",
+        "vol24h": "KL (24h)",
+        "liquidity": "Thanh khoản",
+        "pools": "Pool",
+        "poolsValue": "{pairs} / {dex} DEX",
+        "top10Hold": "Top 10 nắm giữ"
+      },
+      "riskFlags": "CẢNH BÁO RỦI RO",
+      "viewOnDexscreener": "xem trên dexscreener · {dexId} · {chainId} ↗",
+      "flags": {
+        "noLiquidity": "Không có thanh khoản đáng kể",
+        "volumeSpike": "Khối lượng giao dịch tăng đột biến bất thường",
+        "singlePool": "Chỉ có 1 pool thanh khoản",
+        "newToken": "Token dưới 7 ngày tuổi",
+        "highVolatility": "Giá biến động >50% trong 24h",
+        "heavySelling": "Áp lực bán mạnh",
+        "possibleHoneypot": "Chỉ mua được không bán được — nghi ngờ honeypot",
+        "sniped": "Người mua sớm tập trung ở các block đầu tiên",
+        "concentrated": "Top 10 ví nắm giữ hơn một nửa nguồn cung"
+      }
+    },
+    "paywall": {
+      "connectThenSubscribe": "Kết nối ví của bạn, rồi nhấn Subscribe lại.",
+      "smartUnlocked": "Đã mở khóa Smart — hãy gửi lại tin nhắn của bạn.",
+      "subscriptionFailed": "Đăng ký thất bại.",
+      "paymentFailed": "Thanh toán thất bại.",
+      "titleConnect": "Kết nối ví để dùng thêm Smart",
+      "titleLimitReached": "Đã hết hạn mức Smart hôm nay",
+      "bodyConnect": "Bạn đã dùng hết {cap} tin nhắn Smart miễn phí. Kết nối ví để tiếp tục dùng Smart, hoặc chuyển sang Fast — luôn miễn phí.",
+      "bodyLimitReached": "Bạn đã dùng hết toàn bộ {cap} tin nhắn Smart miễn phí hôm nay. Subscribe để dùng Smart không giới hạn, hoặc chuyển sang Fast — luôn miễn phí.",
+      "smartTier": "GÓI SMART",
+      "connectWallet": "Kết nối ví",
+      "confirming": "Đang xác nhận…",
+      "subscribe": "✦ Subscribe",
+      "switchToFast": "⚡ Chuyển sang Fast",
+      "needUsdcFundWallet": "Cần USDC? Nạp tiền vào ví →"
+    },
+    "yield": {
+      "eyebrow": "QUÉT YIELD",
+      "viaDefiLlama": "dữ liệu từ DeFiLlama",
+      "rewards": "+{pct}% thưởng",
+      "tvl": "{value} TVL",
+      "deposit": "gửi tiền ↗"
+    },
+    "polymarket": {
+      "volumeM": "${n}M KL",
+      "volumeK": "${n}K KL",
+      "volume": "${n} KL",
+      "headerTopic": "THỊ TRƯỜNG DỰ ĐOÁN · {topic} · từ Polymarket",
+      "headerTrending": "THỊ TRƯỜNG DỰ ĐOÁN · THỊNH HÀNH · từ Polymarket",
+      "depositWithAmount": "NẠP VÀO POLYMARKET · ${amount} USDC",
+      "deposit": "NẠP VÀO POLYMARKET",
+      "depositInstructions": "Gửi USDC đến địa chỉ tương ứng với chain của bạn. Polymarket sẽ tự động bridge sang pUSD.",
+      "checkBalanceHint": "Sau khi gửi, hỏi \"tiền của tôi đã về chưa?\" để kiểm tra số dư."
+    },
+    "suggestions": {
+      "tryOneOfThese": "Thử một trong số này"
+    }
+  }
+}

@@ -1,0 +1,405 @@
+{
+  "landing": {
+    "actions": {
+      "openApp": "打开应用",
+      "readDocs": "查看文档"
+    },
+    "nav": {
+      "changelog": "更新日志"
+    },
+    "oracle": "智能体可以链上查询 Skopos",
+    "terminal": {
+      "windowTitle": "skopos — 对话"
+    },
+    "demo": {
+      "commands": [
+        {
+          "cmd": "robinhood chain 上有什么新币在发行",
+          "response": "已拉取 Robinhood Chain 实时发行信息\n新币种、创建者溯源、重复发行风险已标记"
+        },
+        {
+          "cmd": "把 2 个 eth 从 ethereum 转到 base",
+          "response": "已规划路径 —— ETH 经最优路线转入 Base\n兼顾成本与速度 · 随时可执行"
+        },
+        {
+          "cmd": "在 base 上把 500 usdc 换成 eth",
+          "response": "已在 Base 上找到最优执行路径\n以最小滑点将 USDC 换成 ETH"
+        },
+        {
+          "cmd": "sol 现在行情怎么样",
+          "response": "已拉取 SOL 实时行情数据\n综合各大交易场所数据以确保准确性"
+        },
+        {
+          "cmd": "现在 usdc 有什么好的收益",
+          "response": "正在跨链扫描稳定收益\n已找到流动性充足、表现稳定的资金池"
+        },
+        {
+          "cmd": "我的钱包现在什么情况",
+          "response": "已同步你跨链的持仓\n代币、余额和近期活动均已梳理"
+        },
+        {
+          "cmd": "把 1 个 sol 跨链到 ethereum",
+          "response": "跨链路径已就绪 —— Solana 到 Ethereum\n流动性与兼容性问题已在后台处理好"
+        }
+      ]
+    }
+  },
+  "app": {
+    "sidebar": {
+      "newChat": "新对话",
+      "recents": "最近",
+      "history": "历史记录",
+      "portfolio": "投资组合",
+      "myBalances": "我的余额",
+      "bridge": "跨链",
+      "swap": "兑换"
+    },
+    "bridgeActions": {
+      "ethToBase": "ETH → Base",
+      "ethToArbitrum": "ETH → Arbitrum",
+      "usdcToPolygon": "USDC → Polygon",
+      "ethToOptimism": "ETH → Optimism"
+    },
+    "swapActions": {
+      "ethToUsdcBase": "ETH → USDC · Base",
+      "ethToUsdcArb": "ETH → USDC · Arb",
+      "usdcToEthBase": "USDC → ETH · Base"
+    },
+    "wallet": {
+      "eyebrow": "钱包",
+      "noAssets": "该链上没有资产",
+      "fundWallet": "充值钱包",
+      "connecting": "连接钱包中…",
+      "connect": "连接钱包",
+      "connectLower": "连接钱包",
+      "clickAgainDisconnect": "再次点击以断开连接",
+      "addressDisconnect": "{address} — 断开连接",
+      "clickAgainConfirm": "再次点击以确认断开连接",
+      "addressClickDisconnect": "{address} — 点击断开连接",
+      "disconnectConfirm": "断开连接？",
+      "connectDifferent": "连接其他钱包",
+      "connectAnother": "连接其他钱包"
+    },
+    "theme": "主题",
+    "errorBoundary": {
+      "quote": "报价渲染失败。",
+      "rebalance": "再平衡渲染失败。",
+      "tx": "交易详情渲染失败。",
+      "pay": "支付渲染失败。",
+      "payments": "收款记录渲染失败。",
+      "address": "地址详情渲染失败。",
+      "tokenRisk": "风险扫描渲染失败。",
+      "prebuy": "购买前研究渲染失败。",
+      "yieldPools": "收益数据渲染失败。",
+      "polymarket": "Polymarket 数据渲染失败。",
+      "intel": "情报卡片渲染失败。",
+      "aeon": "Aeon 卡片渲染失败。",
+      "x402check": "端点检查渲染失败。",
+      "robinhoodLaunches": "Robinhood 发行信息渲染失败。",
+      "paywall": "订阅卡片渲染失败。",
+      "price": "价格图表渲染失败。"
+    },
+    "noFundsDetected": "该链上未检测到资金",
+    "fundWalletArrow": "充值钱包 →",
+    "banners": {
+      "offline": "无网络连接 — 请重新连接后继续",
+      "updateAvailable": "有新版本可用",
+      "refresh": "刷新"
+    },
+    "mobileSubtitle": "跨链智能助手",
+    "alerts": {
+      "eyebrow": "提醒",
+      "enabled": "提醒已开启 — 再次请求你的提醒即可注册。",
+      "enableFailed": "无法开启提醒 — 请检查浏览器通知权限后重试。",
+      "enabling": "开启中…",
+      "enableButton": "开启提醒"
+    },
+    "sendFeedback": "发送反馈",
+    "greeting": "嗨，我是 <brand>Skopos</brand>，你的非托管跨链加密助手。",
+    "greetingSubtitle": "今天需要我帮你做什么？",
+    "composerPlaceholder": "向 skopos 提问…",
+    "composerPlaceholderOffline": "无网络连接…",
+    "examplePrompts": {
+      "bridgeEthBase": "把 0.1 ETH 从以太坊跨链到 base",
+      "swapUsdcEth": "在 arbitrum 上把 100 USDC 换成 ETH",
+      "showPortfolio": "显示我的投资组合",
+      "whatChains": "你们支持哪些链？"
+    },
+    "horizonPills": {
+      "robinhoodLaunches": "robinhood 新币发行",
+      "polymarket": "polymarket 预测市场",
+      "yieldScanner": "收益扫描",
+      "agentMode": "智能体模式",
+      "limitOrders": "限价单",
+      "offrampCard": "提现到银行卡",
+      "deepResearch": "深度研究",
+      "onchainMcp": "链上 MCP",
+      "whaleSignals": "巨鲸信号"
+    },
+    "soonSuffix": "· 即将推出",
+    "soonToast": "即将推出 ✦",
+    "tier": {
+      "chooseResponseTier": "选择响应等级"
+    },
+    "tiers": {
+      "smart": { "label": "✦ Smart", "desc": "前沿模型 · 深度解析" },
+      "fast": { "label": "⚡ Fast", "desc": "快速 & 免费" }
+    },
+    "aiDisclaimer": "Skopos 是 AI，可能会出错。请自行核实回复内容。",
+    "featureSlides": {
+      "bridge": { "label": "跨链", "sub": "支持 25+ 条链" },
+      "bestRoute": { "label": "最优路径", "sub": "AI 寻找最低成本路线" },
+      "swap": { "label": "兑换", "sub": "任意代币，任意链" },
+      "plainLanguage": { "label": "自然语言", "sub": "只需描述你想做什么" },
+      "fiveBridges": { "label": "5 个跨链桥", "sub": "Relay、Across、Mayan 等" },
+      "liveQuotes": { "label": "实时报价", "sub": "实时跨链定价" },
+      "txHistory": { "label": "交易记录", "sub": "追踪你的每一笔操作" },
+      "portfolio": { "label": "投资组合", "sub": "跨链余额一览" }
+    },
+    "quote": {
+      "rejectedInWallet": "交易在钱包中被拒绝。",
+      "errorPrefix": "错误：{msg}",
+      "routeFailedRecheck": "该路径刚刚未通过链上复核 — 报价已刷新。请检查后重试。",
+      "rejectedInWalletShort": "已在钱包中拒绝。",
+      "switchFailed": "切换失败：{msg}",
+      "orderType": {
+        "limit": "限价单预览",
+        "stopLoss": "止损单预览",
+        "takeProfit": "止盈单预览",
+        "twap": "TWAP 订单预览"
+      },
+      "triggerBanner": {
+        "dropsTo": "当 {token} 跌至 ${price} 时执行",
+        "hits": "当 {token} 达到 ${price} 时执行",
+        "twap": "将 {amount} {token} 分散在 {duration} 内执行",
+        "twapWithCount": "将 {amount} {token} 分散在 {duration} 内，分 {count} 次买入"
+      },
+      "summary": {
+        "via": "通过",
+        "estTime": "预计时间",
+        "minutesEta": "~{n} 分钟",
+        "secondsEta": "~{n} 秒",
+        "minReceived": "最少到账",
+        "networkFee": "网络费用",
+        "recipient": "接收地址"
+      },
+      "header": {
+        "transaction": "交易",
+        "swapPreview": "兑换预览",
+        "bridgePreview": "跨链预览"
+      },
+      "expired": "已过期",
+      "secondsLeft": "{n}秒",
+      "live": "实时",
+      "summaryLabel": "摘要",
+      "slippage": "滑点",
+      "approvalConfirmed": "授权已确认 ✓ — 请在下方执行",
+      "originConfirmed": "源链已确认 ✓ · 查看浏览器 →",
+      "confirmed": "已确认 ✓ · 查看浏览器 →",
+      "bridgingToMinutes": "正在跨链至 {chain} · 预计 ~{n} 分钟到账",
+      "bridgingToSeconds": "正在跨链至 {chain} · 预计 ~{n} 秒到账",
+      "transactionFailed": "交易失败 ✗ · 查看浏览器 →",
+      "freshQuoteRetry": "获取新报价并重试",
+      "confirmingOnChain": "链上确认中…",
+      "submittedWaiting": "已提交 · 等待中…",
+      "ellipsis": "…",
+      "refreshArrow": "刷新 →",
+      "refresh": "刷新",
+      "connectWallet": "连接钱包",
+      "switching": "切换中…",
+      "switchTo": "切换到 {chain}",
+      "approving": "授权中…",
+      "confirming": "确认中…",
+      "approveToken": "授权 {token}",
+      "recheckingRoute": "重新核查路径中…",
+      "confirmInWallet": "请在钱包中确认…",
+      "quoteExpiredRefresh": "报价已过期 — 请刷新",
+      "executeArrow": "执行 →"
+    },
+    "solana": {
+      "routeFailedRecheck": "该路径刚刚未通过链上复核 — 报价已刷新。请检查后重试。",
+      "wrongAccount": "此报价是为另一个 Solana 账户生成的。请用最初连接的钱包重新连接，或刷新获取新报价。",
+      "transactionFailedDetail": "交易失败：{detail}",
+      "transactionFailed": "交易失败",
+      "viewOnSolscan": "在 solscan 上查看 ↗",
+      "failedToConnect": "连接钱包失败",
+      "connectNamed": "连接 {name}",
+      "connectPhantom": "连接 phantom →",
+      "confirmInPhantom": "请在 phantom 中确认…",
+      "executeViaPhantom": "通过 phantom 执行 →",
+      "phantomSolana": "phantom · solana"
+    },
+    "flash": {
+      "rejectedInWalletShort": "已在钱包中拒绝。",
+      "switchFailed": "切换失败：{msg}",
+      "rejectedInWallet": "交易在钱包中被拒绝。",
+      "errorPrefix": "错误：{msg}",
+      "orderSubmissionFailed": "订单提交失败（{status}）",
+      "signatureRejected": "签名在钱包中被拒绝。",
+      "orderSubmitted": "订单已提交 ✓ · id {id}…",
+      "wrapConfirmed": "包装已确认 ✓",
+      "approvalConfirmedSignBelow": "授权已确认 ✓ — 请在下方签名",
+      "connectWallet": "连接钱包",
+      "switching": "切换中…",
+      "switchToRobinhoodChain": "切换到 Robinhood Chain",
+      "wrapping": "包装中…",
+      "confirming": "确认中…",
+      "wrapToken": "包装 {token}",
+      "approving": "授权中…",
+      "approveToken": "授权 {token}",
+      "confirmInWallet": "请在钱包中确认…",
+      "submittingOrder": "订单提交中…",
+      "signAndExecute": "签名并执行 →"
+    },
+    "relay": {
+      "rejectedInWalletShort": "已在钱包中拒绝。",
+      "switchFailed": "切换失败：{msg}",
+      "rejectedInWallet": "交易在钱包中被拒绝。",
+      "errorPrefix": "错误：{msg}",
+      "depositConfirmed": "存款已确认 ✓ · 查看浏览器 →",
+      "bridgingToMinutes": "正在跨链至 {chain} · 预计 ~{n} 分钟到账",
+      "bridgingToSeconds": "正在跨链至 {chain} · 预计 ~{n} 秒到账",
+      "transactionFailedRefresh": "交易失败 — 请刷新报价后重试。",
+      "approveToken": "授权 {token}",
+      "bridgeArrow": "跨链 →",
+      "executeArrow": "执行 →",
+      "stepOfWithDescription": "第 {n} / {total} 步 — {description}",
+      "stepOf": "第 {n} / {total} 步",
+      "confirmingOnChain": "链上确认中…",
+      "submittedWaiting": "已提交 · 等待中…",
+      "connectWallet": "连接钱包",
+      "switching": "切换中…",
+      "switchTo": "切换到 {chain}",
+      "confirmInWallet": "请在钱包中确认…"
+    },
+    "rebalance": {
+      "routeCount": "{count, plural, other {条路径}}",
+      "consolidatingTo": " · 归集至 {chain}",
+      "executeInOrder": " · 按顺序执行",
+      "stepOf": "第 {n} / {total} 步",
+      "feesAmount": "手续费 ${amount}"
+    },
+    "payments": {
+      "eyebrow": "收到的付款",
+      "tagged": "{count} 笔已标记",
+      "noneYet": "暂无发往 {address} 的已标记 B20 付款。当有人带备注付款给你时，会显示在这里 — 并与备注匹配。",
+      "noMemo": "（无备注）",
+      "from": "来自 {address} · {chain}"
+    },
+    "pay": {
+      "payLabel": "支付 {amount} {token}",
+      "rejectedInWallet": "付款在钱包中被拒绝。",
+      "errorPrefix": "错误：{msg}",
+      "b20Payment": "B20 付款",
+      "payment": "付款",
+      "to": "收款方",
+      "memoHashed": "备注（已哈希）",
+      "memo": "备注",
+      "memoSkipped": "已跳过 — {token} 不是 B20 代币",
+      "token": "代币",
+      "paidConfirmed": "已支付 ✓ · 查看浏览器 ↗",
+      "paymentFailed": "支付失败 ✗ · 查看浏览器 ↗",
+      "confirmInWallet": "请在钱包中确认…",
+      "confirmingEllipsis": "确认中…",
+      "payArrow": "支付 →"
+    },
+    "tx": {
+      "hash": "哈希",
+      "chain": "链",
+      "status": "状态",
+      "block": "区块",
+      "from": "发送方",
+      "to": "接收方",
+      "method": "方法",
+      "value": "金额",
+      "gas": "Gas 费",
+      "logs": "日志",
+      "time": "时间",
+      "header": "交易",
+      "viewOnExplorer": "查看浏览器 →"
+    },
+    "address": {
+      "walletOverview": "钱包概览",
+      "etherscan": "etherscan ↗",
+      "totalValue": "总价值",
+      "symbolBalance": "{symbol} 余额",
+      "tokenHoldings": "代币持仓",
+      "swapArrow": "兑换 →",
+      "recentBuys": "近期买入",
+      "recentActivity": "近期活动",
+      "in": "转入",
+      "out": "转出"
+    },
+    "price": {
+      "marketCap": "市值",
+      "volume24h": "24小时交易量",
+      "circulating": "流通量",
+      "maxSupply": "最大供应量",
+      "oneDay": "（1天）",
+      "buySymbol": "买入 {symbol}",
+      "sellSymbol": "卖出 {symbol}"
+    },
+    "risk": {
+      "risk": "风险",
+      "oneDay": "（1天）",
+      "stats": {
+        "marketCap": "市值",
+        "vol24h": "24小时交易量",
+        "liquidity": "流动性",
+        "pools": "资金池",
+        "poolsValue": "{pairs} / {dex} 个 DEX",
+        "top10Hold": "前10持仓"
+      },
+      "riskFlags": "风险提示",
+      "viewOnDexscreener": "在 dexscreener 上查看 · {dexId} · {chainId} ↗",
+      "flags": {
+        "noLiquidity": "缺乏有效流动性",
+        "volumeSpike": "交易量异常飙升",
+        "singlePool": "仅有 1 个流动性池",
+        "newToken": "代币上线不足 7 天",
+        "highVolatility": "24小时内价格波动超过 50%",
+        "heavySelling": "抛售压力较大",
+        "possibleHoneypot": "只能买入无法卖出 — 疑似蜜罐",
+        "sniped": "早期买家集中在最初几个区块",
+        "concentrated": "前10名钱包持有超过一半供应量"
+      }
+    },
+    "paywall": {
+      "connectThenSubscribe": "请先连接钱包，然后再次点击订阅。",
+      "smartUnlocked": "Smart 已解锁 — 请重新发送你的消息。",
+      "subscriptionFailed": "订阅失败。",
+      "paymentFailed": "支付失败。",
+      "titleConnect": "连接钱包以获得更多 Smart 额度",
+      "titleLimitReached": "今日 Smart 额度已用完",
+      "bodyConnect": "你已用完 {cap} 条免费 Smart 消息。连接钱包即可继续使用 Smart，或切换到 Fast — 始终免费。",
+      "bodyLimitReached": "你今天已用完全部 {cap} 条免费 Smart 消息。订阅解锁无限 Smart，或切换到 Fast — 始终免费。",
+      "smartTier": "SMART 等级",
+      "connectWallet": "连接钱包",
+      "confirming": "确认中…",
+      "subscribe": "✦ 订阅",
+      "switchToFast": "⚡ 切换到 Fast",
+      "needUsdcFundWallet": "需要 USDC？充值钱包 →"
+    },
+    "yield": {
+      "eyebrow": "收益扫描",
+      "viaDefiLlama": "数据来自 DeFiLlama",
+      "rewards": "+{pct}% 奖励",
+      "tvl": "{value} TVL",
+      "deposit": "存入 ↗"
+    },
+    "polymarket": {
+      "volumeM": "${n}M 交易量",
+      "volumeK": "${n}K 交易量",
+      "volume": "${n} 交易量",
+      "headerTopic": "预测市场 · {topic} · 数据来自 Polymarket",
+      "headerTrending": "预测市场 · 热门 · 数据来自 Polymarket",
+      "depositWithAmount": "存入 POLYMARKET · ${amount} USDC",
+      "deposit": "存入 POLYMARKET",
+      "depositInstructions": "将 USDC 发送到你所在链对应的地址。Polymarket 会自动将其跨链为 pUSD。",
+      "checkBalanceHint": "发送后，询问「我的存款到账了吗？」即可查询余额。"
+    },
+    "suggestions": {
+      "tryOneOfThese": "试试这些"
+    }
+  }
+}

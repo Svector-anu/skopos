@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import { resolveChainId } from "./chains";
+import { type SupportedLocale } from "./locale";
 
 // ---------------------------------------------------------------------------
 // Intent classifier — runs before any LLM call
@@ -798,22 +799,7 @@ function redactLiveNumbers(text: string): string {
 const AGENT_CONCISE_RULE =
   "\n\nThis reply is posted to an on-chain agent chat with a hard length cap. Answer in at most 2 short sentences, well under 400 characters. No bullets, no headers.";
 
-export type SupportedLocale = "zh" | "vi";
-const SUPPORTED_LOCALES = new Set<SupportedLocale>(["zh", "vi"]);
 const LOCALE_NAMES: Record<SupportedLocale, string> = { zh: "Chinese", vi: "Vietnamese" };
-
-// Localization phase 1 (system prompt only) — zh/vi, auto-detected from the
-// browser's Accept-Language header, no manual toggle. Everything else stays
-// English by design: undefined here means "don't inject a locale directive
-// at all", not "default to some other language".
-export function detectLocale(acceptLanguage: string | null | undefined): SupportedLocale | undefined {
-  if (!acceptLanguage) return undefined;
-  for (const part of acceptLanguage.split(",")) {
-    const tag = part.trim().split(";")[0]?.split("-")[0]?.toLowerCase();
-    if (tag && SUPPORTED_LOCALES.has(tag as SupportedLocale)) return tag as SupportedLocale;
-  }
-  return undefined;
-}
 
 function localeDirective(locale: SupportedLocale | undefined): string {
   if (!locale) return "";

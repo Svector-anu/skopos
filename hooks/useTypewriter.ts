@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { COMMANDS } from "@/lib/commands";
+import type { Command } from "@/lib/commands";
 
 export type ChatPhase =
   | "start-pause"
@@ -25,7 +25,7 @@ const THINKING_MS     = 1100;
 const HOLD_MS         = 2200;
 const CLEAR_MS        = 350;
 
-export function useTypewriter(): ChatState {
+export function useTypewriter(commands: Command[]): ChatState {
   const [phase, setPhase]         = useState<ChatPhase>("start-pause");
   const [cmdIdx, setCmdIdx]       = useState(0);
   const [aiCharIdx, setAiCharIdx]     = useState(0);
@@ -33,7 +33,7 @@ export function useTypewriter(): ChatState {
   const [aiText, setAiText]       = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const cmd = COMMANDS[cmdIdx];
+  const cmd = commands[cmdIdx];
 
   const clear = useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -88,14 +88,14 @@ export function useTypewriter(): ChatState {
           setUserText("");
           setAiText("");
           setAiCharIdx(0);
-          setCmdIdx(i => (i + 1) % COMMANDS.length);
+          setCmdIdx(i => (i + 1) % commands.length);
           setPhase("start-pause");
         }, CLEAR_MS);
         break;
     }
 
     return clear;
-  }, [phase, cmdIdx, aiCharIdx, cmd, clear]);
+  }, [phase, cmdIdx, aiCharIdx, cmd, clear, commands]);
 
   return { userText, aiText, phase };
 }
