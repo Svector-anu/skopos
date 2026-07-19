@@ -41,6 +41,7 @@ import { getRecentRobinhoodLaunches, robinhoodFeedEnabled, MAX_LIMIT, scanRobinh
 import { discoverX402Endpoint } from "@/lib/x402Discover";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
+import { sanitizeForPrompt } from "@/lib/sanitizeForPrompt";
 
 // ── price query token recognition ────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ function buildTokenAnalysisPrompt(risk: TokenRisk): string {
     : null;
 
   return [
-    `Token: ${risk.symbol} (${risk.name})`,
+    `Token: ${sanitizeForPrompt(risk.symbol)} (${sanitizeForPrompt(risk.name)})`,
     `Price: ${risk.priceUsd ? `$${risk.priceUsd}` : "N/A"}`,
     `Market cap: ${mcap > 0 ? fmtUsd(mcap) : "N/A"}`,
     `Liquidity: ${fmtUsd(liq)} (${liquidityPct}% of market cap)`,
@@ -140,10 +141,10 @@ function buildYieldAnalysisPrompt(symbol: string, pools: YieldPool[]): string {
     const emPct   = total > 0 ? Math.round((reward / total) * 100) : 0;
     const tvl     = p.tvlUsd >= 1_000_000
       ? `$${(p.tvlUsd / 1_000_000).toFixed(0)}M` : `$${(p.tvlUsd / 1_000).toFixed(0)}K`;
-    return `${p.project} on ${p.chain}: ${p.apy.toFixed(1)}% APY (${base.toFixed(1)}% fees + ${reward.toFixed(1)}% emissions = ${emPct}% emission-funded) · TVL ${tvl}`;
+    return `${sanitizeForPrompt(p.project)} on ${sanitizeForPrompt(p.chain)}: ${p.apy.toFixed(1)}% APY (${base.toFixed(1)}% fees + ${reward.toFixed(1)}% emissions = ${emPct}% emission-funded) · TVL ${tvl}`;
   }).join("\n");
 
-  return `${symbol} yield opportunities:\n${lines}\n\nUse ONLY the APY and TVL figures above — never state a rate or amount not listed here. Classify each as sustainable real yield or an emission-funded coordination game. Give a directional take on which pool structurally favors LPs vs. which extracts from them.`;
+  return `${sanitizeForPrompt(symbol)} yield opportunities:\n${lines}\n\nUse ONLY the APY and TVL figures above — never state a rate or amount not listed here. Classify each as sustainable real yield or an emission-funded coordination game. Give a directional take on which pool structurally favors LPs vs. which extracts from them.`;
 }
 
 const SKOPOS_HELP = `Skopos is a non-custodial, cross-chain crypto copilot — live at tryskopos.xyz, and embeddable anywhere else via API, Agent Skill, or MCP. Tell it what you want in plain English, it builds the route or pulls the data, and you sign in your own wallet. It never holds or moves your funds.
@@ -189,9 +190,9 @@ function buildBridgeAnalysisPrompt(
     : `This route is expensive: ${lostPct.toFixed(1)}% of value is lost to spread and fees. Suggest the user reconsider or try a smaller or alternative route.`;
 
   return [
-    `Swap: ${intent.amount} ${intent.token} from ${intent.originChain} → ${intent.destinationChain}, receiving ${intent.destinationToken}`,
+    `Swap: ${intent.amount} ${sanitizeForPrompt(intent.token)} from ${sanitizeForPrompt(intent.originChain)} → ${sanitizeForPrompt(intent.destinationChain)}, receiving ${sanitizeForPrompt(intent.destinationToken)}`,
     `Adapter: ${route.tool}`,
-    `Output: ${route.outputAmount} ${intent.destinationToken}`,
+    `Output: ${route.outputAmount} ${sanitizeForPrompt(intent.destinationToken)}`,
     route.inputUSD  != null ? `Input value: $${route.inputUSD.toFixed(2)}` : null,
     route.outputUSD != null ? `Output value: $${route.outputUSD.toFixed(2)}` : null,
     lostPct != null ? `Cost of this route: ${lostPct.toFixed(1)}% of value lost to spread + fees (you keep ${valueKeptPct!.toFixed(1)}%)` : null,
