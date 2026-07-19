@@ -518,7 +518,8 @@ export default function AppPage() {
       const identity = (connectedAddress ?? anonId).toLowerCase();
       let signature: string | undefined;
       if (connectedAddress) {
-        const challengeRes = await fetch(`/api/notifications/challenge?identity=${identity}`);
+        const challengeUrl = `/api/notifications/challenge?identity=${identity}&endpoint=${encodeURIComponent(subscription.endpoint)}`;
+        const challengeRes = await fetch(challengeUrl);
         if (!challengeRes.ok) return false;
         const { message } = await challengeRes.json() as { message: string };
         signature = await signMessageAsync({ message });
