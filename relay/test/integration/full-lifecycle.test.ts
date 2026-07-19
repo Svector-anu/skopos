@@ -115,15 +115,21 @@ describe("happy path", () => {
 });
 
 describe("skopos failure path", () => {
-  it("does not call fulfillRequest when queryType is unsupported", async () => {
-    // no stub registered → MockSkopos returns 400
+  it("still calls fulfillRequest with an error result when queryType is unsupported", async () => {
+    // no stub registered → MockSkopos returns 400. The oracle always responds
+    // (see subscription.ts's handleRequest) rather than leaving the chain
+    // request hanging — an unsupported type submits an error result instead
+    // of silently dropping it.
     vi.useFakeTimers();
     const promise = handleRequest(fakeApi, makeReq(2n, "unsupported_type"));
     await vi.runAllTimersAsync();
     await promise;
     vi.useRealTimers();
 
-    expect(fulfillRequest).not.toHaveBeenCalled();
+    expect(fulfillRequest).toHaveBeenCalledTimes(1);
+    const [, , , result] = vi.mocked(fulfillRequest).mock.calls[0];
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/unsupported query type/);
     expect(loadPendingRequests()).toHaveLength(0);
   });
 
@@ -131,7 +137,9 @@ describe("skopos failure path", () => {
     // Dispatcher catches unsupported type before any HTTP call — no retries, returns error immediately
     await handleRequest(fakeApi, makeReq(3n, "unsupported_type"));
 
-    expect(fulfillRequest).not.toHaveBeenCalled();
+    expect(fulfillRequest).toHaveBeenCalledTimes(1);
+    const [, , , result] = vi.mocked(fulfillRequest).mock.calls[0];
+    expect(result.ok).toBe(false);
     expect(loadPendingRequests()).toHaveLength(0);
   });
 });

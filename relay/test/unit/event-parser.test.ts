@@ -9,7 +9,9 @@ describe("decodeRequestPending", () => {
 
     expect(result).not.toBeNull();
     expect(result!.id).toBe(1n);
-    expect(result!.caller).toBe("0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d");
+    // Sails string-routing events don't embed a caller — the decoder always
+    // returns the zero address as a placeholder (see event-parser.ts).
+    expect(result!.caller).toBe("0x" + "00".repeat(32));
     expect(JSON.parse(result!.payload)).toMatchObject({ v: "1", type: "price" });
   });
 
@@ -19,29 +21,19 @@ describe("decodeRequestPending", () => {
     expect(decodeRequestPending(buildRequestPendingHex({ id: 2n ** 32n }))!.id).toBe(2n ** 32n);
   });
 
-  it("returns null for wrong GM magic bytes", () => {
-    const hex = buildRequestPendingHex();
-    const bytes = Buffer.from(hex.slice(2), "hex");
-    bytes[0] = 0x00;
-    expect(decodeRequestPending("0x" + bytes.toString("hex"))).toBeNull();
+  it("returns null for wrong service_name", () => {
+    expect(decodeRequestPending(buildRequestPendingHex({ serviceName: "NotSkoposOracle" }))).toBeNull();
   });
 
-  it("returns null for wrong interface_id", () => {
-    const wrongId = Uint8Array.from([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-    expect(decodeRequestPending(buildRequestPendingHex({ interfaceId: wrongId }))).toBeNull();
+  it("returns null for wrong event_name", () => {
+    expect(decodeRequestPending(buildRequestPendingHex({ eventName: "SomethingElse" }))).toBeNull();
   });
 
-  it("returns null for wrong entry_id (e.g. RequestFulfilled=0)", () => {
-    // entry_id=0 is RequestFulfilled — should not decode as RequestPending
-    expect(decodeRequestPending(buildRequestPendingHex({ entryId: 0 }))).toBeNull();
+  it("returns null when event_name is RequestFulfilled instead of RequestPending", () => {
+    expect(decodeRequestPending(buildRequestPendingHex({ eventName: "RequestFulfilled" }))).toBeNull();
   });
 
-  it("returns null for wrong route_idx", () => {
-    expect(decodeRequestPending(buildRequestPendingHex({ routeIdx: 0 }))).toBeNull();
-    expect(decodeRequestPending(buildRequestPendingHex({ routeIdx: 2 }))).toBeNull();
-  });
-
-  it("returns null for truncated payload (too short for header + id + caller)", () => {
+  it("returns null for truncated payload (too short to even contain the service name)", () => {
     const hex = buildRequestPendingHex();
     const truncated = "0x" + hex.slice(2, 10); // only 4 bytes
     expect(decodeRequestPending(truncated)).toBeNull();

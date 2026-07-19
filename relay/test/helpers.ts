@@ -1,58 +1,39 @@
 // Constructs a valid RequestPending event hex payload for testing event-parser.
-// Mirrors the encoding in sails-rs emit_event + Sails binary header spec.
+// Mirrors the Sails string-routing wire format (see src/event-parser.ts):
+//   SCALE(service_name) + SCALE(event_name) + u64_LE(request_id) + SCALE(data_string)
 
-const INTERFACE_ID = Uint8Array.from([0x55, 0xa7, 0x12, 0x41, 0x6e, 0x41, 0xaf, 0x40]);
-const REQUEST_PENDING_ENTRY_ID = 1;
-const BRIDGE_ROUTE_IDX = 1;
-
-// Alice's public key (sr25519 dev account)
-const ALICE = Uint8Array.from(
-  "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"
-    .match(/.{2}/g)!
-    .map((b) => parseInt(b, 16)),
-);
+const SERVICE_NAME = "SkoposOracle";
+const EVENT_NAME = "RequestPending";
 
 export interface RequestPendingOptions {
   id?: bigint;
-  caller?: Uint8Array;
   payload?: string;
-  entryId?: number;
-  routeIdx?: number;
-  interfaceId?: Uint8Array;
+  serviceName?: string;
+  eventName?: string;
 }
 
 export function buildRequestPendingHex(opts: RequestPendingOptions = {}): string {
   const {
     id = 1n,
-    caller = ALICE,
     payload = '{"v":"1","type":"price","params":{"symbol":"ETH"}}',
-    entryId = REQUEST_PENDING_ENTRY_ID,
-    routeIdx = BRIDGE_ROUTE_IDX,
-    interfaceId = INTERFACE_ID,
+    serviceName = SERVICE_NAME,
+    eventName = EVENT_NAME,
   } = opts;
 
-  // 16-byte Sails message header
-  const header = new Uint8Array(16);
-  header[0] = 0x47; header[1] = 0x4d; // GM magic
-  header[2] = 0x01;                    // version
-  header[3] = 0x10;                    // header_len = 16
-  header.set(interfaceId, 4);
-  new DataView(header.buffer).setUint16(12, entryId, true);
-  header[14] = routeIdx;
-  header[15] = 0x00;
+  const svcBytes     = new TextEncoder().encode(serviceName);
+  const evtBytes     = new TextEncoder().encode(eventName);
+  const payloadBytes = new TextEncoder().encode(payload);
 
   // u64 LE id
   const idBytes = new Uint8Array(8);
   new DataView(idBytes.buffer).setBigUint64(0, id, true);
 
-  // ActorId (32 bytes)
-  const callerBytes = caller.slice(0, 32);
-
-  // SCALE compact-prefixed UTF-8 string
-  const payloadBytes = new TextEncoder().encode(payload);
-  const lenPrefix = scaleCompact(payloadBytes.length);
-
-  const all = [header, idBytes, callerBytes, lenPrefix, payloadBytes];
+  const all = [
+    scaleCompact(svcBytes.length), svcBytes,
+    scaleCompact(evtBytes.length), evtBytes,
+    idBytes,
+    scaleCompact(payloadBytes.length), payloadBytes,
+  ];
   const total = all.reduce((s, a) => s + a.length, 0);
   const out = new Uint8Array(total);
   let off = 0;

@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:node",
     "test:watch": "vitest",
+    "test:node": "tsx --test src/__tests__/*.test.ts",
     "test:e2e": "tsx scripts/test-request.ts"
   },
   "dependencies": {

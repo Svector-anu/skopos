@@ -79,7 +79,9 @@ describe("withRetry", () => {
     const line = readFileSync(DEAD_LETTER, "utf8").trim();
     const entry = JSON.parse(line);
     expect(entry.id).toBe("42");
-    expect(entry.caller).toBe("0xabc");
+    // caller is deliberately redacted before hitting the dead-letter log
+    // (security hardening, commit 46a98c9) — never the raw address.
+    expect(entry.caller).toBe("[redacted]");
     expect(entry.reason).toMatch(/connection refused/);
     expect(entry.ts).toBeTruthy();
   });
