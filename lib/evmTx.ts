@@ -34,7 +34,7 @@ export const METHOD_SIGS: Record<string, string> = {
 // 2^255 — an allowance at or above this is effectively unlimited (covers
 // type(uint256).max). Built via the BigInt constructor, not a `255n` literal,
 // since the project's tsconfig target predates BigInt literals.
-const UNLIMITED_APPROVAL_MIN = BigInt("57896044618658097711785492504343953926634992332820282019728792003956564819968");
+export const UNLIMITED_APPROVAL_MIN = BigInt("57896044618658097711785492504343953926634992332820282019728792003956564819968");
 
 export function decodeApprove(input: string | undefined): { spender: string; unlimited: boolean } | null {
   if (!input || input.length < 138) return null;

@@ -199,8 +199,19 @@ type RobinhoodLaunchesResult = {
   launches: RobinhoodLaunchCard[];
   omittedCount: number;
 };
+type ApprovalRow = {
+  chainId: number;
+  chainName: string;
+  tokenAddress: string;
+  tokenSymbol: string;
+  spender: string;
+  allowanceRaw: string;
+  unlimited: boolean;
+  allowanceDisplay: string;
+};
+type ApprovalScanResult = { type: "approval_scan"; address: string; rows: ApprovalRow[]; windowDays: number };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult | RobinhoodLaunchesResult;
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult | RobinhoodLaunchesResult | ApprovalScanResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1422,6 +1433,11 @@ export default function AppPage() {
                     {msg.result.type === "robinhood_launches" && (
                       <ErrorBoundary label={t("errorBoundary.robinhoodLaunches")}>
                         <RobinhoodLaunchesDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "approval_scan" && (
+                      <ErrorBoundary label={t("errorBoundary.approvalScan")}>
+                        <ApprovalScanDisplay result={msg.result} onTxSubmitted={saveTx} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "paywall" && (
@@ -4962,6 +4978,132 @@ function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult 
         )}
         <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, lineHeight: 1.6 }}>
           Token names are unverified — anyone can launch a token referencing a public figure or brand with zero affiliation. Repeat-launch count and the DexScreener scan above are the only safety signals shown here.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── ApprovalScanDisplay ──────────────────────────────────────────────────────
+
+// Mirrors lib/alchemy.ts's ALCHEMY_CHAINS[chainId].explorer — kept as a
+// separate client-side map rather than importing that module here, since it
+// also carries the Alchemy API key template into the RPC URL.
+const APPROVAL_EXPLORER_BASE: Record<number, string> = {
+  1: "https://etherscan.io", 8453: "https://basescan.org", 42161: "https://arbiscan.io",
+  10: "https://optimistic.etherscan.io", 137: "https://polygonscan.com", 56: "https://bscscan.com",
+  43114: "https://snowtrace.io", 324: "https://explorer.zksync.io", 59144: "https://lineascan.build",
+  100: "https://gnosisscan.io",
+};
+
+function ApprovalRowCard({ row, onTxSubmitted }: { row: ApprovalRow; onTxSubmitted?: (r: TxRecord) => void }) {
+  const t = useTranslations("app.approvalScan");
+  const { mutateAsync: writeContract, isPending } = useWriteContract();
+  const { mutateAsync: switchChain, isPending: isSwitching } = useSwitchChain();
+  const activeChainId = useChainId();
+  const [hash, setHash] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const { data: receipt, isLoading: confirming, isError: receiptError } =
+    useWaitForTransactionReceipt({ hash: (hash ?? undefined) as `0x${string}` | undefined, chainId: row.chainId });
+  const confirmed = receipt?.status === "success";
+  const failed = receipt?.status === "reverted" || receiptError;
+  const explorerBase = APPROVAL_EXPLORER_BASE[row.chainId] ?? "https://etherscan.io";
+  const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+  async function revoke() {
+    setErr(null);
+    try {
+      if (activeChainId !== row.chainId) await switchChain({ chainId: row.chainId });
+      const h = await writeContract({
+        address: row.tokenAddress as `0x${string}`, abi: ERC20_ABI, functionName: "approve",
+        args: [row.spender as `0x${string}`, BigInt(0)], chainId: row.chainId,
+      });
+      setHash(h);
+      onTxSubmitted?.({
+        hash: h, chainId: row.chainId, chain: row.chainName,
+        label: t("revokeLabel", { token: row.tokenSymbol }), timestamp: Date.now(),
+        explorerUrl: `${explorerBase}/tx/${h}`,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 100) }));
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text, #fff)" }}>{row.tokenSymbol}</span>
+          {row.unlimited && (
+            <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, color: "#ff5555", background: "rgba(255,85,85,0.1)", border: "1px solid rgba(255,85,85,0.3)", borderRadius: 999, padding: "1px 7px" }}>
+              {t("unlimited")}
+            </span>
+          )}
+          <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{row.chainName}</span>
+        </div>
+        <a href={`${explorerBase}/address/${row.spender}`} target="_blank" rel="noopener noreferrer"
+          style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.5))", textDecoration: "none" }}
+          title={row.spender}>
+          {t("spender")} {short(row.spender)} ↗
+        </a>
+        {!row.unlimited && (
+          <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+            {t("allowance")} {row.allowanceDisplay}
+          </span>
+        )}
+        {err && <span style={{ ...MONO, fontSize: "0.6rem", color: "#ff5555" }}>{err}</span>}
+      </div>
+
+      {confirmed ? (
+        <a href={`${explorerBase}/tx/${hash}`} target="_blank" rel="noopener noreferrer"
+          style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.06em", textTransform: "uppercase", padding: "7px 12px", borderRadius: 8, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.3)", color: "#4ade80", textDecoration: "none", whiteSpace: "nowrap" }}>
+          {t("revoked")}
+        </a>
+      ) : failed ? (
+        <a href={`${explorerBase}/tx/${hash}`} target="_blank" rel="noopener noreferrer"
+          style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.06em", textTransform: "uppercase", padding: "7px 12px", borderRadius: 8, background: "rgba(255,85,85,0.08)", border: "1px solid rgba(255,85,85,0.3)", color: "#ff5555", textDecoration: "none", whiteSpace: "nowrap" }}>
+          {t("revokeFailed")}
+        </a>
+      ) : (
+        <button onClick={revoke} disabled={isPending || isSwitching || confirming}
+          style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.06em", textTransform: "uppercase", padding: "7px 12px", borderRadius: 8, background: "rgba(255,85,85,0.08)", border: "1px solid rgba(255,85,85,0.3)", color: "#ff5555", cursor: isPending || isSwitching || confirming ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+          {isPending ? t("confirmInWallet") : isSwitching ? t("switchingChain") : confirming ? t("confirmingEllipsis") : t("revokeArrow")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ApprovalScanDisplay({ result, onTxSubmitted }: { result: ApprovalScanResult; onTxSubmitted?: (r: TxRecord) => void }) {
+  const t = useTranslations("app.approvalScan");
+
+  return (
+    <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 16, overflow: "hidden" }}>
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+          {t("header")}
+        </p>
+        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          {t("rowCount", { count: result.rows.length })}
+        </span>
+      </div>
+
+      <div style={{ padding: "2px 20px" }}>
+        {result.rows.length === 0 ? (
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", padding: "16px 0" }}>
+            {t("empty")}
+          </p>
+        ) : (
+          result.rows.map((row) => (
+            <ApprovalRowCard key={`${row.chainId}-${row.tokenAddress}-${row.spender}`} row={row} onTxSubmitted={onTxSubmitted} />
+          ))
+        )}
+      </div>
+
+      <div style={{ padding: "10px 20px 13px" }}>
+        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, lineHeight: 1.6 }}>
+          {t("windowCaveat", { days: result.windowDays })}
         </p>
       </div>
     </div>

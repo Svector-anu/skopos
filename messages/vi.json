@@ -97,7 +97,8 @@
       "x402check": "Không thể hiển thị kiểm tra endpoint.",
       "robinhoodLaunches": "Không thể hiển thị danh sách launch trên Robinhood.",
       "paywall": "Không thể hiển thị thẻ đăng ký.",
-      "price": "Không thể hiển thị biểu đồ giá."
+      "price": "Không thể hiển thị biểu đồ giá.",
+      "approvalScan": "Không thể hiển thị quét approval."
     },
     "noFundsDetected": "Không phát hiện quỹ trên chain này",
     "fundWalletArrow": "Nạp tiền vào ví →",
@@ -386,6 +387,24 @@
       "rewards": "+{pct}% thưởng",
       "tvl": "{value} TVL",
       "deposit": "gửi tiền ↗"
+    },
+    "approvalScan": {
+      "header": "QUÉT APPROVAL",
+      "rowCount": "{count} đang hoạt động",
+      "empty": "Không tìm thấy approval nào đang hoạt động trong khoảng thời gian quét.",
+      "windowCaveat": "Đã quét {days} ngày gần nhất hoạt động approval trên các chain hỗ trợ — approval cũ hơn ngoài khoảng này sẽ không hiện ở đây.",
+      "unlimited": "KHÔNG GIỚI HẠN",
+      "spender": "spender",
+      "allowance": "hạn mức",
+      "revokeLabel": "Thu hồi approval {token}",
+      "rejectedInWallet": "Thu hồi bị từ chối trong ví.",
+      "errorPrefix": "Lỗi: {msg}",
+      "revoked": "đã thu hồi ✓ · xem trên explorer ↗",
+      "revokeFailed": "thu hồi thất bại ✗ · xem trên explorer ↗",
+      "confirmInWallet": "xác nhận trong ví…",
+      "switchingChain": "đang chuyển chain…",
+      "confirmingEllipsis": "đang xác nhận…",
+      "revokeArrow": "thu hồi →"
     },
     "polymarket": {
       "volumeM": "${n}M KL",

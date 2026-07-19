@@ -26,6 +26,7 @@ import { looksLikePay, buildPayIntent } from "@/lib/pay";
 import { getMemoPayments } from "@/lib/payments";
 import { launchToken, isBankrEnabled } from "@/lib/bankr";
 import { lookupTx, lookupAddress, resolveENS } from "@/lib/alchemy";
+import { scanApprovals } from "@/lib/approvalScanner";
 import { scanToken, resolveTokenTarget, type TokenRisk } from "@/lib/dexscreener";
 import { getSubscription } from "@/lib/notifications";
 import { registerWatcher } from "@/lib/watchers";
@@ -2250,6 +2251,19 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     const data = await lookupAddress(trimmed);
     const summary = await generateAddressSummary(data);
     return json({ type: "address", data, summary });
+  }
+
+  // Wallet-level approval scan — checked before the portfolio block below,
+  // since "scan my wallet for risky approvals" also matches that block's
+  // bare \bwallet\b pattern and would otherwise get misrouted to a portfolio
+  // lookup instead.
+  const APPROVAL_SCAN_RE = /\b(?:scan|check|revoke)\b[\s\S]{0,40}\b(?:approvals?|allowances?)\b|\b(?:approvals?|allowances?)\b[\s\S]{0,40}\b(?:scan|check)\b|\b(?:risky|dangerous|unlimited)\s+approvals?\b/i;
+  if (APPROVAL_SCAN_RE.test(trimmed)) {
+    if (!senderAddress) {
+      return json({ type: "text", text: "Connect your wallet first — I'll scan it for risky token approvals." });
+    }
+    const { rows, windowDays } = await scanApprovals(senderAddress);
+    return json({ type: "approval_scan", address: senderAddress, rows, windowDays });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

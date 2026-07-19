@@ -97,7 +97,8 @@
       "x402check": "端点检查渲染失败。",
       "robinhoodLaunches": "Robinhood 发行信息渲染失败。",
       "paywall": "订阅卡片渲染失败。",
-      "price": "价格图表渲染失败。"
+      "price": "价格图表渲染失败。",
+      "approvalScan": "授权扫描渲染失败。"
     },
     "noFundsDetected": "该链上未检测到资金",
     "fundWalletArrow": "充值钱包 →",
@@ -386,6 +387,24 @@
       "rewards": "+{pct}% 奖励",
       "tvl": "{value} TVL",
       "deposit": "存入 ↗"
+    },
+    "approvalScan": {
+      "header": "授权扫描",
+      "rowCount": "{count} 项有效",
+      "empty": "扫描窗口内未发现有效授权。",
+      "windowCaveat": "已扫描支持链上最近 {days} 天的授权活动 —— 窗口之外的旧授权不会显示在这里。",
+      "unlimited": "无限额度",
+      "spender": "被授权方",
+      "allowance": "额度",
+      "revokeLabel": "撤销 {token} 授权",
+      "rejectedInWallet": "撤销操作在钱包中被拒绝。",
+      "errorPrefix": "错误：{msg}",
+      "revoked": "已撤销 ✓ · 查看浏览器 ↗",
+      "revokeFailed": "撤销失败 ✗ · 查看浏览器 ↗",
+      "confirmInWallet": "请在钱包中确认…",
+      "switchingChain": "切换链中…",
+      "confirmingEllipsis": "确认中…",
+      "revokeArrow": "撤销 →"
     },
     "polymarket": {
       "volumeM": "${n}M 交易量",

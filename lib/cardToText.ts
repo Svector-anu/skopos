@@ -348,6 +348,17 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       return `${str(c.heading)}${subtitle ? ` · ${subtitle}` : ""}:\n\n${lines.join("\n")}`;
     }
 
+    case "approval_scan": {
+      const rows = (Array.isArray(c.rows) ? c.rows : []) as Card[];
+      const days = num(c.windowDays) ?? 90;
+      if (!rows.length) return `No active token approvals found for ${short(str(c.address))} in the last ${days} days.`;
+      const lines = rows.map((r) => {
+        const allowance = r.unlimited ? "UNLIMITED" : str(r.allowanceDisplay);
+        return `${str(r.tokenSymbol)} → ${short(str(r.spender))} on ${str(r.chainName)}: ${allowance} allowance${r.unlimited ? " ⚠️" : ""}`;
+      });
+      return `Active approvals for ${short(str(c.address))} (last ${days} days):\n\n${lines.join("\n")}`;
+    }
+
     default:
       return `Open Skopos for this: ${SITE}`;
   }
