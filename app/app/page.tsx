@@ -463,6 +463,10 @@ export default function AppPage() {
   const [isOnline, setIsOnline]               = useState(true);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const messagesLenRef = useRef(0);
+  // Mirrors the composer's draft text into a ref so the version-poll effect
+  // below (a stable [] effect) can read its latest value without re-running
+  // on every keystroke — same pattern as messagesLenRef.
+  const valueRef = useRef("");
   const { address }                            = useAccount();
   const currentChainId                         = useChainId();
   const { login, logout, authenticated, ready }= usePrivy();
@@ -646,7 +650,7 @@ export default function AppPage() {
         if (id === "dev") return;
         if (buildId === null) { buildId = id; return; }
         if (id !== buildId) {
-          if (messagesLenRef.current === 0) { window.location.reload(); return; }
+          if (messagesLenRef.current === 0 && !valueRef.current.trim()) { window.location.reload(); return; }
           setUpdateAvailable(true);
         }
       } catch { /* network error — ignore */ }
@@ -686,6 +690,10 @@ export default function AppPage() {
     messagesLenRef.current = messages.length;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, streamingText]);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   const saveTx = useCallback((record: TxRecord) => {
     setTxHistory(prev => {
