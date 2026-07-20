@@ -13,7 +13,9 @@ import {
   generateAddressSummary,
   classifyIntent,
   parseLaunchIntent,
+  llmParseFlashOrder,
   ParsedIntent,
+  type FlashOrderLlmResult,
   type LlmTier,
   type LlmMeta,
 } from "@/lib/parseIntent";
@@ -704,7 +706,15 @@ export type FlashOrderParse = { order: FlashOrderIntent } | { ask: string } | nu
 // match with a missing required field asks conversationally instead of
 // falling through to the informational LLM — same discipline as the guided
 // buy/sell and guided Robinhood bridge blocks above this function's call site.
+// Split into strict/loose layers so the app call site can slot the LLM
+// structured parse between them (strict regex → LLM → loose keyword ask):
+// clear input stays instant and free, fuzzy input gets semantics, and the
+// generic loose asks remain the floor when the LLM is unavailable or fails.
 export function parseFlashOrderIntent(trimmed: string): FlashOrderParse {
+  return parseFlashOrderStrict(trimmed) ?? parseFlashOrderLoose(trimmed);
+}
+
+function parseFlashOrderStrict(trimmed: string): FlashOrderParse {
   let m: RegExpExecArray | null;
 
   if ((m = LIMIT_BUY_RE.exec(trimmed))) {
@@ -719,10 +729,6 @@ export function parseFlashOrderIntent(trimmed: string): FlashOrderParse {
     if (!qty) return { ask: `How much ${sym} would you like this limit sell to cover, at $${stripCommas(price)}? e.g. "sell 2 ${sym} at $${stripCommas(price)}"` };
     return { order: { side: "sell", orderType: "limit", token, qty, priceLevel: stripCommas(price), ...(chain ? { chain: chain.trim() } : {}) } };
   }
-  if (LOOSE_LIMIT_RE.test(trimmed)) {
-    return { ask: `Set a limit order — tell me the token, side, amount, and price. e.g. "buy $2000 of ETH at $1800" or "sell 2 ETH at $2500".` };
-  }
-
   if ((m = STOP_LOSS_RE_A.exec(trimmed)) || (m = STOP_LOSS_RE_B.exec(trimmed)) || (m = STOP_LOSS_RE_C.exec(trimmed))) {
     const [, qty, token, price, chain] = m;
     if (!token) return { ask: `Which token is this stop loss for? e.g. "sell if ETH drops below $2000"` };
@@ -730,10 +736,6 @@ export function parseFlashOrderIntent(trimmed: string): FlashOrderParse {
     if (!qty) return { ask: `How much ${sym} would you like this stop loss to cover? e.g. "sell 2 ${sym} if it drops below $${stripCommas(price)}"` };
     return { order: { side: "sell", orderType: "stop-loss", token, qty, priceLevel: stripCommas(price), triggerType: "lower", ...(chain ? { chain: chain.trim() } : {}) } };
   }
-  if (LOOSE_STOP_LOSS_RE.test(trimmed)) {
-    return { ask: `Set a stop loss — tell me the token, amount, and trigger price. e.g. "sell 2 ETH if it drops below $2000"` };
-  }
-
   if ((m = TAKE_PROFIT_RE_A.exec(trimmed)) || (m = TAKE_PROFIT_RE_B.exec(trimmed)) || (m = TAKE_PROFIT_RE_C.exec(trimmed))) {
     const [, qty, token, price, chain] = m;
     if (!token) return { ask: `Which token is this take profit for? e.g. "sell when ETH hits $5000"` };
@@ -741,10 +743,6 @@ export function parseFlashOrderIntent(trimmed: string): FlashOrderParse {
     if (!qty) return { ask: `How much ${sym} would you like this take profit to cover? e.g. "sell 2 ${sym} when it hits $${stripCommas(price)}"` };
     return { order: { side: "sell", orderType: "take-profit", token, qty, priceLevel: stripCommas(price), triggerType: "upper", ...(chain ? { chain: chain.trim() } : {}) } };
   }
-  if (LOOSE_TAKE_PROFIT_RE.test(trimmed)) {
-    return { ask: `Set a take profit — tell me the token, amount, and trigger price. e.g. "sell 2 ETH when it hits $5000"` };
-  }
-
   if ((m = TWAP_RE_A.exec(trimmed))) {
     const [, spend, token, durQty, durUnit, buckets, chain] = m;
     const sym = token.toUpperCase();
@@ -765,11 +763,102 @@ export function parseFlashOrderIntent(trimmed: string): FlashOrderParse {
     if (durationSeconds < 300) return { ask: `TWAP orders need to run for at least 5 minutes — try a longer window.` };
     return { ask: `How much would you like to spend in total on ${sym}? e.g. "buy $500 of ${sym} over ${durQty} ${durUnit}"` };
   }
+
+  return null;
+}
+
+function parseFlashOrderLoose(trimmed: string): { ask: string } | null {
+  if (LOOSE_LIMIT_RE.test(trimmed)) {
+    return { ask: `Set a limit order — tell me the token, side, amount, and price. e.g. "buy $2000 of ETH at $1800" or "sell 2 ETH at $2500".` };
+  }
+  if (LOOSE_STOP_LOSS_RE.test(trimmed)) {
+    return { ask: `Set a stop loss — tell me the token, amount, and trigger price. e.g. "sell 2 ETH if it drops below $2000"` };
+  }
+  if (LOOSE_TAKE_PROFIT_RE.test(trimmed)) {
+    return { ask: `Set a take profit — tell me the token, amount, and trigger price. e.g. "sell 2 ETH when it hits $5000"` };
+  }
   if (LOOSE_TWAP_RE.test(trimmed)) {
     return { ask: `Set up a TWAP — tell me the total to spend, the token, and the time window. e.g. "buy $500 of ETH over 7 days"` };
   }
-
   return null;
+}
+
+// Cheap pre-LLM gate — llmParseFlashOrder must never fire on every chat
+// message. Order vocabulary, a buy/sell near a price or trigger word, or an
+// imperative possessive ("sell my NVDA") are the only ways in; messages
+// opening with a question word skip straight to the normal pipeline. The
+// LLM's own "none" verdict is the second line of defense for anything that
+// slips through.
+const FLASH_ORDER_QUESTION_RE = /^(?:should|what|why|how|is|are|was|were|did|does|when's|whats)\b/i;
+const FLASH_ORDER_VOCAB_RE    = /\blimit\s+(?:buy|sell|order)\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\bdca\b|\btwap\b/i;
+const FLASH_ORDER_VERB_RE     = /\b(?:buy|sell|purchase)\b/i;
+const FLASH_ORDER_SIGNAL_RE   = /\$\s?\d|\bat\s+\d|\bdollars?\b|\bdrops?\b|\bfalls?\b|\bhits\b|\breaches\b|\bbelow\b|\bunder\b|\babove\b|\bcrosses\b|\bover\s+(?:a|an|the|\d)/i;
+const FLASH_ORDER_BARE_RE     = /^(?:please\s+|can\s+you\s+)?(?:buy|sell|purchase)\s+(?:my|your|the|our|some|all)\b/i;
+
+function flashOrderLlmGate(trimmed: string): boolean {
+  if (FLASH_ORDER_QUESTION_RE.test(trimmed)) return false;
+  if (FLASH_ORDER_VOCAB_RE.test(trimmed)) return true;
+  if (!FLASH_ORDER_VERB_RE.test(trimmed)) return false;
+  return FLASH_ORDER_BARE_RE.test(trimmed) || FLASH_ORDER_SIGNAL_RE.test(trimmed);
+}
+
+// Maps the LLM structured parse onto the same FlashOrderParse shape the
+// strict regexes produce, reusing their ask strings for missing fields —
+// this layer changes how orders are understood, never how they execute.
+// The market variant is handled at the call site (it feeds resolveFlashLeg,
+// not resolveFlashOrderLeg), so it never reaches this function.
+function mapLlmFlashOrder(llm: Exclude<FlashOrderLlmResult, { orderType: "market" }>): FlashOrderParse {
+  const sym = llm.token.toUpperCase();
+  const chain = llm.chain ? { chain: llm.chain.trim() } : {};
+
+  if (llm.orderType === "limit") {
+    if (llm.limitPrice === null) {
+      const example = llm.side === "buy" ? `buy $2000 of ${sym} at $1800` : `sell 2 ${sym} at $2500`;
+      return { ask: `I need a price to set that ${llm.side} order on ${sym} — what price? e.g. "${example}"` };
+    }
+    const price = String(llm.limitPrice);
+    if (llm.qty === null) {
+      return llm.side === "buy"
+        ? { ask: `How much would you like to spend (in USD) on ${sym} once it hits $${price}? e.g. "buy $2000 of ${sym} at $${price}"` }
+        : { ask: `How much ${sym} would you like this limit sell to cover, at $${price}? e.g. "sell 2 ${sym} at $${price}"` };
+    }
+    return { order: { side: llm.side, orderType: "limit", token: llm.token, qty: String(llm.qty), priceLevel: price, ...chain } };
+  }
+
+  if (llm.orderType === "stop-loss" || llm.orderType === "take-profit") {
+    const isStop = llm.orderType === "stop-loss";
+    if (llm.triggerPrice === null) {
+      return { ask: isStop
+        ? `I need a trigger price for that stop loss on ${sym} — e.g. "sell 2 ${sym} if it drops below $2000"`
+        : `I need a target price for that take profit on ${sym} — e.g. "sell 2 ${sym} when it hits $5000"` };
+    }
+    const price = String(llm.triggerPrice);
+    if (llm.qty === null) {
+      return { ask: isStop
+        ? `How much ${sym} would you like this stop loss to cover? e.g. "sell 2 ${sym} if it drops below $${price}"`
+        : `How much ${sym} would you like this take profit to cover? e.g. "sell 2 ${sym} when it hits $${price}"` };
+    }
+    return { order: { side: "sell", orderType: llm.orderType, token: llm.token, qty: String(llm.qty), priceLevel: price, triggerType: isStop ? "lower" : "upper", ...chain } };
+  }
+
+  if (llm.durationSeconds === null) {
+    const example = llm.side === "buy" ? `buy $500 of ${sym} over 7 days` : `sell 2 ${sym} over 7 days`;
+    return { ask: `Set up a TWAP — tell me the total, the token, and the time window. e.g. "${example}"` };
+  }
+  if (llm.durationSeconds < 300) {
+    return { ask: `TWAP orders need to run for at least 5 minutes — try a longer window.` };
+  }
+  if (llm.qty === null) {
+    return llm.side === "buy"
+      ? { ask: `How much would you like to spend in total on ${sym}? e.g. "buy $500 of ${sym} over 7 days"` }
+      : { ask: `How much ${sym} would you like to sell over that window? e.g. "sell 2 ${sym} over 7 days"` };
+  }
+  return { order: {
+    side: llm.side, orderType: "twap", token: llm.token, qty: String(llm.qty),
+    durationSeconds: llm.durationSeconds,
+    ...(llm.twapBucketCount ? { twapBucketCount: llm.twapBucketCount } : {}),
+    ...chain,
+  } };
 }
 
 export type FlashOrderLegOk = {
@@ -1746,7 +1835,46 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       });
     }
   } else {
-    const orderParse = parseFlashOrderIntent(trimmed);
+    // Strict regex → LLM structured parse → loose keyword ask. Regex stays
+    // the free instant path; the LLM (tier-routed, Zod-validated, numbers
+    // provenance-checked in lib/parseIntent.ts) only fires when regex missed
+    // AND the message passes the cheap order-ish gate; the generic loose
+    // asks remain the floor when the LLM is unavailable or declines.
+    let orderParse = parseFlashOrderStrict(trimmed);
+    if (!orderParse && flashOrderLlmGate(trimmed)) {
+      const llm = await llmParseFlashOrder(trimmed, tier, meterMeta);
+      if (llm && llm.orderType === "market") {
+        // Stock-buy shape only — stock tokens exist solely on Robinhood
+        // Chain here, so an explicitly different chain means this isn't
+        // ours. Crypto market buys fall through to the regular swap
+        // pipeline, which has its own LLM fallback (groqParseIntent).
+        const stockSym = llm.token.toUpperCase();
+        if (RH_STOCK_TOKENS[stockSym] && (!llm.chain || /robinhood/i.test(llm.chain))) {
+          await recordSmart();
+          if (llm.qty === null) {
+            return json({
+              type: "text",
+              text: `How much would you like to spend (in USD) on ${stockSym}? e.g. "buy $50 of ${stockSym} on robinhood"`,
+            });
+          }
+          const stockIntent: ParsedIntent = {
+            originChain: "robinhood", destinationChain: "robinhood",
+            token: RH_CHAIN_STABLECOIN, amount: String(llm.qty), destinationToken: stockSym,
+          };
+          const result = await resolveFlashLeg(stockIntent, senderAddress);
+          if (!result.ok) return json({ type: "error", text: result.text });
+          return json({
+            type: "quote", mode: "preview", quotedAt: Date.now(),
+            intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
+            raw: null,
+          });
+        }
+      } else if (llm) {
+        orderParse = mapLlmFlashOrder(llm);
+        if (orderParse) await recordSmart();
+      }
+    }
+    if (!orderParse) orderParse = parseFlashOrderLoose(trimmed);
     if (orderParse) {
       if ("ask" in orderParse) {
         return json({ type: "text", text: orderParse.ask });

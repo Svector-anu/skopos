@@ -1,4 +1,5 @@
 import Groq from "groq-sdk";
+import { z } from "zod";
 import { resolveChainId } from "./chains";
 import { type SupportedLocale } from "./locale";
 
@@ -336,14 +337,19 @@ export type LlmMeta = { servedBy?: LlmTier };
 // to Fast so a flaky or misconfigured gateway never breaks a reply.
 async function chatComplete(
   tier: LlmTier,
-  params: { messages: LlmMessage[]; max_tokens: number; temperature?: number },
+  params: { messages: LlmMessage[]; max_tokens: number; temperature?: number; response_format?: { type: "json_object" } },
 ): Promise<ChatResult | null> {
   if (smartEnabled(tier)) {
+    // response_format is only forwarded on the Groq branch below, where JSON
+    // mode is proven (groqParseIntent). Whether the Bankr gateway tolerates
+    // the param is unverified, and a 400 there would silently degrade every
+    // Smart call to Fast — so Smart relies on prompt-enforced JSON instead.
+    const bankrParams = { messages: params.messages, max_tokens: params.max_tokens, temperature: params.temperature };
     try {
       const res = await fetch("https://llm.bankr.bot/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${process.env.BANKR_LLM_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: SMART_MODEL, ...params }),
+        body: JSON.stringify({ model: SMART_MODEL, ...bankrParams }),
       });
       if (res.ok) {
         const data = await res.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[] };
@@ -455,6 +461,166 @@ async function groqParseIntent(input: string): Promise<ParsedIntent | null> {
     }
 
     return { originChain, destinationChain, token, amount, destinationToken: destinationToken ?? token };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Layer 2b: LLM structured parse — Flash order types (limit / stop-loss /
+// take-profit / TWAP / market stock buy). Fires only when route.ts's strict
+// order regexes miss AND its cheap order-ish gate matches — regex stays the
+// fast path, this is the semantic net under it. Routes by tier via
+// chatComplete (Smart → claude-haiku via Bankr gateway, degrading to Fast on
+// any failure), unlike groqParseIntent above which is Fast-only.
+// ---------------------------------------------------------------------------
+
+const flashPrice = z.number().positive().nullable();
+const flashQty   = z.number().positive().nullable();
+const flashChain = z.string().nullable();
+
+const FlashOrderLlmSchema = z.discriminatedUnion("orderType", [
+  z.object({ orderType: z.literal("limit"),
+             side: z.enum(["buy", "sell"]), token: z.string().min(1),
+             qty: flashQty, limitPrice: flashPrice, chain: flashChain }),
+  z.object({ orderType: z.literal("stop-loss"),
+             side: z.literal("sell"), token: z.string().min(1),
+             qty: flashQty, triggerPrice: flashPrice, chain: flashChain }),
+  z.object({ orderType: z.literal("take-profit"),
+             side: z.literal("sell"), token: z.string().min(1),
+             qty: flashQty, triggerPrice: flashPrice, chain: flashChain }),
+  z.object({ orderType: z.literal("twap"),
+             side: z.enum(["buy", "sell"]), token: z.string().min(1),
+             qty: flashQty, durationSeconds: z.number().int().positive().nullable(),
+             twapBucketCount: z.number().int().positive().nullable(), chain: flashChain }),
+  z.object({ orderType: z.literal("market"),
+             side: z.literal("buy"), token: z.string().min(1),
+             qty: flashQty, chain: flashChain }),
+  z.object({ orderType: z.literal("none") }),
+]);
+
+export type FlashOrderLlmResult = Exclude<z.infer<typeof FlashOrderLlmSchema>, { orderType: "none" }>;
+
+const FLASH_ORDER_PARSE_SYSTEM = `You are a trading-order intent parser. Decide whether the user's message is an instruction to place a trading order, and if so extract it into JSON.
+
+Return ONLY a JSON object (no markdown, no explanation) of exactly one of these shapes:
+
+Not an order (questions, opinions, price checks, general chat): {"orderType":"none"}
+Limit (buy/sell at a stated price): {"orderType":"limit","side":"buy"|"sell","token":string,"qty":number|null,"limitPrice":number|null,"chain":string|null}
+Stop loss (sell if price FALLS to a level): {"orderType":"stop-loss","side":"sell","token":string,"qty":number|null,"triggerPrice":number|null,"chain":string|null}
+Take profit (sell when price RISES to a level): {"orderType":"take-profit","side":"sell","token":string,"qty":number|null,"triggerPrice":number|null,"chain":string|null}
+TWAP/DCA (spread a buy or sell over a time window): {"orderType":"twap","side":"buy"|"sell","token":string,"qty":number|null,"durationSeconds":number|null,"twapBucketCount":number|null,"chain":string|null}
+Market buy (immediate purchase, no price condition, no time window): {"orderType":"market","side":"buy","token":string,"qty":number|null,"chain":string|null}
+
+Field rules:
+- token: ticker symbol, uppercased (NVDA, ETH, TSLA, ...).
+- qty: on a BUY, the total spend in USD; on a SELL, the token quantity being sold.
+- chain: only when the user names a chain ("on base", "on robinhood") — otherwise null.
+- durationSeconds: unit-convert the stated window ("over 2 hours" → 7200, "over a week" → 604800).
+
+CRITICAL — never invent numbers:
+- A number may appear in your output ONLY if that same number appears in the message (or is a direct unit conversion of a stated duration).
+- If the user gave no price, the price field is null. If no amount, qty is null. Never guess, estimate, or default a number.
+- Distinguish spend from price: in "buy $2000 of NVDA at $500", qty is 2000 and limitPrice is 500.
+
+Classification rules:
+- Sell when price FALLS ("if it drops below", "once it falls under") → stop-loss.
+- Sell when price RISES ("when it hits", "once it reaches") → take-profit.
+- "at $X" with no rise/fall wording → limit.
+- Spread over time ("over 3 days", "dca", "twap") → twap.
+- A buy with no price condition and no time window → market.
+- A bare sell with no price condition and no time window → limit with limitPrice null (the app will ask for the price).
+
+Examples:
+"sell my NVDA at $500" → {"orderType":"limit","side":"sell","token":"NVDA","qty":null,"limitPrice":500,"chain":null}
+"sell 2 NVDA once it drops below $400" → {"orderType":"stop-loss","side":"sell","token":"NVDA","qty":2,"triggerPrice":400,"chain":null}
+"once NVDA hits 600 sell it" → {"orderType":"take-profit","side":"sell","token":"NVDA","qty":null,"triggerPrice":600,"chain":null}
+"buy 2000 dollars of NVDA at 500" → {"orderType":"limit","side":"buy","token":"NVDA","qty":2000,"limitPrice":500,"chain":null}
+"buy $500 worth of eth over the next 7 days" → {"orderType":"twap","side":"buy","token":"ETH","qty":500,"durationSeconds":604800,"twapBucketCount":null,"chain":null}
+"sell 2 eth over 3 days on arbitrum" → {"orderType":"twap","side":"sell","token":"ETH","qty":2,"durationSeconds":259200,"twapBucketCount":null,"chain":"arbitrum"}
+"purchase $50 of TSLA on robinhood" → {"orderType":"market","side":"buy","token":"TSLA","qty":50,"chain":"robinhood"}
+"sell my NVDA" → {"orderType":"limit","side":"sell","token":"NVDA","qty":null,"limitPrice":null,"chain":null}
+"should i sell my eth?" → {"orderType":"none"}
+"why did NVDA drop below $400" → {"orderType":"none"}`;
+
+function extractJsonObject(raw: string): unknown {
+  const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try { return JSON.parse(cleaned.slice(start, end + 1)); } catch { return null; }
+}
+
+function literalNumbersIn(input: string): Set<number> {
+  const nums = new Set<number>();
+  for (const m of input.replace(/,/g, "").matchAll(/\d+(?:\.\d+)?/g)) nums.add(parseFloat(m[0]));
+  return nums;
+}
+
+// Durations never appear in the text as raw seconds — derive the allowed
+// values from every "N unit" phrase actually present so a stated "over 7
+// days" validates 604800 without letting the model invent a window.
+function statedDurationsIn(input: string): Set<number> {
+  const durations = new Set<number>();
+  const UNIT_SECONDS: Record<string, number> = {
+    minute: 60, min: 60, hour: 3600, hr: 3600, day: 86400, week: 604800,
+  };
+  for (const m of input.matchAll(/\b(a|an|\d+(?:\.\d+)?)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?)\b/gi)) {
+    const n = m[1] === "a" || m[1] === "an" ? 1 : parseFloat(m[1]);
+    const unit = m[2].toLowerCase().replace(/s$/, "");
+    const mult = UNIT_SECONDS[unit];
+    if (mult) durations.add(Math.round(n * mult));
+  }
+  return durations;
+}
+
+// Zod proves the shape; this proves provenance. Every number the model
+// emitted must be traceable to the message text — an untraceable price/qty
+// is nulled (downstream falls to the conversational ask), an untraceable
+// token sinks the whole parse, an untraceable chain is dropped.
+function validateProvenance(parsed: FlashOrderLlmResult, input: string): FlashOrderLlmResult | null {
+  const lower = input.toLowerCase();
+  if (!lower.includes(parsed.token.toLowerCase())) return null;
+
+  const nums = literalNumbersIn(input);
+  const out = { ...parsed };
+  if (out.qty !== null && !nums.has(out.qty)) out.qty = null;
+  if ("limitPrice" in out && out.limitPrice !== null && !nums.has(out.limitPrice)) out.limitPrice = null;
+  if ("triggerPrice" in out && out.triggerPrice !== null && !nums.has(out.triggerPrice)) out.triggerPrice = null;
+  if ("twapBucketCount" in out && out.twapBucketCount !== null && !nums.has(out.twapBucketCount)) out.twapBucketCount = null;
+  if ("durationSeconds" in out && out.durationSeconds !== null && !statedDurationsIn(input).has(out.durationSeconds)) {
+    out.durationSeconds = null;
+  }
+  if (out.chain !== null && !lower.includes(out.chain.toLowerCase())) out.chain = null;
+  return out;
+}
+
+export async function llmParseFlashOrder(
+  input: string,
+  tier: LlmTier = "fast",
+  meta?: LlmMeta,
+): Promise<FlashOrderLlmResult | null> {
+  try {
+    const completion = await chatComplete(tier, {
+      max_tokens: 250,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: FLASH_ORDER_PARSE_SYSTEM },
+        { role: "user", content: input },
+      ],
+    });
+    if (!completion?.content) return null;
+
+    const result = FlashOrderLlmSchema.safeParse(extractJsonObject(completion.content));
+    if (!result.success || result.data.orderType === "none") return null;
+
+    const validated = validateProvenance(result.data, input);
+    if (!validated) return null;
+    // servedBy is only reported on a usable result so the caller's metering
+    // never counts a parse that produced nothing the user sees.
+    if (meta) meta.servedBy = completion.servedBy;
+    return validated;
   } catch {
     return null;
   }
