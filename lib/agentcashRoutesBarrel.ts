@@ -11,3 +11,4 @@ import "@/app/api/polymarket/route";
 import "@/app/api/market-read/route";
 import "@/app/api/treasury/route";
 import "@/app/api/sniper-check/route";
+import "@/app/api/flash-order/route";
