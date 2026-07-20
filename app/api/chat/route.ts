@@ -668,7 +668,7 @@ function durationToSeconds(qty: string, unit: string): number {
 // CASHCAT when it hits $0.005" matched LIMIT_SELL_RE first and built a
 // "limit" order instead of "take-profit" with the wrong Flash orderType).
 const LIMIT_BUY_RE  = /\b(?:limit\s+)?buy\s+(?:\$(\d[\d,]*(?:\.\d+)?)\s+(?:of\s+)?)?([a-z][a-z0-9]*)\s+(?:at|when\s+(?:the\s+)?price\s+hits|when\s+it\s+hits)\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const LIMIT_SELL_RE = /\b(?:limit\s+)?sell\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const LIMIT_SELL_RE = /\b(?:limit\s+)?sell\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
 // Two natural orderings supported for stop-loss/take-profit: token right
 // after "sell" with a pronoun in the condition clause ("sell 2 ETH if it
 // drops below $2000"), and token inside the condition clause itself ("sell
@@ -676,12 +676,12 @@ const LIMIT_SELL_RE = /\b(?:limit\s+)?sell\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-
 // but the former reads at least as naturally and showed up as a real gap in
 // live testing (case A didn't exist yet, so that phrasing fell through to
 // the informational LLM instead of being recognized as a stop loss).
-const STOP_LOSS_RE_A = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+if\s+it\s+drops?\s+below\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const STOP_LOSS_RE_A = /\bsell\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+if\s+it\s+drops?\s+below\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
 const STOP_LOSS_RE_B = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?if\s+([a-z][a-z0-9]*)\s+drops?\s+below\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const STOP_LOSS_RE_C = /\b(?:set\s+)?stop[\s-]?loss(?:\s+(?:on|for)\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*))?\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const TAKE_PROFIT_RE_A = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+when\s+it\s+hits\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const STOP_LOSS_RE_C = /\b(?:set\s+)?stop[\s-]?loss(?:\s+(?:on|for)\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*))?\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const TAKE_PROFIT_RE_A = /\bsell\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+when\s+it\s+hits\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
 const TAKE_PROFIT_RE_B = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?when\s+([a-z][a-z0-9]*)\s+hits\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const TAKE_PROFIT_RE_C = /\b(?:set\s+)?take[\s-]?profit(?:\s+(?:on|for)\s+(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*))?\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+const TAKE_PROFIT_RE_C = /\b(?:set\s+)?take[\s-]?profit(?:\s+(?:on|for)\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*))?\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
 const TWAP_RE_A = /\bbuy\s+\$(\d[\d,]*(?:\.\d+)?)\s+of\s+([a-z][a-z0-9]*)\s+over\s+(a|an|\d+(?:\.\d+)?)\s*(hour|hours|day|days|week|weeks)\b(?:\s+(?:in|into)\s+(\d+)\s+(?:buckets|chunks|parts))?/i;
 const TWAP_RE_B = /\bdca\s+into\s+([a-z][a-z0-9]*)\s+over\s+(a|an|\d+(?:\.\d+)?)\s*(hour|hours|day|days|week|weeks)\b/i;
 
