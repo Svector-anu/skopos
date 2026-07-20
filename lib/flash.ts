@@ -409,3 +409,134 @@ export async function submitFlashOrder(req: FlashSubmitRequest): Promise<FlashSu
   }
   return res.json();
 }
+
+// ── Order status + cancel — GET /orders, GET /orders/{orderId}, POST
+// /orders/{orderId}/cancel. Previously unused (GitHub issue #74): a submitted
+// order returned an ID and nothing else was ever done with it. Confirmed
+// against Flash's real OpenAPI spec, same discipline as the quote/submit
+// functions above.
+
+export type FlashOrderStatus =
+  | "ORDER_STATUS_UNSPECIFIED" | "ORDER_STATUS_PENDING" | "ORDER_STATUS_ACCEPTED"
+  | "ORDER_STATUS_PARTIALLY_FILLED" | "ORDER_STATUS_FILLED" | "ORDER_STATUS_CANCELLED"
+  | "ORDER_STATUS_REJECTED" | "ORDER_STATUS_TERMINATED";
+
+// Statuses where a cancel request is still meaningful — anything else has
+// already reached a terminal state (filled, cancelled, rejected, terminated).
+export const FLASH_CANCELLABLE_STATUSES: ReadonlySet<FlashOrderStatus> = new Set([
+  "ORDER_STATUS_PENDING", "ORDER_STATUS_ACCEPTED", "ORDER_STATUS_PARTIALLY_FILLED",
+]);
+
+export interface FlashAssetRef {
+  id: string;
+  name: string;
+  address: string;
+  ticker: string;
+  chain: { id: string; name: string; namespace: string };
+}
+
+export interface FlashOrderFilled {
+  targetAmount: string | null;
+  contraAmount: string | null;
+  averagePrice: string | null;
+  averageNotionalPrice: string | null;
+}
+
+export interface FlashOrder {
+  orderId: string;
+  orderType: FlashOrderType;
+  side: FlashOrderSide;
+  status: FlashOrderStatus;
+  closeReason: string | null;
+  funderAddress: string;
+  targetAsset: FlashAssetRef;
+  contraAsset: FlashAssetRef;
+  qty: string;
+  filled: FlashOrderFilled | null;
+  limitNotionalPrice: string | null;
+  trigger: FlashPriceTrigger | null;
+  brackets: FlashPriceTrigger[] | null;
+  maxPriceImpact: string | null;
+  twapBucketCount: number | null;
+  placedAt: string;
+  acceptedAt: string | null;
+  closedAt: string | null;
+}
+
+export interface FlashFill {
+  status: "CHAIN_STATUS_UNSPECIFIED" | "CHAIN_STATUS_PROCESSED" | "CHAIN_STATUS_REORGED" | "CHAIN_STATUS_FINALIZED";
+  notional: string;
+  venues: string[];
+  filledAt: string;
+  rootOrderId: string;
+  orderId: string;
+  parentOrderId: string;
+  transactionId: string;
+  fillPrice: string;
+  feeAmount: string;
+  feeTicker: string;
+  feeNotional: string;
+  contraAmount: string;
+  targetAmount: string;
+}
+
+// Lists orders for a funder wallet, most recent first. No pagination cursor
+// needed yet — pageSize caps at Flash's own max (200), plenty for a chat
+// card; add cursor-based paging if a wallet's order history ever exceeds it.
+export async function listFlashOrders(
+  funderAddress: string,
+  opts?: { statuses?: FlashOrderStatus[]; pageSize?: number },
+): Promise<FlashOrder[]> {
+  const params = new URLSearchParams({ funderAddress });
+  if (opts?.statuses?.length) params.set("statuses", opts.statuses.join(","));
+  if (opts?.pageSize) params.set("pageSize", String(opts.pageSize));
+  const res = await fetchWithTimeout(
+    `${FLASH_BASE_URL}/orders?${params}`,
+    { headers: { [FLASH_API_KEY_HEADER]: flashApiKey() } },
+    FLASH_QUOTE_TIMEOUT_MS,
+  );
+  if (!res.ok) throw new Error(`[flash] list orders ${res.status}`);
+  const data = (await res.json()) as { orders: FlashOrder[] };
+  return data.orders;
+}
+
+// funderAddress is required for ownership verification, same as the list
+// endpoint — Flash won't return another wallet's order detail even with a
+// valid order ID.
+export async function getFlashOrder(orderId: string, funderAddress: string): Promise<{ order: FlashOrder; fills: FlashFill[] } | null> {
+  const params = new URLSearchParams({ funderAddress });
+  const res = await fetchWithTimeout(
+    `${FLASH_BASE_URL}/orders/${orderId}?${params}`,
+    { headers: { [FLASH_API_KEY_HEADER]: flashApiKey() } },
+    FLASH_QUOTE_TIMEOUT_MS,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`[flash] get order ${res.status}`);
+  return res.json();
+}
+
+// Exact bytes the funder wallet must sign (EIP-191 personal_sign on EVM) to
+// authorize a cancel — identical across EVM/SVM per Flash's spec. Exported so
+// the client signs precisely this string, never a reconstruction of it.
+export function buildFlashCancelMessage(orderId: string): string {
+  return `Definitive Flash v1 — Cancel Order\nOrder: ${orderId}`;
+}
+
+// Idempotent server-side: cancelling an already-cancelled order returns 200,
+// not 422, per Flash's own spec — no need to check status before calling.
+export async function cancelFlashOrder(orderId: string, cancelMessage: string, userSignature: string): Promise<{ ok: true }> {
+  const res = await fetchWithTimeout(
+    `${FLASH_BASE_URL}/orders/${orderId}/cancel`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", [FLASH_API_KEY_HEADER]: flashApiKey() },
+      body: JSON.stringify({ cancelMessage, userSignature }),
+    },
+    FLASH_SUBMIT_TIMEOUT_MS,
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`[flash] cancel ${res.status}: ${body}`);
+  }
+  return res.json();
+}

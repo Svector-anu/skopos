@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
-import { resolveRobinhoodToken, getFlashQuote, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
+import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
   parseIntent,
@@ -2268,6 +2268,24 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     }
     const { rows, windowDays } = await scanApprovals(senderAddress);
     return json({ type: "approval_scan", address: senderAddress, rows, windowDays });
+  }
+
+  // Flash order status — GET /orders for a connected wallet, listing standing
+  // orders (limit/stop-loss/take-profit/TWAP) and their fill status. Nothing
+  // was ever done with an order ID after submission until now (GitHub issue
+  // #74) — cancellation is handled client-side (FlashOrdersDisplay signs the
+  // cancel message, POSTs to /api/flash/cancel), this only covers status.
+  const FLASH_ORDERS_RE = /\b(?:my|check(?:\s+my)?|show(?:\s+my)?)\s+(?:flash\s+)?orders?\b|\border\s+status\b/i;
+  if (FLASH_ORDERS_RE.test(trimmed)) {
+    if (!senderAddress) {
+      return json({ type: "text", text: "Connect your wallet first — I'll check your Flash orders." });
+    }
+    try {
+      const orders = await listFlashOrders(senderAddress, { pageSize: 20 });
+      return json({ type: "flash_orders", address: senderAddress, orders });
+    } catch {
+      return json({ type: "error", text: "Couldn't fetch your Flash orders right now — try again in a moment." });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
