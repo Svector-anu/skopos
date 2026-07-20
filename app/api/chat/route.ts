@@ -152,6 +152,8 @@ const SKOPOS_HELP = `Skopos is a non-custodial, cross-chain crypto copilot — l
 What you can do:
 • Swap or bridge across 25+ chains (EVM + Solana) — e.g. "bridge 0.1 ETH from ethereum to base"
 • Rebalance across chains — e.g. "split 1 ETH from ethereum across base and arbitrum"
+• Trade on Robinhood Chain — market swaps, tokenized stocks, and limit/stop-loss/take-profit/TWAP orders — e.g. "buy $10 of NVDA on robinhood" or "sell 2 ETH if it drops below $2000"
+• Robinhood Chain launch feed — e.g. "what's launching on robinhood chain"
 • Live token price + 7-day chart — e.g. "ETH price"
 • Find the best DeFi yield — e.g. "find highest yield for USDC"
 • Scan or deep-dive a token's risk — e.g. "scan PEPE risk" or "deep dive on pepe"
@@ -160,11 +162,12 @@ What you can do:
 • Aeon market reads — e.g. "defi read", "what's trending", "fear and greed divergence", "x402 pulse"
 • Set standing alerts — e.g. "alert me when eth hits $5000", "monitor polymarket X", "watch 0x... for activity"
 • Check a wallet's portfolio — "show my portfolio" or paste an address
+• Send a B20 memo payment or check who paid you — e.g. "pay 10 USDC to 0x... for invoice-42 on base" or "who paid me"
 • Prediction market odds or pulse — e.g. "odds on Bitcoin hitting $100k" or "pm pulse"
 • FX, gold, equities — e.g. "USD to EUR", "gold price"
 • Look up any tx, ENS name, or address — just paste it
 
-Not live yet: recurring/DCA, limit orders, off-ramp to bank/card.
+Not live yet: perpetual/recurring DCA, off-ramp to bank/card.
 
 Just type what you want to do.`;
 
