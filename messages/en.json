@@ -98,7 +98,8 @@
       "robinhoodLaunches": "Robinhood launches failed to render.",
       "paywall": "Paywall card failed to render.",
       "price": "Price chart failed to render.",
-      "approvalScan": "Approval scan failed to render."
+      "approvalScan": "Approval scan failed to render.",
+      "flashOrders": "Flash orders failed to render."
     },
     "noFundsDetected": "No funds detected on this chain",
     "fundWalletArrow": "Fund Wallet →",
@@ -408,6 +409,28 @@
       "switchingChain": "switching chain…",
       "confirmingEllipsis": "confirming…",
       "revokeArrow": "revoke →"
+    },
+    "flashOrders": {
+      "header": "FLASH ORDERS",
+      "orderCount": "{count, plural, one {# order} other {# orders}}",
+      "empty": "No Flash orders found.",
+      "status": {
+        "ORDER_STATUS_PENDING": "pending",
+        "ORDER_STATUS_ACCEPTED": "accepted",
+        "ORDER_STATUS_PARTIALLY_FILLED": "partially filled",
+        "ORDER_STATUS_FILLED": "filled",
+        "ORDER_STATUS_CANCELLED": "cancelled",
+        "ORDER_STATUS_REJECTED": "rejected",
+        "ORDER_STATUS_TERMINATED": "terminated",
+        "ORDER_STATUS_UNSPECIFIED": "unknown"
+      },
+      "triggerLine": "Trigger: ${price}",
+      "twapLine": "Spread over {count} buckets",
+      "filledLine": "Filled: {amount} {symbol}",
+      "cancelling": "cancelling…",
+      "cancelArrow": "cancel →",
+      "rejectedInWallet": "Cancel rejected in wallet.",
+      "errorPrefix": "Error: {msg}"
     },
     "polymarket": {
       "volumeM": "${n}M vol",

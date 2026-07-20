@@ -98,7 +98,8 @@
       "robinhoodLaunches": "Robinhood 发行信息渲染失败。",
       "paywall": "订阅卡片渲染失败。",
       "price": "价格图表渲染失败。",
-      "approvalScan": "授权扫描渲染失败。"
+      "approvalScan": "授权扫描渲染失败。",
+      "flashOrders": "Flash 订单渲染失败。"
     },
     "noFundsDetected": "该链上未检测到资金",
     "fundWalletArrow": "充值钱包 →",
@@ -408,6 +409,28 @@
       "switchingChain": "切换链中…",
       "confirmingEllipsis": "确认中…",
       "revokeArrow": "撤销 →"
+    },
+    "flashOrders": {
+      "header": "FLASH 订单",
+      "orderCount": "{count} 个订单",
+      "empty": "未找到 Flash 订单。",
+      "status": {
+        "ORDER_STATUS_PENDING": "待处理",
+        "ORDER_STATUS_ACCEPTED": "已接受",
+        "ORDER_STATUS_PARTIALLY_FILLED": "部分成交",
+        "ORDER_STATUS_FILLED": "已成交",
+        "ORDER_STATUS_CANCELLED": "已取消",
+        "ORDER_STATUS_REJECTED": "已拒绝",
+        "ORDER_STATUS_TERMINATED": "已终止",
+        "ORDER_STATUS_UNSPECIFIED": "未知"
+      },
+      "triggerLine": "触发价：${price}",
+      "twapLine": "分 {count} 批执行",
+      "filledLine": "已成交：{amount} {symbol}",
+      "cancelling": "取消中…",
+      "cancelArrow": "取消 →",
+      "rejectedInWallet": "取消操作在钱包中被拒绝。",
+      "errorPrefix": "错误：{msg}"
     },
     "polymarket": {
       "volumeM": "${n}M 交易量",

@@ -359,6 +359,21 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       return `Active approvals for ${short(str(c.address))} (last ${days} days):\n\n${lines.join("\n")}`;
     }
 
+    case "flash_orders": {
+      const orders = (Array.isArray(c.orders) ? c.orders : []) as Card[];
+      if (!orders.length) return `No Flash orders found for ${short(str(c.address))}.`;
+      const lines = orders.map((o) => {
+        const targetAsset = (o.targetAsset ?? {}) as Card;
+        const contraAsset = (o.contraAsset ?? {}) as Card;
+        const status = str(o.status).replace("ORDER_STATUS_", "").replace(/_/g, " ").toLowerCase() || "unknown";
+        const qtyLine = o.side === "buy"
+          ? `${str(o.qty)} ${str(contraAsset.ticker)} → ${str(targetAsset.ticker)}`
+          : `${str(o.qty)} ${str(targetAsset.ticker)} → ${str(contraAsset.ticker)}`;
+        return `${str(o.side)} ${str(o.orderType)} · ${qtyLine} · ${status} · id ${str(o.orderId).slice(0, 8)}`;
+      });
+      return `Flash orders for ${short(str(c.address))}:\n\n${lines.join("\n")}`;
+    }
+
     default:
       return `Open Skopos for this: ${SITE}`;
   }

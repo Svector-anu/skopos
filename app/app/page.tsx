@@ -4,11 +4,11 @@ import { useRef, useEffect, useState, useCallback, Component, Suspense } from "r
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
-import { usePrivy, useFundWallet, useWallets, useConnectWallet } from "@privy-io/react-auth";
+import { usePrivy, useFundWallet, useWallets, useConnectWallet, useSignMessage } from "@privy-io/react-auth";
 import {
 useAccount, useBalance, useChainId,
   useSendTransaction, useWriteContract, useReadContract,
-  useWaitForTransactionReceipt, useWalletClient, useSignTypedData, useSignMessage,
+  useWaitForTransactionReceipt, useWalletClient, useSignTypedData,
 } from "wagmi";
 import { fetchSmartMoney } from "@/lib/smartMoneyClient";
 import { callX402Endpoint } from "@/lib/x402GenericClient";
@@ -210,8 +210,24 @@ type ApprovalRow = {
   allowanceDisplay: string;
 };
 type ApprovalScanResult = { type: "approval_scan"; address: string; rows: ApprovalRow[]; windowDays: number };
+type FlashOrder = {
+  orderId: string;
+  orderType: "market" | "limit" | "twap" | "stop" | "stop-loss" | "take-profit" | "bracket";
+  side: "buy" | "sell";
+  status: "ORDER_STATUS_UNSPECIFIED" | "ORDER_STATUS_PENDING" | "ORDER_STATUS_ACCEPTED" | "ORDER_STATUS_PARTIALLY_FILLED" | "ORDER_STATUS_FILLED" | "ORDER_STATUS_CANCELLED" | "ORDER_STATUS_REJECTED" | "ORDER_STATUS_TERMINATED";
+  closeReason: string | null;
+  targetAsset: { ticker: string };
+  contraAsset: { ticker: string };
+  qty: string;
+  filled: { targetAmount: string | null; contraAmount: string | null } | null;
+  limitNotionalPrice: string | null;
+  trigger: { notionalPrice: string; triggerType: "upper" | "lower" } | null;
+  twapBucketCount: number | null;
+  placedAt: string;
+};
+type FlashOrdersResult = { type: "flash_orders"; address: string; orders: FlashOrder[] };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult | RobinhoodLaunchesResult | ApprovalScanResult;
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult | RobinhoodLaunchesResult | ApprovalScanResult | FlashOrdersResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -496,7 +512,13 @@ export default function AppPage() {
       }
     : login;
   const [pushLoading, setPushLoading]          = useState(false);
-  const { mutateAsync: signMessageAsync }      = useSignMessage();
+  // Privy's own useSignMessage, not wagmi's — Privy's docs are explicit that
+  // wagmi's version (and its other hooks in general) can bind to the
+  // embedded wallet rather than whichever wallet the user actually has
+  // active when both are connected; Privy's own hook takes an explicit
+  // `address` to sign with the SPECIFIC wallet whose identity is on the line
+  // here. Same root issue already found and fixed for chain-switching.
+  const { signMessage: signMessageWithWallet } = useSignMessage();
   // Web Push subscription, keyed by the SAME identity /api/chat uses for the
   // sender (wallet if connected, else the persisted anonId) — a watcher
   // registered under that identity looks up this same key to alert. A wallet
@@ -533,7 +555,7 @@ export default function AppPage() {
         const challengeRes = await fetch(challengeUrl);
         if (!challengeRes.ok) return false;
         const { message } = await challengeRes.json() as { message: string };
-        signature = await signMessageAsync({ message });
+        ({ signature } = await signMessageWithWallet({ message }, { address: connectedAddress }));
       }
 
       const res = await fetch("/api/notifications/subscribe", {
@@ -551,7 +573,7 @@ export default function AppPage() {
     } finally {
       setPushLoading(false);
     }
-  }, [connectedAddress, anonId, signMessageAsync]);
+  }, [connectedAddress, anonId, signMessageWithWallet]);
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
   const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
@@ -1462,6 +1484,11 @@ export default function AppPage() {
                     {msg.result.type === "approval_scan" && (
                       <ErrorBoundary label={t("errorBoundary.approvalScan")}>
                         <ApprovalScanDisplay result={msg.result} onTxSubmitted={saveTx} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "flash_orders" && (
+                      <ErrorBoundary label={t("errorBoundary.flashOrders")}>
+                        <FlashOrdersDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "paywall" && (
@@ -2830,6 +2857,127 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
           {isSending ? t("confirmInWallet") : stepLabel}
         </button>
       )}
+    </div>
+  );
+}
+
+// ─── FlashOrdersDisplay ───────────────────────────────────────────────────────
+
+const FLASH_ORDER_CANCELLABLE = new Set(["ORDER_STATUS_PENDING", "ORDER_STATUS_ACCEPTED", "ORDER_STATUS_PARTIALLY_FILLED"]);
+const FLASH_ORDER_STATUS_COLOR: Record<string, string> = {
+  ORDER_STATUS_PENDING: "#F5B800", ORDER_STATUS_ACCEPTED: "#F5B800",
+  ORDER_STATUS_PARTIALLY_FILLED: "#F5B800", ORDER_STATUS_FILLED: "#4ade80",
+  ORDER_STATUS_CANCELLED: "rgba(255,255,255,0.4)", ORDER_STATUS_REJECTED: "#ff5555",
+  ORDER_STATUS_TERMINATED: "rgba(255,255,255,0.4)", ORDER_STATUS_UNSPECIFIED: "rgba(255,255,255,0.4)",
+};
+
+function FlashOrderRow({ order }: { order: FlashOrder }) {
+  const t = useTranslations("app.flashOrders");
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const { signMessage: signMessageWithWallet } = useSignMessage();
+  const { wallets } = useWallets();
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelled, setCancelled] = useState(order.status === "ORDER_STATUS_CANCELLED");
+  const [err, setErr] = useState<string | null>(null);
+
+  const status = cancelled ? "ORDER_STATUS_CANCELLED" : order.status;
+  const cancellable = !cancelled && FLASH_ORDER_CANCELLABLE.has(order.status);
+  const statusLabel = t(`status.${status}`);
+
+  async function cancel() {
+    setErr(null);
+    setIsCancelling(true);
+    try {
+      const evmWallet = wallets.find(w => w.address?.startsWith("0x"));
+      if (!evmWallet) throw new Error("No EVM wallet connected.");
+      const cancelMessage = `Definitive Flash v1 — Cancel Order\nOrder: ${order.orderId}`;
+      const { signature: userSignature } = await signMessageWithWallet({ message: cancelMessage }, { address: evmWallet.address });
+      const res = await fetch("/api/flash/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.orderId, cancelMessage, userSignature }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error ?? "Cancel failed.");
+      setCancelled(true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 100) }));
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
+  const qtyLine = order.side === "buy"
+    ? `${order.qty} ${order.contraAsset.ticker} → ${order.targetAsset.ticker}`
+    : `${order.qty} ${order.targetAsset.ticker} → ${order.contraAsset.ticker}`;
+  const filledAmount = order.filled?.targetAmount ?? order.filled?.contraAmount;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 0", borderTop: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text, #fff)", fontWeight: 600, textTransform: "uppercase" }}>
+            {order.side} {order.orderType}
+          </span>
+          <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{qtyLine}</span>
+        </div>
+        <span style={{
+          ...MONO, fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase",
+          color: FLASH_ORDER_STATUS_COLOR[status] ?? "rgba(255,255,255,0.4)",
+          background: `${FLASH_ORDER_STATUS_COLOR[status] ?? "rgba(255,255,255,0.4)"}1a`,
+          border: `1px solid ${FLASH_ORDER_STATUS_COLOR[status] ?? "rgba(255,255,255,0.4)"}44`,
+          borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap",
+        }}>
+          {statusLabel}
+        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))" }}>
+          {[
+            order.trigger ? t("triggerLine", { price: order.trigger.notionalPrice }) : null,
+            order.twapBucketCount ? t("twapLine", { count: order.twapBucketCount }) : null,
+            filledAmount ? t("filledLine", { amount: filledAmount, symbol: order.targetAsset.ticker }) : null,
+          ].filter(Boolean).join(" · ")}
+        </span>
+        {cancellable && (
+          <button onClick={cancel} disabled={isCancelling}
+            style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.05em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,85,85,0.25)", background: "rgba(255,85,85,0.05)", color: "#ff5555", cursor: isCancelling ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+            {isCancelling ? t("cancelling") : t("cancelArrow")}
+          </button>
+        )}
+      </div>
+      {err && <span style={{ ...MONO, fontSize: "0.58rem", color: "#ff5555" }}>{err}</span>}
+    </div>
+  );
+}
+
+function FlashOrdersDisplay({ result }: { result: FlashOrdersResult }) {
+  const t = useTranslations("app.flashOrders");
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const visibleOrders = result.orders;
+
+  return (
+    <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 16, overflow: "hidden" }}>
+      <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+          {t("header")}
+        </p>
+        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          {t("orderCount", { count: visibleOrders.length })}
+        </span>
+      </div>
+      <div style={{ padding: "2px 20px" }}>
+        {visibleOrders.length === 0 ? (
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", padding: "16px 0" }}>
+            {t("empty")}
+          </p>
+        ) : (
+          visibleOrders.map(order => (
+            <FlashOrderRow key={order.orderId} order={order} />
+          ))
+        )}
+      </div>
     </div>
   );
 }

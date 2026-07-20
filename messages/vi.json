@@ -98,7 +98,8 @@
       "robinhoodLaunches": "Không thể hiển thị danh sách launch trên Robinhood.",
       "paywall": "Không thể hiển thị thẻ đăng ký.",
       "price": "Không thể hiển thị biểu đồ giá.",
-      "approvalScan": "Không thể hiển thị quét approval."
+      "approvalScan": "Không thể hiển thị quét approval.",
+      "flashOrders": "Không thể hiển thị lệnh Flash."
     },
     "noFundsDetected": "Không phát hiện quỹ trên chain này",
     "fundWalletArrow": "Nạp tiền vào ví →",
@@ -408,6 +409,28 @@
       "switchingChain": "đang chuyển chain…",
       "confirmingEllipsis": "đang xác nhận…",
       "revokeArrow": "thu hồi →"
+    },
+    "flashOrders": {
+      "header": "LỆNH FLASH",
+      "orderCount": "{count} lệnh",
+      "empty": "Không tìm thấy lệnh Flash nào.",
+      "status": {
+        "ORDER_STATUS_PENDING": "đang chờ",
+        "ORDER_STATUS_ACCEPTED": "đã chấp nhận",
+        "ORDER_STATUS_PARTIALLY_FILLED": "khớp một phần",
+        "ORDER_STATUS_FILLED": "đã khớp",
+        "ORDER_STATUS_CANCELLED": "đã hủy",
+        "ORDER_STATUS_REJECTED": "đã từ chối",
+        "ORDER_STATUS_TERMINATED": "đã kết thúc",
+        "ORDER_STATUS_UNSPECIFIED": "không rõ"
+      },
+      "triggerLine": "Giá kích hoạt: ${price}",
+      "twapLine": "Chia thành {count} đợt",
+      "filledLine": "Đã khớp: {amount} {symbol}",
+      "cancelling": "đang hủy…",
+      "cancelArrow": "hủy →",
+      "rejectedInWallet": "Hủy bị từ chối trong ví.",
+      "errorPrefix": "Lỗi: {msg}"
     },
     "polymarket": {
       "volumeM": "${n}M KL",
