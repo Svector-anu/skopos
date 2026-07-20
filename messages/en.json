@@ -97,7 +97,8 @@
       "x402check": "Endpoint check failed to render.",
       "robinhoodLaunches": "Robinhood launches failed to render.",
       "paywall": "Paywall card failed to render.",
-      "price": "Price chart failed to render."
+      "price": "Price chart failed to render.",
+      "approvalScan": "Approval scan failed to render."
     },
     "noFundsDetected": "No funds detected on this chain",
     "fundWalletArrow": "Fund Wallet →",
@@ -386,6 +387,24 @@
       "rewards": "+{pct}% rewards",
       "tvl": "{value} TVL",
       "deposit": "deposit ↗"
+    },
+    "approvalScan": {
+      "header": "APPROVAL SCAN",
+      "rowCount": "{count} active",
+      "empty": "No active approvals found in the scanned window.",
+      "windowCaveat": "Scanned the last {days} days of approval activity across supported chains — an older approval outside this window won't show up here.",
+      "unlimited": "UNLIMITED",
+      "spender": "spender",
+      "allowance": "allowance",
+      "revokeLabel": "Revoke {token} approval",
+      "rejectedInWallet": "Revoke rejected in wallet.",
+      "errorPrefix": "Error: {msg}",
+      "revoked": "revoked ✓ · view on explorer ↗",
+      "revokeFailed": "revoke failed ✗ · view on explorer ↗",
+      "confirmInWallet": "confirm in wallet…",
+      "switchingChain": "switching chain…",
+      "confirmingEllipsis": "confirming…",
+      "revokeArrow": "revoke →"
     },
     "polymarket": {
       "volumeM": "${n}M vol",
