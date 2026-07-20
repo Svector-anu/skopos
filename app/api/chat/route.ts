@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
-import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
+import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashChain, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
   parseIntent,
@@ -647,6 +647,7 @@ export type FlashOrderIntent = {
   triggerType?: "upper" | "lower"; // stop-loss = "lower", take-profit = "upper" — unset for limit
   durationSeconds?: number;        // twap only
   twapBucketCount?: number;        // twap only, optional — omitted lets Flash auto-derive
+  chain?: string;                  // optional "on CHAIN" suffix — defaults to robinhood if unset
 };
 
 function stripCommas(raw: string): string {
@@ -667,8 +668,14 @@ function durationToSeconds(qty: string, unit: string): number {
 // silently colliding (confirmed live: without this split, "sell 10000
 // CASHCAT when it hits $0.005" matched LIMIT_SELL_RE first and built a
 // "limit" order instead of "take-profit" with the wrong Flash orderType).
-const LIMIT_BUY_RE  = /\b(?:limit\s+)?buy\s+(?:\$(\d[\d,]*(?:\.\d+)?)\s+(?:of\s+)?)?([a-z][a-z0-9]*)\s+(?:at|when\s+(?:the\s+)?price\s+hits|when\s+it\s+hits)\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const LIMIT_SELL_RE = /\b(?:limit\s+)?sell\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
+// Every pattern below ends with an optional "on CHAIN" suffix (its own
+// capture group, always last, so adding it never renumbers the earlier
+// groups). Unspecified defaults to Robinhood Chain in resolveFlashOrderLeg —
+// this is additive, not a behavior change for any phrasing that predates it.
+const CHAIN_SUFFIX_RE = `(?:\\s+on\\s+([a-z][a-z\\s]*))?`;
+
+const LIMIT_BUY_RE  = new RegExp(`\\b(?:limit\\s+)?buy\\s+(?:\\$(\\d[\\d,]*(?:\\.\\d+)?)\\s+(?:of\\s+)?)?([a-z][a-z0-9]*)\\s+(?:at|when\\s+(?:the\\s+)?price\\s+hits|when\\s+it\\s+hits)\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
+const LIMIT_SELL_RE = new RegExp(`\\b(?:limit\\s+)?sell\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(?:(\\d+(?:\\.\\d+)?)\\s+)?([a-z][a-z0-9]*)\\s+at\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
 // Two natural orderings supported for stop-loss/take-profit: token right
 // after "sell" with a pronoun in the condition clause ("sell 2 ETH if it
 // drops below $2000"), and token inside the condition clause itself ("sell
@@ -676,14 +683,14 @@ const LIMIT_SELL_RE = /\b(?:limit\s+)?sell\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:
 // but the former reads at least as naturally and showed up as a real gap in
 // live testing (case A didn't exist yet, so that phrasing fell through to
 // the informational LLM instead of being recognized as a stop loss).
-const STOP_LOSS_RE_A = /\bsell\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+if\s+it\s+drops?\s+below\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const STOP_LOSS_RE_B = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?if\s+([a-z][a-z0-9]*)\s+drops?\s+below\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const STOP_LOSS_RE_C = /\b(?:set\s+)?stop[\s-]?loss(?:\s+(?:on|for)\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*))?\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const TAKE_PROFIT_RE_A = /\bsell\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*)\s+when\s+it\s+hits\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const TAKE_PROFIT_RE_B = /\bsell\s+(?:(\d+(?:\.\d+)?)\s+)?when\s+([a-z][a-z0-9]*)\s+hits\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const TAKE_PROFIT_RE_C = /\b(?:set\s+)?take[\s-]?profit(?:\s+(?:on|for)\s+(?:my\s+|your\s+|the\s+|our\s+)?(?:(\d+(?:\.\d+)?)\s+)?([a-z][a-z0-9]*))?\s+at\s+\$?(\d[\d,]*(?:\.\d+)?)\b/i;
-const TWAP_RE_A = /\bbuy\s+\$(\d[\d,]*(?:\.\d+)?)\s+of\s+([a-z][a-z0-9]*)\s+over\s+(a|an|\d+(?:\.\d+)?)\s*(hour|hours|day|days|week|weeks)\b(?:\s+(?:in|into)\s+(\d+)\s+(?:buckets|chunks|parts))?/i;
-const TWAP_RE_B = /\bdca\s+into\s+([a-z][a-z0-9]*)\s+over\s+(a|an|\d+(?:\.\d+)?)\s*(hour|hours|day|days|week|weeks)\b/i;
+const STOP_LOSS_RE_A = new RegExp(`\\bsell\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(?:(\\d+(?:\\.\\d+)?)\\s+)?([a-z][a-z0-9]*)\\s+if\\s+it\\s+drops?\\s+below\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
+const STOP_LOSS_RE_B = new RegExp(`\\bsell\\s+(?:(\\d+(?:\\.\\d+)?)\\s+)?if\\s+([a-z][a-z0-9]*)\\s+drops?\\s+below\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
+const STOP_LOSS_RE_C = new RegExp(`\\b(?:set\\s+)?stop[\\s-]?loss(?:\\s+(?:on|for)\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(?:(\\d+(?:\\.\\d+)?)\\s+)?([a-z][a-z0-9]*))?\\s+at\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
+const TAKE_PROFIT_RE_A = new RegExp(`\\bsell\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(?:(\\d+(?:\\.\\d+)?)\\s+)?([a-z][a-z0-9]*)\\s+when\\s+it\\s+hits\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
+const TAKE_PROFIT_RE_B = new RegExp(`\\bsell\\s+(?:(\\d+(?:\\.\\d+)?)\\s+)?when\\s+([a-z][a-z0-9]*)\\s+hits\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
+const TAKE_PROFIT_RE_C = new RegExp(`\\b(?:set\\s+)?take[\\s-]?profit(?:\\s+(?:on|for)\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(?:(\\d+(?:\\.\\d+)?)\\s+)?([a-z][a-z0-9]*))?\\s+at\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
+const TWAP_RE_A = new RegExp(`\\bbuy\\s+\\$(\\d[\\d,]*(?:\\.\\d+)?)\\s+of\\s+([a-z][a-z0-9]*)\\s+over\\s+(a|an|\\d+(?:\\.\\d+)?)\\s*(hour|hours|day|days|week|weeks)\\b(?:\\s+(?:in|into)\\s+(\\d+)\\s+(?:buckets|chunks|parts))?${CHAIN_SUFFIX_RE}`, "i");
+const TWAP_RE_B = new RegExp(`\\bdca\\s+into\\s+([a-z][a-z0-9]*)\\s+over\\s+(a|an|\\d+(?:\\.\\d+)?)\\s*(hour|hours|day|days|week|weeks)\\b${CHAIN_SUFFIX_RE}`, "i");
 
 const LOOSE_LIMIT_RE       = /\blimit\s+(?:buy|sell|order)\b|\bwhen\s+(?:the\s+)?price\s+hits\b/i;
 const LOOSE_STOP_LOSS_RE   = /\bstop[\s-]?loss\b/i;
@@ -701,45 +708,45 @@ export function parseFlashOrderIntent(trimmed: string): FlashOrderParse {
   let m: RegExpExecArray | null;
 
   if ((m = LIMIT_BUY_RE.exec(trimmed))) {
-    const [, spend, token, price] = m;
+    const [, spend, token, price, chain] = m;
     const sym = token.toUpperCase();
     if (!spend) return { ask: `How much would you like to spend (in USD) on ${sym} once it hits $${stripCommas(price)}? e.g. "buy $2000 of ${sym} at $${stripCommas(price)}"` };
-    return { order: { side: "buy", orderType: "limit", token, qty: stripCommas(spend), priceLevel: stripCommas(price) } };
+    return { order: { side: "buy", orderType: "limit", token, qty: stripCommas(spend), priceLevel: stripCommas(price), ...(chain ? { chain: chain.trim() } : {}) } };
   }
   if ((m = LIMIT_SELL_RE.exec(trimmed))) {
-    const [, qty, token, price] = m;
+    const [, qty, token, price, chain] = m;
     const sym = token.toUpperCase();
     if (!qty) return { ask: `How much ${sym} would you like this limit sell to cover, at $${stripCommas(price)}? e.g. "sell 2 ${sym} at $${stripCommas(price)}"` };
-    return { order: { side: "sell", orderType: "limit", token, qty, priceLevel: stripCommas(price) } };
+    return { order: { side: "sell", orderType: "limit", token, qty, priceLevel: stripCommas(price), ...(chain ? { chain: chain.trim() } : {}) } };
   }
   if (LOOSE_LIMIT_RE.test(trimmed)) {
     return { ask: `Set a limit order — tell me the token, side, amount, and price. e.g. "buy $2000 of ETH at $1800" or "sell 2 ETH at $2500".` };
   }
 
   if ((m = STOP_LOSS_RE_A.exec(trimmed)) || (m = STOP_LOSS_RE_B.exec(trimmed)) || (m = STOP_LOSS_RE_C.exec(trimmed))) {
-    const [, qty, token, price] = m;
+    const [, qty, token, price, chain] = m;
     if (!token) return { ask: `Which token is this stop loss for? e.g. "sell if ETH drops below $2000"` };
     const sym = token.toUpperCase();
     if (!qty) return { ask: `How much ${sym} would you like this stop loss to cover? e.g. "sell 2 ${sym} if it drops below $${stripCommas(price)}"` };
-    return { order: { side: "sell", orderType: "stop-loss", token, qty, priceLevel: stripCommas(price), triggerType: "lower" } };
+    return { order: { side: "sell", orderType: "stop-loss", token, qty, priceLevel: stripCommas(price), triggerType: "lower", ...(chain ? { chain: chain.trim() } : {}) } };
   }
   if (LOOSE_STOP_LOSS_RE.test(trimmed)) {
     return { ask: `Set a stop loss — tell me the token, amount, and trigger price. e.g. "sell 2 ETH if it drops below $2000"` };
   }
 
   if ((m = TAKE_PROFIT_RE_A.exec(trimmed)) || (m = TAKE_PROFIT_RE_B.exec(trimmed)) || (m = TAKE_PROFIT_RE_C.exec(trimmed))) {
-    const [, qty, token, price] = m;
+    const [, qty, token, price, chain] = m;
     if (!token) return { ask: `Which token is this take profit for? e.g. "sell when ETH hits $5000"` };
     const sym = token.toUpperCase();
     if (!qty) return { ask: `How much ${sym} would you like this take profit to cover? e.g. "sell 2 ${sym} when it hits $${stripCommas(price)}"` };
-    return { order: { side: "sell", orderType: "take-profit", token, qty, priceLevel: stripCommas(price), triggerType: "upper" } };
+    return { order: { side: "sell", orderType: "take-profit", token, qty, priceLevel: stripCommas(price), triggerType: "upper", ...(chain ? { chain: chain.trim() } : {}) } };
   }
   if (LOOSE_TAKE_PROFIT_RE.test(trimmed)) {
     return { ask: `Set a take profit — tell me the token, amount, and trigger price. e.g. "sell 2 ETH when it hits $5000"` };
   }
 
   if ((m = TWAP_RE_A.exec(trimmed))) {
-    const [, spend, token, durQty, durUnit, buckets] = m;
+    const [, spend, token, durQty, durUnit, buckets, chain] = m;
     const sym = token.toUpperCase();
     const durationSeconds = durationToSeconds(durQty, durUnit);
     if (durationSeconds < 300) return { ask: `TWAP orders need to run for at least 5 minutes — try a longer window, e.g. "buy $${stripCommas(spend)} of ${sym} over 1 hour".` };
@@ -747,6 +754,7 @@ export function parseFlashOrderIntent(trimmed: string): FlashOrderParse {
       order: {
         side: "buy", orderType: "twap", token, qty: stripCommas(spend), durationSeconds,
         ...(buckets ? { twapBucketCount: parseInt(buckets, 10) } : {}),
+        ...(chain ? { chain: chain.trim() } : {}),
       },
     };
   }
@@ -768,7 +776,9 @@ export type FlashOrderLegOk = {
   ok: true;
   intent: LegOk["intent"];
   route: LegOk["route"];
-  flash: Omit<FlashLegOk["flash"], "side" | "orderType" | "qty"> & {
+  flash: Omit<FlashLegOk["flash"], "side" | "orderType" | "qty" | "targetChain" | "contraChain"> & {
+    targetChain: FlashChain;
+    contraChain: FlashChain;
     side: FlashOrderSide;
     orderType: FlashOrderIntent["orderType"];
     qty: string;
@@ -777,6 +787,36 @@ export type FlashOrderLegOk = {
     durationSeconds?: number;
     twapBucketCount?: number;
   };
+};
+
+// Advanced orders (limit/stop-loss/take-profit/TWAP) beyond Robinhood Chain —
+// Flash's own API supports far more chains than Skopos's market-swap path
+// uses (that one stays Robinhood-only on purpose: Delora already covers
+// swaps everywhere else, so Flash there only fills the one real gap). But
+// Delora has no concept of standing/advanced orders at all, so extending
+// Flash's advanced-order support to its other EVM chains is a genuine new
+// capability, not a redundant one. Solana is deliberately excluded — Flash
+// supports it, but nothing in Skopos has a Solana signing path for Flash
+// (Ed25519/Phantom, not EIP-712), so it stays out of scope here.
+const FLASH_ADVANCED_ORDER_CHAINS: Record<number, FlashChain> = {
+  1: "ethereum", 8453: "base", 42161: "arbitrum", 10: "optimism",
+  137: "polygon", 56: "bsc", 43114: "avalanche",
+  [ROBINHOOD_CHAIN_ID]: "robinhood",
+};
+const FLASH_CHAIN_DISPLAY_NAME: Record<FlashChain, string | undefined> = {
+  ethereum: "Ethereum", base: "Base", arbitrum: "Arbitrum", optimism: "Optimism",
+  polygon: "Polygon", bsc: "BSC", avalanche: "Avalanche", robinhood: "Robinhood Chain",
+  solana: undefined, hyperevm: undefined, plasma: undefined, monad: undefined,
+};
+// Delora represents each chain's native coin with a zero-address placeholder
+// (confirmed via its own /v1/tokens list). Flash's advanced-order pricing
+// engine has no notional-rate feed for that placeholder — live-tested: a
+// TWAP quote 400s ("missing notional rates") on the zero address and
+// succeeds immediately on the same chain's wrapped-native contract instead.
+const FLASH_NATIVE_WRAP_SYMBOL: Record<FlashChain, string | undefined> = {
+  ethereum: "WETH", base: "WETH", arbitrum: "WETH", optimism: "WETH",
+  polygon: "WPOL", bsc: "WBNB", avalanche: "WAVAX", robinhood: undefined,
+  solana: undefined, hyperevm: undefined, plasma: undefined, monad: undefined,
 };
 
 export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddress?: string): Promise<FlashOrderLegOk | LegErr> {
@@ -788,15 +828,58 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
     return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
   }
 
-  // No supported phrasing names a contra asset — same "no contra asset
-  // specified" default RH_CHAIN_STABLECOIN's own header comment (lib/flash.ts)
-  // anticipated for exactly this caller.
-  const [targetAsset, contraAsset] = await Promise.all([
-    resolveRobinhoodToken(order.token),
-    resolveRobinhoodToken(RH_CHAIN_STABLECOIN),
-  ]);
-  if (!targetAsset) return { ok: false, text: `Could not find ${order.token} on Robinhood Chain.` };
-  if (!contraAsset) return { ok: false, text: `Could not resolve ${RH_CHAIN_STABLECOIN} on Robinhood Chain.` };
+  const chainId = order.chain ? resolveChainId(order.chain) : ROBINHOOD_CHAIN_ID;
+  if (!chainId) {
+    return { ok: false, text: `I don't recognize "${order.chain}" as a chain.` };
+  }
+  const flashChain = FLASH_ADVANCED_ORDER_CHAINS[chainId];
+  if (!flashChain) {
+    const supported = [...new Set(Object.values(FLASH_ADVANCED_ORDER_CHAINS))]
+      .map(c => FLASH_CHAIN_DISPLAY_NAME[c] ?? c).join(", ");
+    return { ok: false, text: `Advanced Flash orders aren't available on ${order.chain} yet — supported: ${supported}.` };
+  }
+  const isRobinhood = flashChain === "robinhood";
+  const chainDisplayName = FLASH_CHAIN_DISPLAY_NAME[flashChain] ?? flashChain;
+  // Robinhood Chain's own stablecoin is USDG (Delora doesn't cover this
+  // chain at all); everywhere else, USDC is the contra asset — same
+  // resolver Delora-based swaps already use, not a second implementation.
+  const stablecoinSymbol = isRobinhood ? RH_CHAIN_STABLECOIN : "USDC";
+
+  let targetAsset: string | null;
+  let contraAsset: string | null;
+  if (isRobinhood) {
+    // No supported phrasing names a contra asset — same "no contra asset
+    // specified" default RH_CHAIN_STABLECOIN's own header comment (lib/flash.ts)
+    // anticipated for exactly this caller.
+    [targetAsset, contraAsset] = await Promise.all([
+      resolveRobinhoodToken(order.token),
+      resolveRobinhoodToken(RH_CHAIN_STABLECOIN),
+    ]);
+  } else {
+    // getToken() (unlike resolveRobinhoodToken above) doesn't catch its own
+    // fetch errors — a Delora network hiccup would otherwise crash the whole
+    // request instead of producing a clean chat error.
+    try {
+      const [targetToken, contraToken] = await Promise.all([
+        getToken(chainId, order.token.toUpperCase()),
+        getToken(chainId, stablecoinSymbol),
+      ]);
+      targetAsset = targetToken?.address ?? null;
+      contraAsset = contraToken?.address ?? null;
+
+      const wrapSymbol = FLASH_NATIVE_WRAP_SYMBOL[flashChain];
+      if (wrapSymbol && (targetAsset === NATIVE_ADDRESS || contraAsset === NATIVE_ADDRESS)) {
+        const wrapped = await getToken(chainId, wrapSymbol);
+        if (targetAsset === NATIVE_ADDRESS) targetAsset = wrapped?.address ?? null;
+        if (contraAsset === NATIVE_ADDRESS) contraAsset = wrapped?.address ?? null;
+      }
+    } catch (err) {
+      console.error(`[resolveFlashOrderLeg] getToken failed: ${err instanceof Error ? err.message : err}`);
+      return { ok: false, text: `Could not look up tokens on ${chainDisplayName} — try again in a moment.` };
+    }
+  }
+  if (!targetAsset) return { ok: false, text: `Could not find ${order.token} on ${chainDisplayName}.` };
+  if (!contraAsset) return { ok: false, text: `Could not resolve ${stablecoinSymbol} on ${chainDisplayName}.` };
 
   const triggers: FlashPriceTrigger[] | undefined = order.triggerType
     ? [{ notionalPrice: order.priceLevel!, triggerType: order.triggerType }]
@@ -805,8 +888,8 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
   let quote;
   try {
     quote = await getFlashQuote({
-      targetChain: "robinhood",
-      contraChain: "robinhood",
+      targetChain: flashChain,
+      contraChain: flashChain,
       targetAsset,
       contraAsset,
       side: order.side,
@@ -831,14 +914,14 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
     return { ok: false, text: "Flash returned a quote with no signable payload — try again." };
   }
 
-  const fromToken = order.side === "buy" ? RH_CHAIN_STABLECOIN : order.token.toUpperCase();
-  const toToken   = order.side === "buy" ? order.token.toUpperCase() : RH_CHAIN_STABLECOIN;
+  const fromToken = order.side === "buy" ? stablecoinSymbol : order.token.toUpperCase();
+  const toToken   = order.side === "buy" ? order.token.toUpperCase() : stablecoinSymbol;
 
   return {
     ok: true,
     intent: {
-      from: { chain: "Robinhood Chain", chainId: ROBINHOOD_CHAIN_ID, token: fromToken, amount: order.qty },
-      to:   { chain: "Robinhood Chain", chainId: ROBINHOOD_CHAIN_ID, token: toToken, receiver: senderAddress },
+      from: { chain: chainDisplayName, chainId, token: fromToken, amount: order.qty },
+      to:   { chain: chainDisplayName, chainId, token: toToken, receiver: senderAddress },
     },
     route: {
       tool: "Flash",
@@ -851,8 +934,8 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
     },
     flash: {
       quoteId: quote.quoteId,
-      targetChain: "robinhood",
-      contraChain: "robinhood",
+      targetChain: flashChain,
+      contraChain: flashChain,
       targetAsset,
       contraAsset,
       side: order.side,
