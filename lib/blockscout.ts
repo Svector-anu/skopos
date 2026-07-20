@@ -122,7 +122,12 @@ async function fetchOneChainBalances(
   }
 
   const tokens: TokenBalance[] = (tokenEntries ?? [])
-    .filter(e => e.token?.address_hash && e.value)
+    // Some native gas tokens (Celo's CELO) are ALSO a real ERC-20 contract at
+    // the base layer, so /tokens?type=ERC-20 lists them again on top of the
+    // native coin_balance fetched above — confirmed live, same balance
+    // reported twice under identical values. Exclude anything matching the
+    // chain's own native symbol; it's already counted via `balance` above.
+    .filter(e => e.token?.address_hash && e.value && e.token.symbol !== chain.nativeSymbol)
     .map(e => {
       const decimals = Number(e.token.decimals ?? 18);
       const balanceFloat = balanceToFloat(e.value, decimals);

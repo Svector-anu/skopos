@@ -329,7 +329,10 @@
       "recentBuys": "GIAO DỊCH MUA GẦN ĐÂY",
       "recentActivity": "HOẠT ĐỘNG GẦN ĐÂY",
       "in": "VÀO",
-      "out": "RA"
+      "out": "RA",
+      "noPriceData": "không có dữ liệu giá",
+      "moreHoldings": "+{count} tài sản khác",
+      "dustHoldings": "{count} tài sản nhỏ/không có giá chưa hiển thị"
     },
     "price": {
       "marketCap": "Vốn hóa",

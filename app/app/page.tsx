@@ -3112,7 +3112,15 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
 
   const total = data.totalUsdValue ?? 0;
   const nativeRows = data.balances.filter(b => parseFloat(b.native) > 0.00001);
-  const tokenRows  = data.tokenBalances.slice(0, 10);
+  // Dust/no-price tokens made the card both long and confusing — same rows
+  // duplicating their raw amount in place of a $ value with nothing useful
+  // to show. Cap the priced list and fold everything else into one line
+  // instead of a row each.
+  const PRICED_TOKEN_LIMIT = 6;
+  const pricedTokens   = data.tokenBalances.filter(t => (t.usdValue ?? 0) >= 0.01);
+  const dustTokenCount = data.tokenBalances.length - pricedTokens.length;
+  const tokenRows      = pricedTokens.slice(0, PRICED_TOKEN_LIMIT);
+  const omittedPricedCount = Math.max(0, pricedTokens.length - PRICED_TOKEN_LIMIT);
 
   const NATIVE_SYMS = new Set(["ETH", "BNB", "AVAX", "POL", "MATIC", "XDAI", "SOL"]);
   const recentBuys = data.recentTransfers
@@ -3206,7 +3214,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
                       <span style={{ ...MONO, fontSize: "0.76rem", color: "var(--card-text-muted, rgba(255,255,255,0.78))", fontWeight: 600 }}>{row.sym}</span>
-                      {!row.isNative && <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.25))" }}>· {row.chain}</span>}
+                      <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.25))" }}>· {row.chain}</span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {row.priceChange24h != null && (
@@ -3220,8 +3228,8 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
                           {row.priceChange24h >= 0 ? "+" : ""}{row.priceChange24h.toFixed(1)}%
                         </span>
                       )}
-                      <span style={{ ...MONO, fontSize: "0.78rem", color: "var(--card-text-muted, rgba(255,255,255,0.82))", fontWeight: 600 }}>
-                        {row.usdValue != null ? fmtUsd(row.usdValue) : row.amount}
+                      <span style={{ ...MONO, fontSize: "0.78rem", fontWeight: 600, color: row.usdValue != null ? "var(--card-text-muted, rgba(255,255,255,0.82))" : "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+                        {row.usdValue != null ? fmtUsd(row.usdValue) : t("noPriceData")}
                       </span>
                     </div>
                   </div>
@@ -3249,6 +3257,14 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
               </div>
             );
           })}
+          {(omittedPricedCount > 0 || dustTokenCount > 0) && (
+            <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0, padding: "8px 20px", borderTop: "1px solid var(--card-header-bg, rgba(255,255,255,0.04))" }}>
+              {[
+                omittedPricedCount > 0 ? t("moreHoldings", { count: omittedPricedCount }) : null,
+                dustTokenCount > 0 ? t("dustHoldings", { count: dustTokenCount }) : null,
+              ].filter(Boolean).join(" · ")}
+            </p>
+          )}
         </div>
       )}
 

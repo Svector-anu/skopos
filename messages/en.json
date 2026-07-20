@@ -329,7 +329,10 @@
       "recentBuys": "RECENT BUYS",
       "recentActivity": "RECENT ACTIVITY",
       "in": "IN",
-      "out": "OUT"
+      "out": "OUT",
+      "noPriceData": "no price data",
+      "moreHoldings": "+{count} more holding{count, plural, one {} other {s}}",
+      "dustHoldings": "{count} small/unpriced holding{count, plural, one {} other {s}} not shown"
     },
     "price": {
       "marketCap": "Market Cap",

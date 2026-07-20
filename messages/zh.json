@@ -329,7 +329,10 @@
       "recentBuys": "近期买入",
       "recentActivity": "近期活动",
       "in": "转入",
-      "out": "转出"
+      "out": "转出",
+      "noPriceData": "无价格数据",
+      "moreHoldings": "+{count} 项持仓",
+      "dustHoldings": "{count} 项小额/无价格持仓未显示"
     },
     "price": {
       "marketCap": "市值",
