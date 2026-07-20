@@ -8,7 +8,7 @@ import { usePrivy, useFundWallet, useWallets, useConnectWallet } from "@privy-io
 import {
 useAccount, useBalance, useChainId, useSwitchChain,
   useSendTransaction, useWriteContract, useReadContract,
-  useWaitForTransactionReceipt, useWalletClient, useSignTypedData,
+  useWaitForTransactionReceipt, useWalletClient, useSignTypedData, useSignMessage,
 } from "wagmi";
 import { fetchSmartMoney } from "@/lib/smartMoneyClient";
 import { callX402Endpoint } from "@/lib/x402GenericClient";
@@ -496,9 +496,14 @@ export default function AppPage() {
       }
     : login;
   const [pushLoading, setPushLoading]          = useState(false);
+  const { mutateAsync: signMessageAsync }      = useSignMessage();
   // Web Push subscription, keyed by the SAME identity /api/chat uses for the
   // sender (wallet if connected, else the persisted anonId) — a watcher
-  // registered under that identity looks up this same key to alert.
+  // registered under that identity looks up this same key to alert. A wallet
+  // identity must sign a server-issued challenge first (see
+  // /api/notifications/challenge) to prove ownership before the subscribe
+  // endpoint accepts it — anonId identities skip this, nothing sensitive to
+  // prove there.
   const subscribeToPush = useCallback(async (): Promise<boolean> => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return false;
     const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -522,20 +527,31 @@ export default function AppPage() {
       });
 
       const identity = (connectedAddress ?? anonId).toLowerCase();
+      let signature: string | undefined;
+      if (connectedAddress) {
+        const challengeUrl = `/api/notifications/challenge?identity=${identity}&endpoint=${encodeURIComponent(subscription.endpoint)}`;
+        const challengeRes = await fetch(challengeUrl);
+        if (!challengeRes.ok) return false;
+        const { message } = await challengeRes.json() as { message: string };
+        signature = await signMessageAsync({ message });
+      }
+
       const res = await fetch("/api/notifications/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identity, subscription: subscription.toJSON() }),
+        body: JSON.stringify({ identity, subscription: subscription.toJSON(), signature }),
       });
       const data = await res.json();
       return !!data.ok;
     } catch (e) {
+      // Covers a rejected signature prompt the same as any other subscribe
+      // failure — no push subscription without proof of ownership.
       console.error("[push] subscribe failed:", e);
       return false;
     } finally {
       setPushLoading(false);
     }
-  }, [connectedAddress, anonId]);
+  }, [connectedAddress, anonId, signMessageAsync]);
   const { publicKey: solanaPublicKey }         = useSolanaWallet();
   const solanaAddress                          = solanaPublicKey?.toBase58() ?? null;
   const { data: nativeBal, isLoading: nativeLoading } = useBalance({ address });
