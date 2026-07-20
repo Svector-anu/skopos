@@ -340,11 +340,11 @@ function normalizeFlashQuoteResponse(data: FlashQuoteResponse): FlashQuoteRespon
 }
 
 export async function getFlashQuote(req: FlashQuoteRequest): Promise<FlashQuoteResponse> {
-  // TODO: re-verify fee% at $50+ trade size before launch. The one live
-  // smoke test so far (CASHCAT/USDG, $1 notional, 2026-07-15) showed an
-  // estimatedFeeNotional of ~14.8% — plausibly a thin-liquidity artifact of
-  // an intentionally tiny test trade, not a real per-trade cost. Don't build
-  // fee guards, minimums, or user-facing fee copy off that single data point.
+  // Fee% re-verified at $50 notional (WETH/USDC, base, 2026-07-20) with the
+  // real integrator key: estimatedFeeNotional ~0.22%, matching Definitive's
+  // 10bps + our FLASH_INTEGRATOR_FEE_BPS 10bps stacked. The old ~14.8%
+  // reading (CASHCAT/USDG, $1 notional, 2026-07-15) was confirmed a
+  // thin-liquidity artifact of that tiny test trade, not a real cost.
   const res = await fetchWithTimeout(
     `${FLASH_BASE_URL}/quote`,
     {
