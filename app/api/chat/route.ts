@@ -2753,7 +2753,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // volatile token like ETH, which needs a real price conversion. Scoped to
   // execution-classified messages only, and skipped entirely for stablecoins
   // (where "$5 usdc" and "5 usdc" already mean the same thing).
-  const DOLLAR_AMOUNT_RE = /\$(\d[\d,]*(?:\.\d+)?)\s+([a-z][a-z0-9]*)\b/i;
+  const DOLLAR_AMOUNT_RE = /\$(\d[\d,]*(?:\.\d+)?)\s+(?:of\s+)?([a-z][a-z0-9]*)\b/i;
   const DOLLAR_STABLE_SYMBOLS = new Set(["USDC", "USDT", "DAI", "BUSD", "USD", "FDUSD", "USDB", "TUSD", "USDG"]);
   let effectiveMessage = message;
   if (queryType === "execution") {
