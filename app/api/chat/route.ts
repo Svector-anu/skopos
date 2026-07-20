@@ -2742,8 +2742,48 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ type: "text", text });
   }
 
+  // ── dollar-denominated amount guard — must run before parseIntent() ────────
+  // regexParse()/groqParseIntent() have no concept of a dollar-denominated
+  // amount vs. a token quantity — confirmed live (2026-07-20): "swap $5 eth
+  // on robinhood chain to USDG on robinhood chain" silently became a 5 ETH
+  // (~$9,284) quote, an ~1857x amount error. The guided stock-buy and Flash
+  // limit/TWAP paths handle "$X of TOKEN" correctly, but only because they
+  // always spend RH_CHAIN_STABLECOIN — a ~$1-pegged asset where dollars and
+  // token units are numerically interchangeable. That trick can't work for a
+  // volatile token like ETH, which needs a real price conversion. Scoped to
+  // execution-classified messages only, and skipped entirely for stablecoins
+  // (where "$5 usdc" and "5 usdc" already mean the same thing).
+  const DOLLAR_AMOUNT_RE = /\$(\d[\d,]*(?:\.\d+)?)\s+([a-z][a-z0-9]*)\b/i;
+  const DOLLAR_STABLE_SYMBOLS = new Set(["USDC", "USDT", "DAI", "BUSD", "USD", "FDUSD", "USDB", "TUSD", "USDG"]);
+  let effectiveMessage = message;
+  if (queryType === "execution") {
+    const dollarMatch = DOLLAR_AMOUNT_RE.exec(trimmed);
+    if (dollarMatch) {
+      const [fullMatch, rawDollars, rawToken] = dollarMatch;
+      const upperToken = rawToken.toUpperCase();
+      if (DOLLAR_STABLE_SYMBOLS.has(upperToken)) {
+        // $1-pegged — dollars and token units are the same number here, but
+        // the literal "$" still needs stripping: regexParse's amount capture
+        // is a plain \d+ with no "$" tolerance anywhere, so "$5 usdc" would
+        // otherwise fail to parse at all for a totally different reason.
+        effectiveMessage = trimmed.replace(fullMatch, `${rawDollars.replace(/,/g, "")} ${rawToken}`);
+      } else {
+        const dollars = parseFloat(rawDollars.replace(/,/g, ""));
+        const priceResult = await getPrice(upperToken);
+        if (!priceResult) {
+          return json({
+            type: "text",
+            text: `I can't get a live price for ${upperToken} right now to convert $${rawDollars} into an amount — try specifying it directly instead, e.g. "swap 0.01 ${upperToken} ...".`,
+          });
+        }
+        const tokenQty = dollars / priceResult.price;
+        effectiveMessage = trimmed.replace(fullMatch, `${tokenQty} ${rawToken}`);
+      }
+    }
+  }
+
   // ── single-leg intent (runs before scanners so "bridge X for yield" parses as bridge) ──
-  const intent = await parseIntent(message);
+  const intent = await parseIntent(effectiveMessage);
 
   if (intent) {
     // Headless clients have no wallet, so a quote build would fail the wallet guard.
