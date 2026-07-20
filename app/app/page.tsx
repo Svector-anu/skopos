@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet, useWallets, useConnectWallet } from "@privy-io/react-auth";
 import {
-useAccount, useBalance, useChainId, useSwitchChain,
+useAccount, useBalance, useChainId,
   useSendTransaction, useWriteContract, useReadContract,
   useWaitForTransactionReceipt, useWalletClient, useSignTypedData, useSignMessage,
 } from "wagmi";
@@ -1944,7 +1944,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   const t = useTranslations("app.quote");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { address }                  = useAccount();
-  const { mutateAsync: switchChain } = useSwitchChain();
+  const { wallets }                  = useWallets();
   const { login, authenticated }     = usePrivy();
   const { intent, route, calldata, approval } = result;
   const originChainId = intent.from.chainId;
@@ -1973,6 +1973,17 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     eth.on("chainChanged", onChainChanged);
     return () => eth.removeListener("chainChanged", onChainChanged);
   }, []);
+
+  // Privy's own documented method (switches embedded wallets silently,
+  // prompts external ones) — same pattern already proven correct in the
+  // Smart-tier payment flow. Not wagmi's useSwitchChain: that hook binds to
+  // Privy's embedded wallet specifically, which is exactly the divergence
+  // the providerChainId tracking above exists to work around.
+  async function switchToChain(chainId: number) {
+    const evmWallet = wallets.find(w => w.address?.startsWith("0x"));
+    if (!evmWallet) throw new Error("No EVM wallet connected.");
+    await evmWallet.switchChain(chainId);
+  }
   const onCorrectChain = providerChainId === null ? true : providerChainId === originChainId;
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -2042,7 +2053,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     if (!approval) return;
     setSwitchErr(null);
     try {
-      if (!onCorrectChain) await switchChain({ chainId: originChainId });
+      if (!onCorrectChain) await switchToChain(originChainId);
       const hash = await writeContract({ address: approval.tokenAddress as `0x${string}`, abi: ERC20_ABI, functionName: "approve", args: [approval.spender as `0x${string}`, BigInt(approval.amount)], chainId: originChainId });
       setApprovalHash(hash);
     } catch (err) {
@@ -2072,7 +2083,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
         }
         if (fresh.calldata) cd = fresh.calldata;
       }
-      if (!onCorrectChain) await switchChain({ chainId: originChainId });
+      if (!onCorrectChain) await switchToChain(originChainId);
       const hash = await sendTransaction({ to: cd.to as `0x${string}`, value: BigInt(cd.value || "0x0"), data: cd.data as `0x${string}`, chainId: originChainId });
       setTxHash(hash);
     } catch (err) {
@@ -2085,18 +2096,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     setSwitchErr(null);
     setIsSwitching(true);
     try {
-      // Use wallet_switchEthereumChain directly so we hit MetaMask, not Privy's
-      // embedded wallet connector which intercepts wagmi's useSwitchChain.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const eth = (window as any).ethereum;
-      if (eth) {
-        await (eth.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: `0x${originChainId.toString(16)}` }],
-        }) as Promise<void>);
-      } else {
-        await switchChain({ chainId: originChainId });
-      }
+      await switchToChain(originChainId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSwitchErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWalletShort") : t("switchFailed", { msg: msg.slice(0, 80) }));
@@ -2477,11 +2477,21 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
   const t = useTranslations("app.flash");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { login, authenticated } = usePrivy();
-  const { mutateAsync: switchChain } = useSwitchChain();
+  const { wallets }              = useWallets();
   const { mutateAsync: sendTransaction, isPending: isApproving } = useSendTransaction();
   const { mutateAsync: signTypedDataAsync, isPending: isSigning } = useSignTypedData();
   const flash = result.flash;
   const originChainId = result.intent.from.chainId;
+
+  // Privy's own documented method — switches embedded wallets silently,
+  // prompts external ones. Not wagmi's useSwitchChain, which binds to
+  // Privy's embedded wallet specifically rather than whichever wallet the
+  // user is actually connected with.
+  async function switchToChain(chainId: number) {
+    const evmWallet = wallets.find(w => w.address?.startsWith("0x"));
+    if (!evmWallet) throw new Error("No EVM wallet connected.");
+    await evmWallet.switchChain(chainId);
+  }
 
   const [wrapHash, setWrapHash] = useState<`0x${string}` | undefined>();
   const { isSuccess: wrapConfirmed } = useWaitForTransactionReceipt({ hash: wrapHash, chainId: originChainId });
@@ -2499,16 +2509,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
     setErr(null);
     setIsSwitching(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const eth = (window as any).ethereum;
-      if (eth) {
-        await (eth.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: `0x${originChainId.toString(16)}` }],
-        }) as Promise<void>);
-      } else {
-        await switchChain({ chainId: originChainId });
-      }
+      await switchToChain(originChainId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWalletShort") : t("switchFailed", { msg: msg.slice(0, 80) }));
@@ -2682,12 +2683,24 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
   const t = useTranslations("app.relay");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { login, authenticated } = usePrivy();
-  const { mutateAsync: switchChain } = useSwitchChain();
+  const { wallets }              = useWallets();
   const { mutateAsync: sendTransaction, isPending: isSending } = useSendTransaction();
   const relay = result.relay;
   const originChainId = result.intent.from.chainId;
   const steps = relay?.steps ?? [];
   const totalSteps = steps.length;
+
+  // Privy's own documented method — switches embedded wallets silently,
+  // prompts external ones. Not wagmi's useSwitchChain, which binds to
+  // Privy's embedded wallet specifically rather than whichever wallet the
+  // user is actually connected with — confirmed live, this exact gap
+  // produced "current chain of the wallet (id: 1) does not match the
+  // target chain (id: 4663)" instead of a clean chain-switch prompt.
+  async function switchToChain(chainId: number) {
+    const evmWallet = wallets.find(w => w.address?.startsWith("0x"));
+    if (!evmWallet) throw new Error("No EVM wallet connected.");
+    await evmWallet.switchChain(chainId);
+  }
 
   const [stepIndex, setStepIndex] = useState(0);
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
@@ -2728,16 +2741,7 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
     setErr(null);
     setIsSwitching(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const eth = (window as any).ethereum;
-      if (eth) {
-        await (eth.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: `0x${originChainId.toString(16)}` }],
-        }) as Promise<void>);
-      } else {
-        await switchChain({ chainId: originChainId });
-      }
+      await switchToChain(originChainId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWalletShort") : t("switchFailed", { msg: msg.slice(0, 80) }));
@@ -2956,7 +2960,7 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
   const t = useTranslations("app.pay");
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   const { mutateAsync: writeContract, isPending } = useWriteContract();
-  const { mutateAsync: switchChain } = useSwitchChain();
+  const { wallets } = useWallets();
   const activeChainId = useChainId();
   const [hash, setHash] = useState<string | null>(null);
   const [err, setErr]   = useState<string | null>(null);
@@ -2970,7 +2974,11 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
   async function pay() {
     setErr(null);
     try {
-      if (activeChainId !== result.chainId) await switchChain({ chainId: result.chainId });
+      if (activeChainId !== result.chainId) {
+        const evmWallet = wallets.find(w => w.address?.startsWith("0x"));
+        if (!evmWallet) throw new Error("No EVM wallet connected.");
+        await evmWallet.switchChain(result.chainId);
+      }
       const h = result.method === "transferWithMemo"
         ? await writeContract({
             address: result.token as `0x${string}`,
@@ -5039,10 +5047,11 @@ const APPROVAL_EXPLORER_BASE: Record<number, string> = {
 function ApprovalRowCard({ row, onTxSubmitted }: { row: ApprovalRow; onTxSubmitted?: (r: TxRecord) => void }) {
   const t = useTranslations("app.approvalScan");
   const { mutateAsync: writeContract, isPending } = useWriteContract();
-  const { mutateAsync: switchChain, isPending: isSwitching } = useSwitchChain();
+  const { wallets } = useWallets();
   const activeChainId = useChainId();
   const [hash, setHash] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [isSwitching, setIsSwitching] = useState(false);
   const { data: receipt, isLoading: confirming, isError: receiptError } =
     useWaitForTransactionReceipt({ hash: (hash ?? undefined) as `0x${string}` | undefined, chainId: row.chainId });
   const confirmed = receipt?.status === "success";
@@ -5053,7 +5062,12 @@ function ApprovalRowCard({ row, onTxSubmitted }: { row: ApprovalRow; onTxSubmitt
   async function revoke() {
     setErr(null);
     try {
-      if (activeChainId !== row.chainId) await switchChain({ chainId: row.chainId });
+      if (activeChainId !== row.chainId) {
+        const evmWallet = wallets.find(w => w.address?.startsWith("0x"));
+        if (!evmWallet) throw new Error("No EVM wallet connected.");
+        setIsSwitching(true);
+        try { await evmWallet.switchChain(row.chainId); } finally { setIsSwitching(false); }
+      }
       const h = await writeContract({
         address: row.tokenAddress as `0x${string}`, abi: ERC20_ABI, functionName: "approve",
         args: [row.spender as `0x${string}`, BigInt(0)], chainId: row.chainId,
