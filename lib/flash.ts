@@ -30,9 +30,22 @@ const RH_SYMBOL_ALIASES: Record<string, string> = {
 // Flash's native-asset sentinel address (its own QuoteRequest examples use
 // this exact value) rather than through another DexScreener search.
 const NATIVE_ETH_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+// USDG (Global Dollar, Paxos) is Robinhood Chain's own stablecoin — same
+// impersonation risk as the stock tokens below, confirmed live: a
+// DexScreener symbol search for "USDG" returns 22 Robinhood-chain pairs, and
+// an unrelated memecoin ("Useless Stupid Degen Gamblers", priced ~$0.0000291)
+// clears the MIN_LIQUIDITY_USD floor and sorts ahead of the real Global
+// Dollar token (~$1.00, $3.4M+ liquidity across its own pairs) in
+// DexScreener's response order — resolveRobinhoodToken() would silently
+// quote against the impersonator. Address cross-checked two ways: DexScreener
+// shows this exact address across 6+ high-liquidity pairs all priced
+// ~$1.00-$1.003, and Robinhood Chain's own block explorer independently
+// confirms it as "Global Dollar" / "USDG" (2026-07-20).
+const RH_USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 const RH_ADDRESS_ALIASES: Record<string, string> = {
   ETH: NATIVE_ETH_SENTINEL,
   WETH: NATIVE_ETH_SENTINEL,
+  USDG: RH_USDG_ADDRESS,
 };
 
 // Robinhood Chain's canonical L2 WETH, from
@@ -146,8 +159,13 @@ export async function resolveRobinhoodToken(symbolOrAddress: string): Promise<st
   if (!q) return null;
 
   const upper = q.toUpperCase();
-  if (RH_ADDRESS_ALIASES[upper]) return RH_ADDRESS_ALIASES[upper];
-  if (RH_STOCK_TOKENS[upper]) return RH_STOCK_TOKENS[upper];
+  // Resolve the symbol alias (e.g. USDC -> USDG) BEFORE checking the pinned
+  // address/stock maps — otherwise "USDC" would alias to "USDG" as a plain
+  // string and fall through to the vulnerable DexScreener search below
+  // instead of hitting RH_ADDRESS_ALIASES.USDG.
+  const aliasedSymbol = RH_SYMBOL_ALIASES[upper] ?? upper;
+  if (RH_ADDRESS_ALIASES[aliasedSymbol]) return RH_ADDRESS_ALIASES[aliasedSymbol];
+  if (RH_STOCK_TOKENS[aliasedSymbol]) return RH_STOCK_TOKENS[aliasedSymbol];
 
   const symbol = RH_SYMBOL_ALIASES[upper] ?? q;
   const key = cacheKey(symbol);
