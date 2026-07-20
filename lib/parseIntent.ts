@@ -148,6 +148,12 @@ const KNOWN_DEST_TOKENS = new Set([
   "WBTC", "ETH", "WETH", "USDC", "USDT", "DAI", "SOL", "BNB", "POL", "AVAX",
   "ARB", "OP", "LINK", "UNI", "AAVE", "CRV", "MKR", "SNX", "COMP", "FRAX",
   "GHO", "LUSD", "CRVUSD", "CBBTC", "PEPE", "SHIB", "DOGE",
+  // Robinhood Chain's own stablecoin (lib/flash.ts's RH_CHAIN_STABLECOIN) —
+  // missing here meant "swap X eth on robinhood to USDG" mis-captured
+  // "usdg" as a destination CHAIN, failed to resolve, and fell through to
+  // Groq instead of recovering as a same-chain swap — confirmed live,
+  // Groq then defaulted the chain to ethereum instead of robinhood.
+  "USDG",
 ]);
 
 function normalizeToken(t: string): string {

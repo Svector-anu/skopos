@@ -2770,16 +2770,36 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       } else {
         const dollars = parseFloat(rawDollars.replace(/,/g, ""));
         const priceResult = await getPrice(upperToken);
-        if (!priceResult) {
+        if (priceResult) {
+          const tokenQty = dollars / priceResult.price;
+          effectiveMessage = trimmed.replace(fullMatch, `${tokenQty} ${rawToken}`);
+        } else if (resolveChainId(rawToken) === null) {
+          // Genuinely can't price this — not just a chain-name qualifier
+          // caught in the token slot (see below), an actual unknown token.
           return json({
             type: "text",
             text: `I can't get a live price for ${upperToken} right now to convert $${rawDollars} into an amount — try specifying it directly instead, e.g. "swap 0.01 ${upperToken} ...".`,
           });
         }
-        const tokenQty = dollars / priceResult.price;
-        effectiveMessage = trimmed.replace(fullMatch, `${tokenQty} ${rawToken}`);
+        // else: "$5 robinhood ETH" (confirmed live) — the word right after
+        // "$AMOUNT (of)?" can be a chain-name qualifier, not the token
+        // itself. Can't just check "is this a chain name" up front instead —
+        // "eth"/"sol"/etc. are BOTH valid chain aliases AND real tokens, so
+        // that would also block the common case. Silently skip the guard
+        // (leave effectiveMessage untouched) and let the rest of the
+        // pipeline, which already handles chain-name words, take it from
+        // here — better than confidently erroring on a word that was never
+        // meant to be a token.
       }
     }
+    // Cashtag syntax ("$USDG", "$ETH") — confirmed live: "swap $5 ETH to
+    // $USDG on robinhood" left "$USDG" untouched by the amount-guard above
+    // (it only matches "$" immediately before a DIGIT), and every
+    // regexParse token-capture group is a plain [a-z]+ with no "$"
+    // tolerance, so it broke parsing for a completely different reason than
+    // the amount itself. A "$" directly before a letter is unambiguously a
+    // ticker marker, never a dollar amount — safe to strip unconditionally.
+    effectiveMessage = effectiveMessage.replace(/\$([a-z])/gi, "$1");
   }
 
   // ── single-leg intent (runs before scanners so "bridge X for yield" parses as bridge) ──
