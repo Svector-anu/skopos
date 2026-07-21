@@ -215,3 +215,39 @@ export async function incrAgentTextIntel(anonId: string): Promise<void> {
     console.error("[usage] agent-text intel incr failed:", err instanceof Error ? err.message : err);
   }
 }
+
+// Lifetime agent-to-agent KPI — unlike everything above, this key has NO TTL.
+// The relay's own SQLite resets on redeploy and the network's public indexer
+// goes down, so this counter is the one durable ledger of A2A calls served.
+// The Redis key only ever counts calls this counter itself observed; the
+// pre-counter history (~900 calls) lives in A2A_KPI_SEED and is added at read
+// time — no one-shot seeding race, and the baseline stays correctable if a
+// better historical number ever surfaces.
+const A2A_KPI_KEY = "kpi:a2a:total";
+
+function a2aSeed(): number {
+  const seed = Number(process.env.A2A_KPI_SEED);
+  return Number.isFinite(seed) && seed > 0 ? seed : 0;
+}
+
+export async function incrA2aServed(): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    await redis.incr(A2A_KPI_KEY);
+  } catch (err) {
+    console.error("[usage] a2a kpi incr failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+export async function getA2aServed(): Promise<number | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  try {
+    const counted = Number((await redis.get<number>(A2A_KPI_KEY)) ?? 0);
+    return counted + a2aSeed();
+  } catch (err) {
+    console.error("[usage] a2a kpi read failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}

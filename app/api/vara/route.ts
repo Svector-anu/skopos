@@ -8,14 +8,17 @@ import { getQuote, getToken } from "@/lib/delora";
 import { lookupAddress } from "@/lib/alchemy";
 import { CHAIN_IDS } from "@/lib/chains";
 import { classifyIntent, getInformationalReply, type LlmMeta } from "@/lib/parseIntent";
-import { checkAgentSmartBudget, incrAgentSmart } from "@/lib/usage";
+import { checkAgentSmartBudget, incrAgentSmart, incrA2aServed } from "@/lib/usage";
 
 const RELAY_SECRET = process.env.RELAY_SECRET;
 if (!RELAY_SECRET) {
   console.error("[/api/vara] RELAY_SECRET is not set — all requests will be rejected with 401");
 }
 
-function respond(data: unknown): NextResponse {
+// Every successful response counts toward the lifetime A2A KPI — failures and
+// auth rejects don't, so the number only ever means "calls actually served".
+async function respond(data: unknown): Promise<NextResponse> {
+  await incrA2aServed();
   return NextResponse.json({ result: JSON.stringify(data) });
 }
 
