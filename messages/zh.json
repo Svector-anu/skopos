@@ -174,7 +174,8 @@
         "dropsTo": "当 {token} 跌至 ${price} 时执行",
         "hits": "当 {token} 达到 ${price} 时执行",
         "twap": "将 {amount} {token} 分散在 {duration} 内执行",
-        "twapWithCount": "将 {amount} {token} 分散在 {duration} 内，分 {count} 次买入"
+        "twapWithCount": "将 {amount} {token} 分散在 {duration} 内，分 {count} 次买入",
+        "estAtTrigger": "触发时预计收到 ≈ {amount} {token}（已扣费用）"
       },
       "summary": {
         "via": "通过",
@@ -194,6 +195,7 @@
       "secondsLeft": "{n}秒",
       "live": "实时",
       "summaryLabel": "摘要",
+      "atCurrentPrice": "按当前价格",
       "slippage": "滑点",
       "approvalConfirmed": "授权已确认 ✓ — 请在下方执行",
       "originConfirmed": "源链已确认 ✓ · 查看浏览器 →",

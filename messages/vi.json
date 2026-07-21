@@ -174,7 +174,8 @@
         "dropsTo": "Sẽ thực thi khi {token} giảm còn ${price}",
         "hits": "Sẽ thực thi khi {token} đạt ${price}",
         "twap": "Chia nhỏ {amount} {token} trong {duration}",
-        "twapWithCount": "Chia nhỏ {amount} {token} trong {duration} thành {count} lần mua"
+        "twapWithCount": "Chia nhỏ {amount} {token} trong {duration} thành {count} lần mua",
+        "estAtTrigger": "Dự kiến nhận khi kích hoạt ≈ {amount} {token} sau phí"
       },
       "summary": {
         "via": "Qua",
@@ -194,6 +195,7 @@
       "secondsLeft": "{n}s",
       "live": "TRỰC TIẾP",
       "summaryLabel": "TÓM TẮT",
+      "atCurrentPrice": "theo giá hiện tại",
       "slippage": "Trượt giá",
       "approvalConfirmed": "đã xác nhận approval ✓ — thực thi bên dưới",
       "originConfirmed": "đã xác nhận ở chain gốc ✓ · xem trên explorer →",
