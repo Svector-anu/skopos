@@ -99,7 +99,21 @@
       "paywall": "订阅卡片渲染失败。",
       "price": "价格图表渲染失败。",
       "approvalScan": "授权扫描渲染失败。",
-      "flashOrders": "Flash 订单渲染失败。"
+      "flashOrders": "Flash 订单渲染失败。",
+      "stockPaired": "股票配对卡片渲染失败。"
+    },
+    "stockPaired": {
+      "verified": "已通过官方注册表验证",
+      "unverified": "报价代币未验证",
+      "pairedWith": "主池以代币化 {stock} 报价 — 交易费以 {stock} 累积",
+      "ratio": "比率",
+      "lastClose": "收盘价",
+      "noFeed": "暂无实时价格",
+      "poolLiquidity": "池流动性",
+      "flywheelTitle": "费用飞轮 — 估算",
+      "dailyEst": "创建者日费用估算",
+      "sinceLaunch": "自启动以来（约{days}天）",
+      "estimateNote": "根据交易量估算 — 基于标准 Doppler 启动参数（0.7% 费用，创建者分成 95%），并非确切的未领取余额。"
     },
     "noFundsDetected": "该链上未检测到资金",
     "fundWalletArrow": "充值钱包 →",

@@ -42,6 +42,7 @@ import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled, fetchSmartMoneyServer } from "@/lib/smartMoneyServer";
 import { getRecentRobinhoodLaunches, robinhoodFeedEnabled, MAX_LIMIT, scanRobinhoodLaunchRisk } from "@/lib/robinhoodLaunches";
 import { discoverX402Endpoint } from "@/lib/x402Discover";
+import { buildStockPairedItem, topPairLooksStockPaired, STOCK_PAIR_TICKERS, type StockPairedItem } from "@/lib/stockPaired";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
 import { sanitizeForPrompt } from "@/lib/sanitizeForPrompt";
@@ -1196,6 +1197,16 @@ export async function resolveRelayLeg(intent: ParsedIntent, senderAddress?: stri
   };
 }
 
+// Attach stock-pairing context to an existing research/risk scan — only when
+// the already-fetched top pair signals a Robinhood Chain equity quote asset,
+// so the extra DexScreener + Pyth round-trips never run for ordinary tokens.
+async function researchStockPairing(risk: TokenRisk): Promise<StockPairedItem | null> {
+  if (!topPairLooksStockPaired(risk.topPair)) return null;
+  const address = risk.topPair?.baseToken?.address;
+  if (!address) return null;
+  return buildStockPairedItem(risk.symbol, address).catch(() => null);
+}
+
 // ── POST handler ──────────────────────────────────────────────────────────────
 
 const NO_CACHE = { "Cache-Control": "no-store, no-cache, must-revalidate" };
@@ -1906,9 +1917,12 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       const query = raw.replace(/^\$/, "");
       const risk = await scanToken(query);
       if (risk) {
-        const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta);
+        const [analysis, stockPaired] = await Promise.all([
+          generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta),
+          researchStockPairing(risk),
+        ]);
         await recordSmart();
-        return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
+        return json({ type: "token_risk", risk, ...(analysis && { analysis }), ...(stockPaired && { stockPaired }) });
       }
     }
   }
@@ -1929,7 +1943,11 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     trimmed.match(/\bshould\s+i\s+buy\s+(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})\b/i)
     ?? trimmed.match(/\bresearch\s+(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})(?:\s+before\s+i\s+buy)?\b/i)
     ?? trimmed.match(/\btell\s+me\s+about\s+(\$?[a-z0-9]{2,20}|0x[0-9a-f]{40})\s+before\s+i\s+buy\b/i);
-  if (prebuyMatch) {
+  // "research stock-paired tokens" is category discovery, not single-token
+  // research — the hyphen would truncate the capture to the literal word
+  // "stock" and scan a random token by that name. The stock-paired block
+  // (below the launch feed) owns that phrasing.
+  if (prebuyMatch && !/\bstock[\s-]?paired\b/i.test(trimmed)) {
     const query = prebuyMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
     if (!risk) {
@@ -1959,10 +1977,11 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         ).catch(() => null)
       : Promise.resolve(null);
 
-    const [smartMoneyRes, quoteRes, analysis] = await Promise.all([
+    const [smartMoneyRes, quoteRes, analysis, stockPaired] = await Promise.all([
       smartMoneyPromise,
       quotePromise,
       generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta),
+      researchStockPairing(risk),
     ]);
     await recordSmart();
 
@@ -2001,6 +2020,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       quote,
       quoteUnavailable,
       ...(analysis && { analysis }),
+      ...(stockPaired && { stockPaired }),
     });
   }
 
@@ -2256,6 +2276,110 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       subtitle: `${shown.length} of ${launches.length} most recent · spans the last ${spanMinutes}m`,
       launches: launchCards,
       omittedCount,
+    });
+  }
+
+  // ── Stock-paired token intelligence (Robinhood Chain) ──────────────────────
+  // Tokens whose primary pool quotes against a tokenized stock (REAL/NVDA)
+  // instead of USDG/WETH. Three intents, all placed BEFORE the price fast-path
+  // and equity block on purpose: any message naming an equity ticker classifies
+  // as "equity" (classifyIntent), so "price of $REAL vs NVDA" would otherwise
+  // get hijacked into a plain NVDA stock-price reply. Detection reads
+  // DexScreener pool data (lib/stockPaired.ts) — no hardcoded token addresses;
+  // fee figures are estimates from standard Doppler launch parameters.
+  const STOCK_PAIRED_ESTIMATE_NOTE =
+    "Estimated from trading volume — based on standard Doppler launch parameters (0.7% fee, 95% creator share), not an exact unclaimed balance.";
+
+  // "price of $REAL vs NVDA" / "$REAL vs NVDA" / "how does $REAL compare to NVDA"
+  const vsMatch =
+    trimmed.match(/(?:price\s+of\s+)?\$?([a-z0-9]{2,15})\s+(?:vs\.?|versus)\s+\$?([a-z0-9]{2,15})\b/i)
+    ?? trimmed.match(/\bhow\s+does\s+\$?([a-z0-9]{2,15})\s+compare\s+(?:to|with|against)\s+\$?([a-z0-9]{2,15})\b/i);
+  if (vsMatch && STOCK_PAIR_TICKERS.includes(vsMatch[2].toUpperCase())
+      && !STOCK_PAIR_TICKERS.includes(vsMatch[1].toUpperCase())) {
+    const tokenQuery = vsMatch[1];
+    const stockAsked = vsMatch[2].toUpperCase();
+    const address = await resolveRobinhoodToken(tokenQuery);
+    if (address) {
+      const item = await buildStockPairedItem(tokenQuery, address);
+      if (item) {
+        const mismatch = item.stockSymbol !== stockAsked
+          ? ` (its primary pool pairs against ${item.stockSymbol}, not ${stockAsked})`
+          : "";
+        return json({
+          type: "stock_paired",
+          mode: "single",
+          heading: `${item.tokenSymbol} vs ${item.stockSymbol}`,
+          note: STOCK_PAIRED_ESTIMATE_NOTE + mismatch,
+          items: [item],
+        });
+      }
+      return json({
+        type: "text",
+        text: `${tokenQuery.toUpperCase()} isn't stock-paired — its main Robinhood Chain pool quotes against USDG/WETH, not a tokenized stock. Try "price of ${tokenQuery}" or "is ${tokenQuery} safe" instead.`,
+      });
+    }
+    // Not a Robinhood Chain token — fall through to the normal pipeline
+    // (the equity block below still answers the stock half of the question).
+  }
+
+  // "show stock-paired tokens" / "research stock-paired tokens on robinhood"
+  if (/\bstock[\s-]?paired\b/i.test(trimmed) && /\b(?:tokens?|memecoins?|coins?|plays?)\b/i.test(trimmed)) {
+    if (!robinhoodFeedEnabled()) {
+      return json({ type: "error", text: "Stock-paired token discovery isn't configured right now." });
+    }
+    const launches = await getRecentRobinhoodLaunches(MAX_LIMIT);
+    if (!launches || launches.length === 0) {
+      return json({ type: "error", text: "Couldn't fetch Robinhood Chain launches right now — try again shortly." });
+    }
+    // Cheap pass first (scanRobinhoodLaunchRisk is cached, 60s TTL): find
+    // launches whose top pair quotes against an equity ticker, then build the
+    // full item only for those hits — never 25 full builds.
+    const risks = await Promise.all(launches.map((l) => scanRobinhoodLaunchRisk(l.address)));
+    const hits = launches.filter((_, i) => topPairLooksStockPaired(risks[i]?.topPair));
+    const items = (
+      await Promise.all(hits.map((l) => buildStockPairedItem(l.symbol, l.address)))
+    ).filter((x): x is StockPairedItem => x !== null)
+      .sort((a, b) => b.pairLiquidityUsd - a.pairLiquidityUsd);
+    const spanMinutes = Math.max(...launches.map((l) => l.ageMinutes));
+    if (items.length === 0) {
+      return json({
+        type: "text",
+        text: `No stock-paired tokens in the ${launches.length} most recent Robinhood Chain launches (spans the last ~${spanMinutes}m). This feed only sees recent launches — a known token can be checked directly: "fee flywheel for $REAL".`,
+      });
+    }
+    return json({
+      type: "stock_paired",
+      mode: "list",
+      heading: `Stock-paired tokens · ${items.length} of the last ${launches.length} launches`,
+      note: STOCK_PAIRED_ESTIMATE_NOTE,
+      items,
+    });
+  }
+
+  // "fee flywheel for $REAL" / "how much NVDA has $REAL accumulated"
+  const flywheelMatch =
+    trimmed.match(/\bfee\s+flywheel\s+(?:for|of|on)?\s*(\$?[a-z0-9]{2,15}|0x[0-9a-f]{40})\b/i)
+    ?? trimmed.match(/\bhow\s+much\s+(?:[a-z]{2,10}\s+)?has\s+(\$?[a-z0-9]{2,15}|0x[0-9a-f]{40})\s+(?:accumulated|earned|collected)\b/i)
+    ?? trimmed.match(/\b(\$?[a-z0-9]{2,15}|0x[0-9a-f]{40})\s+fee\s+(?:flywheel|accumulation)\b/i);
+  if (flywheelMatch) {
+    const tokenQuery = flywheelMatch[1].replace(/^\$/, "");
+    const address = await resolveRobinhoodToken(tokenQuery);
+    if (!address) {
+      return json({ type: "error", text: `Could not find ${tokenQuery.toUpperCase()} on Robinhood Chain.` });
+    }
+    const item = await buildStockPairedItem(tokenQuery, address);
+    if (!item) {
+      return json({
+        type: "text",
+        text: `${tokenQuery.toUpperCase()} isn't stock-paired — its main pool quotes against USDG/WETH, so there's no stock fee flywheel to estimate.`,
+      });
+    }
+    return json({
+      type: "stock_paired",
+      mode: "single",
+      heading: `${item.tokenSymbol} fee flywheel`,
+      note: STOCK_PAIRED_ESTIMATE_NOTE,
+      items: [item],
     });
   }
 
@@ -3097,9 +3221,12 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     const query = riskMatch[1].replace(/^\$/, "");
     const risk = await scanToken(query);
     if (risk) {
-      const analysis = await generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta);
+      const [analysis, stockPaired] = await Promise.all([
+        generateDecisionAnalysis(buildTokenAnalysisPrompt(risk), tier, meterMeta),
+        researchStockPairing(risk),
+      ]);
       await recordSmart();
-      return json({ type: "token_risk", risk, ...(analysis && { analysis }) });
+      return json({ type: "token_risk", risk, ...(analysis && { analysis }), ...(stockPaired && { stockPaired }) });
     }
     return json({ type: "error", text: `Could not find token data for "${query}". Try a contract address or a well-known symbol.` });
   }

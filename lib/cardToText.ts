@@ -361,6 +361,31 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       return `${str(c.heading)}${subtitle ? ` · ${subtitle}` : ""}:\n\n${lines.join("\n")}`;
     }
 
+    case "stock_paired": {
+      const items = (Array.isArray(c.items) ? c.items : []) as Card[];
+      if (!items.length) return `Open Skopos for stock-paired token intel: ${SITE}`;
+      const lines = items.map((it) => {
+        const tok = clean(it.tokenSymbol, 16) || "?";
+        const stock = clean(it.stockSymbol, 16) || "?";
+        const verified = it.stockVerified ? "" : " (quote token NOT verified against Robinhood's registry)";
+        const ratio = str(it.priceInStockTerms);
+        const px = num(it.stockPriceUsd);
+        const daily = num(it.dailyStockValueEstimate);
+        const dailyTok = num(it.dailyStockTokensEstimate);
+        const total = num(it.totalAccumulatedEstimate);
+        const days = num(it.daysOld);
+        const parts = [
+          `${tok} is paired against ${stock}${verified}`,
+          ratio ? `1 ${tok} = ${ratio} ${stock}` : null,
+          px !== null ? `${stock} ${fmtUsd(px)}` : `no live ${stock} price feed`,
+          daily !== null ? `est. fees to creator ~${fmtUsd(daily)}/day${dailyTok !== null ? ` (~${dailyTok.toFixed(2)} ${stock}/day)` : ""}` : null,
+          total !== null && days !== null ? `~${fmtUsd(total)} since launch (${days.toFixed(1)}d)` : null,
+        ].filter(Boolean);
+        return parts.join(" · ");
+      });
+      return `${str(c.heading) || "Stock-paired"}:\n${lines.join("\n")}\nEstimates from trading volume (standard Doppler parameters), not exact balances.`;
+    }
+
     case "approval_scan": {
       const rows = (Array.isArray(c.rows) ? c.rows : []) as Card[];
       const days = num(c.windowDays) ?? 90;

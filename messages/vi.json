@@ -99,7 +99,21 @@
       "paywall": "Không thể hiển thị thẻ đăng ký.",
       "price": "Không thể hiển thị biểu đồ giá.",
       "approvalScan": "Không thể hiển thị quét approval.",
-      "flashOrders": "Không thể hiển thị lệnh Flash."
+      "flashOrders": "Không thể hiển thị lệnh Flash.",
+      "stockPaired": "Thẻ ghép cổ phiếu không hiển thị được."
+    },
+    "stockPaired": {
+      "verified": "đã xác minh theo sổ đăng ký",
+      "unverified": "token định giá chưa xác minh",
+      "pairedWith": "Pool chính định giá theo cổ phiếu token hóa {stock} — phí giao dịch tích lũy bằng {stock}",
+      "ratio": "Tỷ lệ",
+      "lastClose": "giá đóng cửa",
+      "noFeed": "chưa có giá trực tiếp",
+      "poolLiquidity": "Thanh khoản pool",
+      "flywheelTitle": "Bánh đà phí — ước tính",
+      "dailyEst": "Phí ước tính mỗi ngày cho người tạo",
+      "sinceLaunch": "Từ khi ra mắt (~{days} ngày)",
+      "estimateNote": "Ước tính từ khối lượng giao dịch — dựa trên tham số Doppler tiêu chuẩn (phí 0,7%, người tạo hưởng 95%), không phải số dư chưa nhận chính xác."
     },
     "noFundsDetected": "Không phát hiện quỹ trên chain này",
     "fundWalletArrow": "Nạp tiền vào ví →",
