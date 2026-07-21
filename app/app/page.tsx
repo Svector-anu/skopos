@@ -400,6 +400,13 @@ function urlBase64ToUint8Array(base64Url: string): Uint8Array {
 function loadJson<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; } catch { return fallback; }
 }
+// setItem throws QuotaExceededError once ~5MB fills up (long sessions persist
+// full card payloads) — and these writes run inside effects, where an uncaught
+// throw takes down the whole component tree on every render until the user
+// manually clears storage. Persisting is best-effort: report failure, never throw.
+function persistJson(key: string, value: unknown): boolean {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
+}
 
 // Persists the last wallet-blocked query so it can auto-retry after connect even
 // if the connect flow triggers a full page reload (common on mobile/in-app
@@ -732,8 +739,10 @@ export default function AppPage() {
     const title = (firstUser?.text ?? "Chat").slice(0, 38);
     const stored = loadJson<Session[]>("skopos-sessions", []);
     const updated = [...stored.filter(s => s.id !== sid), { id: sid, title, messages }].slice(-10);
-    localStorage.setItem("skopos-sessions", JSON.stringify(updated));
-    localStorage.setItem("skopos-active-session", sid);
+    if (!persistJson("skopos-sessions", updated)) {
+      persistJson("skopos-sessions", [{ id: sid, title, messages }]);
+    }
+    try { localStorage.setItem("skopos-active-session", sid); } catch { /* quota — session stays in memory */ }
     setSessions(updated);
   }, [messages]);
 
@@ -749,7 +758,9 @@ export default function AppPage() {
   const saveTx = useCallback((record: TxRecord) => {
     setTxHistory(prev => {
       const updated = [record, ...prev.filter(t => t.hash !== record.hash)].slice(0, 15);
-      localStorage.setItem("skopos-tx-history", JSON.stringify(updated));
+      if (!persistJson("skopos-tx-history", updated)) {
+        persistJson("skopos-tx-history", updated.slice(0, 5));
+      }
       return updated;
     });
   }, []);
