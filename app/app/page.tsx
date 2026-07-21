@@ -35,7 +35,9 @@ type FlashLegInfo = {
   contraChain: string;
   targetAsset: string;
   contraAsset: string;
-  side: "buy";
+  // "sell" since advanced orders shipped — stop-loss/take-profit are always
+  // sells, limit and twap can be either side. Market stock buys stay "buy".
+  side: "buy" | "sell";
   qty: string;
   orderType: string;
   funderAddress: string;
@@ -2158,6 +2160,23 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       ? t(result.flash.twapBucketCount ? "triggerBanner.twapWithCount" : "triggerBanner.twap", { amount: intent.from.amount, token: intent.from.token, duration: formatDuration(result.flash.durationSeconds), count: result.flash.twapBucketCount ?? 0 })
       : null;
 
+  // Trigger orders (stop-loss / take-profit) market-sell when the trigger
+  // fires, so Flash's quoted output reflects the CURRENT price — misleading
+  // next to a banner promising execution at the trigger. Show what the trigger
+  // price actually implies: qty × trigger, minus the current fee estimate
+  // (network fee is a USD-denominated cost, so it's a fair proxy for the fee
+  // at execution time). Contra asset is always a dollar stable (USDG/USDC).
+  const isTriggerOrder = !!result.flash?.triggerPrice;
+  const estAtTrigger: string | null = (() => {
+    if (!isTriggerOrder || result.flash?.side !== "sell") return null;
+    const qty = parseFloat(intent.from.amount);
+    const px = parseFloat(result.flash.triggerPrice!);
+    if (!isFinite(qty) || !isFinite(px)) return null;
+    const fees = Number(route.feesUSD);
+    const net = Math.max(0, qty * px - (isFinite(fees) ? fees : 0));
+    return parseFloat(net.toFixed(6)).toString();
+  })();
+
   const recipient = intent.to.receiver ?? connectedAddress;
   const summaryRows: { label: string; value: string }[] = [
     { label: t("summary.via"),           value: route.tool },
@@ -2200,6 +2219,11 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       {!executionMode && triggerBanner && (
         <div style={{ margin: "10px 14px 0", padding: "8px 12px", background: "rgba(245,184,0,0.06)", border: "1px solid rgba(245,184,0,0.2)", borderRadius: 8, textAlign: "center" }}>
           <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(245,184,0,0.85)" }}>{triggerBanner}</span>
+          {estAtTrigger && (
+            <span style={{ ...MONO, display: "block", marginTop: 4, fontSize: "0.62rem", color: "rgba(245,184,0,0.55)" }}>
+              {t("triggerBanner.estAtTrigger", { amount: estAtTrigger, token: intent.to.token })}
+            </span>
+          )}
         </div>
       )}
 
@@ -2227,6 +2251,11 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <span style={{ ...MONO, fontSize: "1.05rem", fontWeight: 700, color: "#F5B800", textAlign: "center", lineHeight: 1.2 }}>
               ~{route.outputAmount} {intent.to.token}
             </span>
+            {isTriggerOrder && (
+              <span style={{ ...MONO, marginTop: -4, fontSize: "0.56rem", color: "var(--card-text-faint, rgba(255,255,255,0.32))" }}>
+                {t("atCurrentPrice")}
+              </span>
+            )}
             <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.32))", letterSpacing: "0.04em" }}>
               {intent.to.chain}
             </span>

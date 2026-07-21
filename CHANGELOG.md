@@ -51,6 +51,7 @@ All notable changes to this project will be documented in this file.
 - Composer "horizon" chips tag not-live features with `· soon`; the working ones (polymarket, yield scanner) lead.
 
 ### Fixed
+- Trigger-order previews (stop-loss / take-profit) no longer read as nonsense next to their own trigger — the banner now shows what the trigger price actually implies ("Est. received at trigger ≈ 0.26 USDG after fees" for `sell 2 CASHCAT when it hits $0.2`), and the Flash-quoted output is labeled "at current price" so a market quote can't be mistaken for trigger proceeds. Limit orders were always priced at the limit price and are untouched. Also widened the client-side Flash `side` type ("buy"-only since before sell-side orders existed).
 - x402 client — only the v2 Base payment scheme was registered, so any seller still issuing legacy v1 challenges failed client-side (`no client registered for x402 version: 1`) before any payment was attempted. This was silently the reason sniper detection had been returning null since it shipped. v1 support added alongside v2.
 - Agent-paid intel routes — rate limiting + CORS added across all 5 (smart-money/holders/flows/flow-intel/screener), one shared 5/min bucket so rotating between endpoints can't multiply the allowance.
 - "Read Docs" button pointed at the old internal `/docs` page, never updated after docs.tryskopos.xyz went live — now points to the real site.

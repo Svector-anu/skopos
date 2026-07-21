@@ -174,7 +174,8 @@
         "dropsTo": "Will execute when {token} drops to ${price}",
         "hits": "Will execute when {token} hits ${price}",
         "twap": "Spreads {amount} {token} across {duration}",
-        "twapWithCount": "Spreads {amount} {token} across {duration} in {count} buys"
+        "twapWithCount": "Spreads {amount} {token} across {duration} in {count} buys",
+        "estAtTrigger": "Est. received at trigger ≈ {amount} {token} after fees"
       },
       "summary": {
         "via": "Via",
@@ -194,6 +195,7 @@
       "secondsLeft": "{n}s",
       "live": "LIVE",
       "summaryLabel": "SUMMARY",
+      "atCurrentPrice": "at current price",
       "slippage": "Slippage",
       "approvalConfirmed": "approval confirmed ✓ — execute below",
       "originConfirmed": "origin confirmed ✓ · view on explorer →",
