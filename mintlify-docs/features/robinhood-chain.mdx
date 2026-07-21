@@ -1,35 +1,126 @@
 ---
-title: "Robinhood Chain Launches"
-description: "Live feed of new token launches on Robinhood Chain, ranked and risk-scanned."
+title: "Robinhood Chain"
+description: "Trade natively on Robinhood Chain — swaps, tokenized stocks, advanced orders, bridging, launches, and stock-paired token intel. Non-custodial, powered by Definitive's Flash."
 ---
 
-Robinhood Chain is a brand-new chain, and new tokens launch on it constantly — roughly one every 1–2 minutes at peak. Skopos surfaces the feed with real safety signals attached, not just a raw list.
+Robinhood Chain (chain 4663) is Robinhood's own L2, where tokenized stocks and memecoins trade onchain. Most routing engines don't cover it — Skopos does, natively, through [Definitive's Flash](https://flash.definitive.fi) for execution and Relay for bridging.
 
-## See what's launching
+Everything on this page is non-custodial: Skopos quotes, **your wallet signs every step**, and Skopos never touches your funds.
+
+## Native swaps
+
+Same-chain swaps on Robinhood Chain, quoted live through Flash:
+
+```
+> swap 10 USDG to ETH on robinhood
+> swap 0.01 ETH to CASHCAT on robinhood
+```
+
+- **USDG** (Paxos's Global Dollar) is the chain's real stablecoin — there is no meaningful USDC liquidity here. Type USDC anyway and Skopos silently resolves it to USDG.
+- Spending native ETH adds an automatic wrap step (the chain's pricing engine trades WETH) — Skopos builds the wrap transaction for you, you just sign it.
+- Orders are EIP-712 typed data signed in your own wallet; submission happens server-side, but nothing executes without your signature.
+
+## Buy tokenized stocks
+
+24 stock and ETF tokens — NVDA, TSLA, AAPL, MSFT, GOOGL, AMZN, META, COIN, SPY, QQQ, and more:
+
+```
+> buy $10 of NVDA on robinhood
+> buy some TSLA on robinhood chain
+```
+
+Ticker resolution goes through **Robinhood's own contract registry first**, never a DEX search. This matters: the chain has heavy ticker-impersonation activity (copycat "AAPL"/"TSLA" tokens with real liquidity of their own), and a symbol search can't tell the real Robinhood-issued token from a fake. The registry can.
+
+## Advanced orders
+
+Limit, stop-loss, take-profit, and TWAP — in plain English, on Robinhood Chain **plus 7 EVM chains** (Base, Arbitrum, Ethereum, Optimism, Polygon, BSC, Avalanche):
+
+```
+> buy $2000 of ETH at $1800                      # limit
+> sell 2 NVDA if it drops below $400             # stop-loss — yes, on a tokenized stock
+> sell 2 ETH when it hits $5000                  # take-profit
+> buy $500 of ETH over 7 days                    # TWAP
+> sell 2 ETH over 3 days on arbitrum             # TWAP sell, off-Robinhood
+```
+
+Add `on base` / `on arbitrum` to place the order there — USDC settles off Robinhood Chain, USDG on it. Natural phrasings the strict patterns miss go through a schema-validated LLM parse that can **never invent a number you didn't type** — a missing price or amount gets asked for, not guessed.
+
+Trigger-order previews show both numbers honestly: what the trigger price implies you'd receive ("est. received at trigger ≈ …, after fees") and what the same sell would fetch **at current price** — clearly labeled so a market quote is never mistaken for trigger proceeds.
+
+### Managing orders
+
+```
+> show my flash orders
+> my open orders on robinhood
+```
+
+Standing orders render as a card with status, fill progress, and trigger price — anything still cancellable gets a cancel button (you sign the cancellation, like everything else).
+
+## Bridge in and out
+
+Cross-chain routes into chain 4663 aren't covered by the usual aggregators — Skopos bridges through Relay:
+
+```
+> bridge 0.05 ETH from base to robinhood chain
+> bridge 0.01 ETH from robinhood to base
+```
+
+Both directions live-confirmed. This is how funds get onto the chain before trading.
+
+## Launch feed
+
+Roughly one token launches on this chain every 1–2 minutes. Skopos surfaces the feed with real safety signals attached, not just a raw list:
 
 ```
 > what's launching on robinhood chain
-> robinhood chain launches
 ```
 
-Returns the 5 most active recent launches, ranked by **volume-to-market-cap ratio** — not just recency. A launch with a ratio above 10x gets a 🔥 flag, since that's real trading heat relative to its size, not just "it exists."
+Returns the 5 most active recent launches ranked by **volume-to-market-cap ratio** (above 10x gets a 🔥), each with a live risk badge (the same DexScreener liquidity/honeypot scan behind [Token Safety](/features/token-safety)), color-coded liquidity, a repeat-launch warning linking to the deployer's full launch history on NOXA, a copyable contract address, and links to Bankr, DexScreener, and GeckoTerminal.
 
 <Note>
-There's no historical timeframe option ("past day", "past week") on this feed. The chain launches fast enough that the most-recent batch only ever spans about 30 minutes — a "past week" filter would silently show you the same 30 minutes every time. Skopos shows exactly how much time the batch spans instead of implying a coverage window that doesn't exist.
+There's no "past day / past week" filter on purpose — the most-recent batch only ever spans about 30 minutes at current launch pace, so a longer window would silently show the same 30 minutes every time. Skopos shows exactly how much time the batch spans instead.
 </Note>
 
-## What each launch shows
+A token that's 1–2 minutes old can show "not indexed yet" — that's DexScreener's indexing lag, not a chain-support gap; Skopos says so instead of faking a risk score. And token names on a permissionless chain are unverified — anyone can launch a token riffing on a real person or brand with zero affiliation. Treat the name as decoration; the risk scan and deployer history are the real signals.
 
-- **Risk badge** — a live DexScreener liquidity/honeypot scan on the token, the same signal behind [Token Safety](/features/token-safety): CRITICAL, HIGH, MEDIUM, or LOW, plus the specific flags driving it (`NO_LIQUIDITY`, `SINGLE_POOL`, `NEW_TOKEN`, etc).
-- **Liquidity**, color-coded — red at $5K or below, green above $50K.
-- **Repeat-launch warning** — if the same wallet has launched more than one token in the current feed window, Skopos flags it and links straight to that wallet's full launch history on NOXA.
-- **Contract address** with a one-tap copy button.
-- **Links** — Bankr, DexScreener, GeckoTerminal, and the token's NOXA page, all pointing at the exact same token.
+## Stock-paired token intel
 
-## Why very fresh tokens sometimes show "not scanned yet"
+A Robinhood Chain original: tokens whose liquidity pool quotes against a **tokenized stock** instead of USDG or WETH — $REAL trades against NVDA, so every trade accrues fees *in NVDA* to the creator. Skopos detects the category from pool data and reads it:
 
-DexScreener now indexes Robinhood Chain, but a token that's 1–2 minutes old can still show up before DexScreener's own index catches up. That's normal indexing lag, not a chain-support gap — Skopos shows an honest "not indexed yet" instead of a fake risk score.
+```
+> price of $REAL vs NVDA          # ratio card — token priced in stock terms
+> show stock-paired tokens        # sweep the launch feed for the category
+> fee flywheel for $REAL          # est. stock accruing to the creator
+```
 
-## The honest caveat
+The card shows the pairing (with a **registry-verified** badge when the quote token matches Robinhood's official contract — an impersonator NVDA pool fails it), the token/stock ratio, the live stock price via Pyth, and the fee flywheel: estimated daily and since-launch creator fees, in USD and stock-token terms.
 
-Token names on a permissionless chain are unverified. Anyone can launch a token that riffs on a real person's name or a known brand with zero actual affiliation. Repeat-launch count and the live risk scan are the only real safety signals here — treat the name itself as decoration, not proof of anything.
+<Note>
+Fee figures are **estimates from trading volume**, based on standard Doppler launch parameters (0.7% pool fee, 95% creator share) — not exact unclaimed balances. Individual tokens can configure different tiers.
+</Note>
+
+Research commands (`deep dive on 0x…`, `is X safe`, `research X`) automatically attach the stock-pairing context when the token qualifies.
+
+## $SKOPOS on Robinhood Chain
+
+$SKOPOS itself trades here — NVDA-paired, so it's a stock-paired token by its own definition:
+
+```
+> buy $10 of SKOPOS on robinhood
+> fee flywheel for $SKOPOS
+```
+
+The address is pinned server-side, so SKOPOS always resolves to the real token, never a same-ticker copycat. (This is a separate token from the $skopos on Base used for Smart-tier holder limits.)
+
+## Portfolio & transactions
+
+Balance and transaction-hash lookups work on Robinhood Chain too (via Blockscout — one of 9 chains Skopos covers that the mainstream indexers don't):
+
+```
+> what's in 0xYourAddress
+> 0xSomeTransactionHash
+```
+
+## For agents
+
+Everything conversational above has a machine counterpart. `POST /api/flash-order` on the [agent-payable x402 API](https://www.tryskopos.xyz/openapi.json) prices any advanced order (limit / stop-loss / take-profit / TWAP) for $0.02 per call — structured JSON in, priced route + sign-in link out, USDC on Base, no API key or signup. Agents get a link, never raw calldata — the non-custodial contract holds for machines too.
