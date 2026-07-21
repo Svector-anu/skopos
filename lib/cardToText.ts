@@ -64,6 +64,19 @@ type Card = Record<string, unknown>;
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const short = (a: string): string => (a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+// External-data hygiene. Token names, market titles, wallet labels, and memos
+// come from permissionless sources — anyone can launch a token or register an
+// ENS name that reads like an instruction ("ignore previous instructions…"),
+// and this text lands directly in a calling agent's context. Strip control and
+// zero-width characters, collapse to one line, and cap length so external
+// strings stay data-shaped, never instruction-shaped.
+const clean = (v: unknown, max = 48): string =>
+  str(v)
+    .replace(/[\u200b-\u200f\u2060\ufeff]/g, "")
+    .replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
 
 function fmtUsd(x: number): string {
   const a = Math.abs(x);
@@ -123,7 +136,7 @@ function renderSmartMoney(data: unknown, sym: string, direction: string): string
   const parsed = rows.map((r) => {
     let net = pickNum(r, ["trade_volume_usd", "net_flow_usd", "net_usd"]);
     if (net === null) net = (pickNum(r, ["bought_volume_usd"]) ?? 0) - (pickNum(r, ["sold_volume_usd"]) ?? 0);
-    return { label: pickStr(r, ["address_label", "label"]) ?? short(pickStr(r, ["address"]) ?? "wallet"), net };
+    return { label: clean(pickStr(r, ["address_label", "label"]), 32) || short(pickStr(r, ["address"]) ?? "wallet"), net };
   });
   parsed.sort((a, b) => b.net - a.net);
   const top = parsed.slice(0, 3).map((p) => `${p.label} ${p.net >= 0 ? "+" : ""}${fmtUsd(p.net)}`).join(", ");
@@ -135,7 +148,7 @@ function renderHolders(data: unknown, sym: string): string {
   const rows = rowsOf(data);
   if (!rows.length) return `No holder data for ${sym}.`;
   const parsed = rows.map((r) => ({
-    label: pickStr(r, ["address_label", "label"]) ?? short(pickStr(r, ["address"]) ?? "wallet"),
+    label: clean(pickStr(r, ["address_label", "label"]), 32) || short(pickStr(r, ["address"]) ?? "wallet"),
     own: (pickNum(r, ["ownership_percentage"]) ?? 0) * 100,
     val: pickNum(r, ["value_usd"]) ?? 0,
     chg: pickNum(r, ["balance_change_7d"]) ?? 0,
@@ -150,7 +163,7 @@ function renderScreener(data: unknown): string {
     net: pickNum(r, ["netflow"]), chg: (pickNum(r, ["price_change"]) ?? 0) * 100,
   })).filter((p) => p.sym).slice(0, 5);
   if (!rows.length) return `No screener results right now.`;
-  const list = rows.map((p) => `$${p.sym} (${p.chain}) ${p.net !== null ? fmtUsd(p.net) : ""}${p.chg ? ` ${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%` : ""}`).join(", ");
+  const list = rows.map((p) => `$${clean(p.sym, 16)} (${clean(p.chain, 16)}) ${p.net !== null ? fmtUsd(p.net) : ""}${p.chg ? ` ${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%` : ""}`).join(", ");
   return `Smart money buying now: ${list}.`;
 }
 function renderFlows(data: unknown, sym: string): string {
@@ -190,7 +203,7 @@ async function renderIntel(c: Card, ctx: CardTextCtx): Promise<string> {
 
   const t = c.token as { symbol?: string; address?: string; chain?: string } | undefined;
   const token = { symbol: t?.symbol ?? null, address: t?.address ?? null, chain: t?.chain ?? null };
-  const sym = token.symbol ? `$${token.symbol}` : "this token";
+  const sym = token.symbol ? `$${clean(token.symbol, 16)}` : "this token";
   const tf = isTimeframe(c.timeframe) ? c.timeframe : undefined;
 
   let res: { ok: boolean; data?: unknown; error?: string };
@@ -227,8 +240,8 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
 
   switch (str(c.type)) {
     case "price": {
-      const sym = str(c.symbol) || "?";
-      const name = str(c.name);
+      const sym = clean(c.symbol, 16) || "?";
+      const name = clean(c.name);
       const price = num(c.price), chg = num(c.change24h), mc = num(c.marketCap);
       const head = name ? `${sym} (${name})` : sym;
       const line = `${head}: ${price !== null ? fmtUsd(price) : "—"}${chg !== null ? ` · ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% 24h` : ""}${mc !== null ? ` · mcap ${fmtUsd(mc)}` : ""}`;
@@ -242,9 +255,9 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       const route = c.route as { outputAmount?: string; tool?: string } | undefined;
       const f = qi?.from, to = qi?.to;
       const dest = route?.outputAmount
-        ? `~${str(route.outputAmount)} ${str(to?.token)} on ${str(to?.chain)}`
-        : `${str(to?.token)} on ${str(to?.chain)}`;
-      return `Swap ${str(f?.amount)} ${str(f?.token)} on ${str(f?.chain)} → ${dest}${route?.tool ? ` (via ${route.tool})` : ""}. Tap to sign in the Skopos app.`;
+        ? `~${str(route.outputAmount)} ${clean(to?.token, 16)} on ${clean(to?.chain, 24)}`
+        : `${clean(to?.token, 16)} on ${clean(to?.chain, 24)}`;
+      return `Swap ${str(f?.amount)} ${clean(f?.token, 16)} on ${clean(f?.chain, 24)} → ${dest}${route?.tool ? ` (via ${route.tool})` : ""}. Tap to sign in the Skopos app.`;
     }
 
     case "rebalance": {
@@ -257,17 +270,17 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
 
     case "token_risk": {
       const risk = c.risk as { symbol?: string; label?: string; score?: number; priceUsd?: string; flags?: string[] } | undefined;
-      const flagList = Array.isArray(risk?.flags) ? risk!.flags.map((f) => RISK_FLAG_LABELS[f] ?? f) : [];
+      const flagList = Array.isArray(risk?.flags) ? risk!.flags.map((f) => RISK_FLAG_LABELS[f] ?? clean(f, 32)) : [];
       const flags = flagList.length ? ` Flags: ${flagList.join(", ")}.` : "";
       const prefix = c.pick ? "Today's pick — not financial advice. " : "";
-      return `${prefix}${str(risk?.symbol)} risk: ${str(risk?.label)} (${risk?.score ?? "?"}/4).${risk?.priceUsd ? ` $${risk.priceUsd}.` : ""}${flags}`;
+      return `${prefix}${clean(risk?.symbol, 16)} risk: ${str(risk?.label)} (${risk?.score ?? "?"}/4).${risk?.priceUsd ? ` $${risk.priceUsd}.` : ""}${flags}`;
     }
 
     case "yield_pools": {
       const pools = (Array.isArray(c.pools) ? c.pools : []) as Card[];
-      if (!pools.length) return `No yield pools found for ${str(c.symbol)}.`;
-      const top = pools.slice(0, 3).map((p) => `${str(p.project)} (${str(p.chain)}) ${num(p.apy)?.toFixed(1) ?? "?"}% APY, ${fmtUsd(num(p.tvlUsd) ?? 0)} TVL`).join("; ");
-      return `Top yield for ${str(c.symbol)}: ${top}.`;
+      if (!pools.length) return `No yield pools found for ${clean(c.symbol, 16)}.`;
+      const top = pools.slice(0, 3).map((p) => `${clean(p.project, 32)} (${clean(p.chain, 16)}) ${num(p.apy)?.toFixed(1) ?? "?"}% APY, ${fmtUsd(num(p.tvlUsd) ?? 0)} TVL`).join("; ");
+      return `Top yield for ${clean(c.symbol, 16)}: ${top}.`;
     }
 
     case "polymarket": {
@@ -277,8 +290,8 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
         const m = (Array.isArray(e.markets) ? e.markets[0] : undefined) as Card | undefined;
         const outs = Array.isArray(m?.outcomes) ? (m!.outcomes as string[]) : [];
         const prices = Array.isArray(m?.outcomePrices) ? (m!.outcomePrices as string[]) : [];
-        const odds = outs.length && prices.length ? ` — ${outs[0]} ${(Number(prices[0]) * 100).toFixed(0)}%` : "";
-        return `${str(e.title)}${odds}`;
+        const odds = outs.length && prices.length ? ` — ${clean(outs[0], 24)} ${(Number(prices[0]) * 100).toFixed(0)}%` : "";
+        return `${clean(e.title, 80)}${odds}`;
       }).join(" · ");
       return `Prediction markets: ${lines}.`;
     }
@@ -286,7 +299,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
     case "payments": {
       const pays = (Array.isArray(c.payments) ? c.payments : []) as Card[];
       if (!pays.length) return `No incoming payments found for ${short(str(c.address))}.`;
-      const lines = pays.slice(0, 3).map((p) => `${str(p.amount)} ${str(p.tokenSymbol)} from ${short(str(p.from))}${p.memoText ? ` (${str(p.memoText)})` : ""}`).join("; ");
+      const lines = pays.slice(0, 3).map((p) => `${str(p.amount)} ${clean(p.tokenSymbol, 16)} from ${short(str(p.from))}${p.memoText ? ` (${clean(p.memoText, 64)})` : ""}`).join("; ");
       return `Recent payments: ${lines}.`;
     }
 
@@ -315,8 +328,8 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
 
     case "pay": {
       const amt = str(c.amountDisplay) || String(num(c.amountWei) ?? "");
-      const sym = str(c.tokenSymbol) || "tokens";
-      return `Ready: send ${amt} ${sym} to ${str(c.to)}${c.chainName ? ` on ${str(c.chainName)}` : ""}${c.memoText ? ` for "${str(c.memoText)}"` : ""}. Tap to sign in the Skopos app.`;
+      const sym = clean(c.tokenSymbol, 16) || "tokens";
+      return `Ready: send ${amt} ${sym} to ${str(c.to)}${c.chainName ? ` on ${clean(c.chainName, 24)}` : ""}${c.memoText ? ` for "${clean(c.memoText, 64)}"` : ""}. Tap to sign in the Skopos app.`;
     }
 
     case "robinhood_launches": {
@@ -331,16 +344,16 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
         const liq = num(risk?.totalLiquidityUsd);
         const repeat = num(creator.repeatLaunchCount) ?? 0;
         const parts = [
-          `${l.hot ? "🔥 " : ""}${str(l.symbol)} (${str(l.name)})`,
+          `${l.hot ? "🔥 " : ""}${clean(l.symbol, 16)} (${clean(l.name)})`,
           `${num(l.ageMinutes) ?? "?"}m old`,
           mcap && mcap > 0 ? `${fmtUsd(mcap)} mcap` : "no trades yet",
           liq !== null ? `${fmtUsd(liq)} liq` : null,
           ratio !== null ? `${ratio.toFixed(1)}x vol/mcap` : null,
-          `by @${str(creator.xUsername) || "unknown"}`,
-          repeat > 1 ? `⚠️ ${repeat} launches this wallet — ${str(creator.profileUrl)}` : null,
+          `by @${clean(creator.xUsername, 24) || "unknown"}`,
+          repeat > 1 ? `⚠️ ${repeat} launches this wallet — ${clean(creator.profileUrl, 96)}` : null,
           risk ? `${str(risk.label)} risk` : "not indexed yet",
           `CA ${str(l.address)}`,
-          str(links.geckoterminal) || null,
+          clean(links.geckoterminal, 96) || null,
         ].filter(Boolean);
         return parts.join(" · ");
       });
@@ -354,7 +367,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
       if (!rows.length) return `No active token approvals found for ${short(str(c.address))} in the last ${days} days.`;
       const lines = rows.map((r) => {
         const allowance = r.unlimited ? "UNLIMITED" : str(r.allowanceDisplay);
-        return `${str(r.tokenSymbol)} → ${short(str(r.spender))} on ${str(r.chainName)}: ${allowance} allowance${r.unlimited ? " ⚠️" : ""}`;
+        return `${clean(r.tokenSymbol, 16)} → ${short(str(r.spender))} on ${clean(r.chainName, 24)}: ${allowance} allowance${r.unlimited ? " ⚠️" : ""}`;
       });
       return `Active approvals for ${short(str(c.address))} (last ${days} days):\n\n${lines.join("\n")}`;
     }
@@ -367,8 +380,8 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
         const contraAsset = (o.contraAsset ?? {}) as Card;
         const status = str(o.status).replace("ORDER_STATUS_", "").replace(/_/g, " ").toLowerCase() || "unknown";
         const qtyLine = o.side === "buy"
-          ? `${str(o.qty)} ${str(contraAsset.ticker)} → ${str(targetAsset.ticker)}`
-          : `${str(o.qty)} ${str(targetAsset.ticker)} → ${str(contraAsset.ticker)}`;
+          ? `${str(o.qty)} ${clean(contraAsset.ticker, 16)} → ${clean(targetAsset.ticker, 16)}`
+          : `${str(o.qty)} ${clean(targetAsset.ticker, 16)} → ${clean(contraAsset.ticker, 16)}`;
         return `${str(o.side)} ${str(o.orderType)} · ${qtyLine} · ${status} · id ${str(o.orderId).slice(0, 8)}`;
       });
       return `Flash orders for ${short(str(c.address))}:\n\n${lines.join("\n")}`;
