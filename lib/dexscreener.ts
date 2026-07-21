@@ -7,8 +7,12 @@ export interface DexPair {
   dexId: string;
   pairAddress: string;
   baseToken: { address: string; name: string; symbol: string };
-  quoteToken: { symbol: string };
+  // address/name confirmed present in the live API response (2026-07-21, $REAL
+  // on robinhood) — optional here because older cached fixtures may lack them.
+  quoteToken: { address?: string; name?: string; symbol: string };
   priceUsd?: string;
+  // Price in quote-token units (e.g. REAL priced in NVDA for a REAL/NVDA pool).
+  priceNative?: string;
   volume: { h24: number; h6: number; h1: number };
   priceChange: { h24: number; h6: number; h1: number };
   liquidity?: { usd: number };

@@ -99,7 +99,21 @@
       "paywall": "Paywall card failed to render.",
       "price": "Price chart failed to render.",
       "approvalScan": "Approval scan failed to render.",
-      "flashOrders": "Flash orders failed to render."
+      "flashOrders": "Flash orders failed to render.",
+      "stockPaired": "Stock-paired card failed to render."
+    },
+    "stockPaired": {
+      "verified": "registry-verified",
+      "unverified": "quote token unverified",
+      "pairedWith": "Primary pool quotes against tokenized {stock} — trading fees accrue in {stock}",
+      "ratio": "Ratio",
+      "lastClose": "last close",
+      "noFeed": "no live price feed",
+      "poolLiquidity": "Pool liquidity",
+      "flywheelTitle": "Fee flywheel — estimated",
+      "dailyEst": "Est. daily creator fees",
+      "sinceLaunch": "Since launch (~{days}d)",
+      "estimateNote": "Estimated from trading volume — based on standard Doppler launch parameters (0.7% fee, 95% creator share), not an exact unclaimed balance."
     },
     "noFundsDetected": "No funds detected on this chain",
     "fundWalletArrow": "Fund Wallet →",

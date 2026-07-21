@@ -126,6 +126,7 @@ type TokenRiskResult = {
   };
   analysis?: string;
   pick?: boolean;
+  stockPaired?: StockPairedItemT;
 };
 
 type YieldPool = {
@@ -179,6 +180,7 @@ type PrebuyResult = {
   quote: QuoteResult | null;
   quoteUnavailable: string | null;
   analysis?: string;
+  stockPaired?: StockPairedItemT;
 };
 
 type RobinhoodLaunchCard = {
@@ -201,6 +203,19 @@ type RobinhoodLaunchesResult = {
   launches: RobinhoodLaunchCard[];
   omittedCount: number;
 };
+type StockPairedItemT = {
+  tokenSymbol: string; tokenAddress: string;
+  stockSymbol: string; stockTokenAddress: string | null; stockVerified: boolean;
+  priceInStockTerms: string | null; tokenPriceUsd: string | null;
+  pairAddress: string; pairLiquidityUsd: number; pairVolume24hUsd: number;
+  pairCreatedAt: number | null; pairUrl: string;
+  stockPriceUsd: number | null; stockPriceStale: boolean;
+  dailyStockValueEstimate: number | null; dailyStockTokensEstimate: number | null;
+  totalAccumulatedEstimate: number | null; daysOld: number | null;
+  isEstimate: true;
+};
+type StockPairedResult = { type: "stock_paired"; mode: "single" | "list"; heading: string; note: string; items: StockPairedItemT[] };
+
 type ApprovalRow = {
   chainId: number;
   chainName: string;
@@ -229,7 +244,7 @@ type FlashOrder = {
 };
 type FlashOrdersResult = { type: "flash_orders"; address: string; orders: FlashOrder[] };
 
-type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult | RobinhoodLaunchesResult | ApprovalScanResult | FlashOrdersResult;
+type AssistantResult = QuoteResult | TextResult | PriceResult | ErrorResult | RebalanceResult | TxResult | AddressResult | TokenRiskResult | YieldPoolsResult | PolymarketResult | SuggestionsResult | IntelResult | PaywallResult | PayResult | PaymentsResult | AeonResult | X402CheckResult | PrebuyResult | RobinhoodLaunchesResult | ApprovalScanResult | FlashOrdersResult | StockPairedResult;
 type Message = { role: "user"; text: string } | { role: "assistant"; result: AssistantResult };
 type Session = { id: string; title: string; messages: Message[] };
 type TxRecord = { hash: string; chainId: number; chain: string; label: string; timestamp: number; explorerUrl: string };
@@ -1456,9 +1471,19 @@ export default function AppPage() {
                         <TokenRiskDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
+                    {msg.result.type === "token_risk" && msg.result.stockPaired && (
+                      <ErrorBoundary label={t("errorBoundary.stockPaired")}>
+                        <StockPairedDisplay result={{ type: "stock_paired", mode: "single", heading: "", note: "", items: [msg.result.stockPaired] }} />
+                      </ErrorBoundary>
+                    )}
                     {msg.result.type === "prebuy" && (
                       <ErrorBoundary label={t("errorBoundary.prebuy")}>
                         <PrebuyDisplay result={msg.result} connectedAddress={connectedAddress} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "prebuy" && msg.result.stockPaired && (
+                      <ErrorBoundary label={t("errorBoundary.stockPaired")}>
+                        <StockPairedDisplay result={{ type: "stock_paired", mode: "single", heading: "", note: "", items: [msg.result.stockPaired] }} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "yield_pools" && (
@@ -1492,6 +1517,11 @@ export default function AppPage() {
                     {msg.result.type === "robinhood_launches" && (
                       <ErrorBoundary label={t("errorBoundary.robinhoodLaunches")}>
                         <RobinhoodLaunchesDisplay result={msg.result} />
+                      </ErrorBoundary>
+                    )}
+                    {msg.result.type === "stock_paired" && (
+                      <ErrorBoundary label={t("errorBoundary.stockPaired")}>
+                        <StockPairedDisplay result={msg.result} />
                       </ErrorBoundary>
                     )}
                     {msg.result.type === "approval_scan" && (
@@ -5054,6 +5084,131 @@ function PrebuyDisplay({ result, connectedAddress }: { result: PrebuyResult; con
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── StockPairedDisplay ───────────────────────────────────────────────────────
+// Stock-paired token card (Robinhood Chain): which tokenized stock the token's
+// primary pool quotes against, the token/stock price ratio, and the estimated
+// creator fee flywheel. Everything USD-derived is an estimate from trading
+// volume (standard Doppler parameters) and labeled as such — never presented
+// as an exact unclaimed balance. Standalone like the other card components:
+// CSS --card-* vars only, no access to the T theme object.
+
+function StockPairedDisplay({ result }: { result: StockPairedResult }) {
+  const t = useTranslations("app.stockPaired");
+  const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
+  const fmtUsd = (x: number): string => {
+    const a = Math.abs(x);
+    const s = a >= 1e9 ? `${(a / 1e9).toFixed(2)}B` : a >= 1e6 ? `${(a / 1e6).toFixed(2)}M`
+      : a >= 1e3 ? `${(a / 1e3).toFixed(1)}K` : a >= 1 ? a.toFixed(2) : a.toPrecision(3);
+    return `$${s}`;
+  };
+
+  return (
+    <div style={{
+      background: "var(--card-container-bg, #0D0D0D)",
+      border: "1px solid var(--card-border, rgba(255,255,255,0.09))",
+      borderRadius: 16, overflow: "hidden", maxWidth: 440,
+    }}>
+      {result.heading && (
+        <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
+          <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", textTransform: "uppercase" }}>
+            {result.heading}
+          </span>
+        </div>
+      )}
+
+      {result.items.map((it) => (
+        <div key={`${it.tokenAddress}-${it.stockSymbol}`} style={{ padding: "14px 16px", borderBottom: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
+          {/* Pairing headline */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, rgba(255,255,255,0.9))" }}>
+              {it.tokenSymbol}
+            </span>
+            <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>⇄</span>
+            <span style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "#F5B800" }}>
+              {it.stockSymbol}
+            </span>
+            <span style={{
+              ...MONO, fontSize: "0.58rem", padding: "2px 7px", borderRadius: 4,
+              border: `1px solid ${it.stockVerified ? "rgba(74,222,128,0.35)" : "rgba(245,184,0,0.4)"}`,
+              color: it.stockVerified ? "rgba(74,222,128,0.9)" : "rgba(245,184,0,0.9)",
+            }}>
+              {it.stockVerified ? t("verified") : t("unverified")}
+            </span>
+          </div>
+          <p style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))", margin: "6px 0 0" }}>
+            {t("pairedWith", { stock: it.stockSymbol })}
+          </p>
+
+          {/* Ratio + prices */}
+          <div style={{ margin: "10px 0 0", padding: "10px 12px", background: "var(--card-bg)", border: "1px solid var(--card-border-faint)", borderRadius: 10 }}>
+            {it.priceInStockTerms && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("ratio")}</span>
+                <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>
+                  1 {it.tokenSymbol} = {it.priceInStockTerms} {it.stockSymbol}
+                </span>
+              </div>
+            )}
+            {it.tokenPriceUsd && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{it.tokenSymbol}</span>
+                <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>${it.tokenPriceUsd}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+              <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{it.stockSymbol}</span>
+              <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>
+                {it.stockPriceUsd !== null
+                  ? `${fmtUsd(it.stockPriceUsd)}${it.stockPriceStale ? ` · ${t("lastClose")}` : ""}`
+                  : t("noFeed")}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+              <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("poolLiquidity")}</span>
+              <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>{fmtUsd(it.pairLiquidityUsd)}</span>
+            </div>
+          </div>
+
+          {/* Fee flywheel — only when the stock has a live USD feed */}
+          {it.dailyStockValueEstimate !== null && (
+            <div style={{ margin: "8px 0 0", padding: "10px 12px", background: "rgba(245,184,0,0.05)", border: "1px solid rgba(245,184,0,0.18)", borderRadius: 10 }}>
+              <p style={{ ...MONO, fontSize: "0.56rem", letterSpacing: "0.1em", color: "rgba(245,184,0,0.7)", margin: "0 0 6px", textTransform: "uppercase" }}>
+                {t("flywheelTitle")}
+              </p>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
+                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("dailyEst")}</span>
+                <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>
+                  ~{fmtUsd(it.dailyStockValueEstimate)}/d
+                  {it.dailyStockTokensEstimate !== null ? ` (~${it.dailyStockTokensEstimate.toFixed(2)} ${it.stockSymbol}/d)` : ""}
+                </span>
+              </div>
+              {it.totalAccumulatedEstimate !== null && it.daysOld !== null && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
+                  <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("sinceLaunch", { days: it.daysOld.toFixed(1) })}</span>
+                  <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>~{fmtUsd(it.totalAccumulatedEstimate)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <a href={it.pairUrl} target="_blank" rel="noopener noreferrer"
+               style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>
+              dexscreener ↗
+            </a>
+          </div>
+        </div>
+      ))}
+
+      <div style={{ padding: "9px 16px" }}>
+        <p style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0, lineHeight: 1.5 }}>
+          {result.note || t("estimateNote")}
+        </p>
+      </div>
     </div>
   );
 }
