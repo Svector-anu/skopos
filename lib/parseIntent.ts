@@ -35,11 +35,23 @@ export function classifyIntent(input: string): IntentType {
   // equity ticker is unaffected — none of their exec-verb-adjacent phrasings
   // are real swap/bridge commands, so this carve-out only needs to cover
   // this one now-ambiguous word.
-  if (hasExecVerb && hasAmount && /\b(hood|robinhood)\b/i.test(t)) return "execution";
+  //
+  // No amount required when "robinhood" is clearly the chain: "i wanna swap
+  // to robinhood" was leaking into a HOOD stock-price card (live user
+  // report) because the old carve-out demanded a number. A to/on/from
+  // preposition or the words "robinhood chain" mark chain context; bare
+  // "hood" still requires an amount, since "hood" alone is the stock.
+  const robinhoodAsChain =
+    /\brobinhood\s+chain\b/i.test(t) ||
+    /\b(?:to|on|onto|into|from)\s+(?:the\s+)?robinhood\b/i.test(t);
+  if (hasExecVerb && (robinhoodAsChain || (hasAmount && /\b(hood|robinhood)\b/i.test(t)))) return "execution";
 
   // Equity — the stocks we have verified Pyth feed IDs for (route.ts maps the
   // ticker → feed). "coin" is excluded (too crypto-ambiguous); "coinbase" only.
-  if (/\b(aapl|apple|msft|microsoft|hood|robinhood|nvda|nvidia|tsla|tesla|googl|google|meta|amzn|amazon|coinbase|spy|qqq|mstr|microstrategy|amd|pltr|palantir|nflx|netflix|mara|marathon|riot|sofi|pypl|paypal|dis|disney|jpm|jpmorgan|baba|alibaba|intc|avgo|broadcom|uber|crm|salesforce|orcl|smci|supermicro|arkk)\b/i.test(t)) return "equity";
+  // "robinhood chain" is neutralized first — the phrase names the chain, never
+  // the stock, so "tokens on robinhood chain" must not become a HOOD price.
+  const tEquity = t.replace(/\brobinhood\s+chain\b/gi, " ");
+  if (/\b(aapl|apple|msft|microsoft|hood|robinhood|nvda|nvidia|tsla|tesla|googl|google|meta|amzn|amazon|coinbase|spy|qqq|mstr|microstrategy|amd|pltr|palantir|nflx|netflix|mara|marathon|riot|sofi|pypl|paypal|dis|disney|jpm|jpmorgan|baba|alibaba|intc|avgo|broadcom|uber|crm|salesforce|orcl|smci|supermicro|arkk)\b/i.test(tEquity)) return "equity";
 
   // Token launch — a deploy verb plus an explicit token noun or a $ticker.
   // Requires both so "launch the dashboard" never trips it.

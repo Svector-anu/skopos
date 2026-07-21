@@ -2279,6 +2279,48 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // ── Robinhood Chain explainer + guided swap ask ────────────────────────────
+  // Both intercept BEFORE the equity block: classifyIntent sees "robinhood"
+  // and, absent chain context, calls these "equity" — live users got a HOOD
+  // stock-price card for "do you know robinhood" and "i wanna swap to
+  // robinhood". The price/stock guard keeps genuine stock asks ("what is
+  // robinhood stock trading at") on the equity path.
+  if (
+    /\b(?:do\s+you\s+know|do\s+you\s+support|what(?:'s|\s+is)|tell\s+me\s+about|explain)\b[\s\S]{0,30}\brobinhood(?:\s+chain)?\b/i.test(trimmed) &&
+    !/\b(?:price|stock|share|ticker|market\s*cap|trading\s+at)\b/i.test(trimmed)
+  ) {
+    return json({
+      type: "text",
+      text:
+        `Yes — Robinhood Chain (chain 4663) is Robinhood's own L2, where tokenized stocks and memecoins trade onchain. Here's what I can do there:\n\n` +
+        `• **Swap natively** — "swap 10 USDG to ETH on robinhood" (live Flash quotes, you sign everything)\n` +
+        `• **Buy tokenized stocks** — "buy $10 of NVDA on robinhood" (24 registry-verified stocks & ETFs)\n` +
+        `• **Advanced orders** — "sell 2 NVDA if it drops below $400" (limit / stop-loss / take-profit / TWAP)\n` +
+        `• **Bridge in or out** — "bridge 0.05 ETH from base to robinhood chain"\n` +
+        `• **Launch feed** — "what's launching on robinhood chain" (risk-scanned, deployer history)\n` +
+        `• **Token safety & stock-paired intel** — "is CASHCAT safe", "fee flywheel for $REAL"\n\n` +
+        `Non-custodial end to end — I never touch your funds.`,
+    });
+  }
+
+  // Exec verb + robinhood destination + no amount → chain-correct ask instead
+  // of the generic "swap 100 USDC to ETH on base" nudge (or worse, the HOOD
+  // price card the old classification produced).
+  if (
+    /\b(?:swap|bridge|move|send|convert|transfer)\b/i.test(trimmed) &&
+    /\b(?:to|on|onto|into)\s+(?:the\s+)?robinhood\b/i.test(trimmed) &&
+    !/\d/.test(trimmed)
+  ) {
+    return json({
+      type: "text",
+      text:
+        `Which token, and how much? On Robinhood Chain I can:\n\n` +
+        `• swap — "swap 10 USDG to ETH on robinhood"\n` +
+        `• bridge in first — "bridge 0.05 ETH from base to robinhood chain"\n` +
+        `• buy a tokenized stock — "buy $10 of NVDA on robinhood"`,
+    });
+  }
+
   // ── Stock-paired token intelligence (Robinhood Chain) ──────────────────────
   // Tokens whose primary pool quotes against a tokenized stock (REAL/NVDA)
   // instead of USDG/WETH. Three intents, all placed BEFORE the price fast-path
