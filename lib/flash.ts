@@ -42,10 +42,19 @@ const NATIVE_ETH_SENTINEL = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 // ~$1.00-$1.003, and Robinhood Chain's own block explorer independently
 // confirms it as "Global Dollar" / "USDG" (2026-07-20).
 const RH_USDG_ADDRESS = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+// $SKOPOS on Robinhood Chain — our own token, address supplied by the owner
+// and cross-checked on DexScreener (2026-07-21): primary pool is
+// SKOPOS/NVDA, quote side matching the registry-verified NVDA address in
+// RH_STOCK_TOKENS. Pinned for the same reason USDG is: ticker impersonation
+// is rampant on this chain, and a DexScreener symbol search could resolve
+// "SKOPOS" to a copycat. Distinct from the Base $skopos
+// (SKOPOS_TOKEN_ADDRESS, holder gating) — different chain, different token.
+const RH_SKOPOS_ADDRESS = "0xdcECe5c95adaBcd1cDB48b167a5758a440459Ba3";
 const RH_ADDRESS_ALIASES: Record<string, string> = {
   ETH: NATIVE_ETH_SENTINEL,
   WETH: NATIVE_ETH_SENTINEL,
   USDG: RH_USDG_ADDRESS,
+  SKOPOS: RH_SKOPOS_ADDRESS,
 };
 
 // Robinhood Chain's canonical L2 WETH, from

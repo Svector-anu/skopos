@@ -2298,7 +2298,8 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         `• **Advanced orders** — "sell 2 NVDA if it drops below $400" (limit / stop-loss / take-profit / TWAP)\n` +
         `• **Bridge in or out** — "bridge 0.05 ETH from base to robinhood chain"\n` +
         `• **Launch feed** — "what's launching on robinhood chain" (risk-scanned, deployer history)\n` +
-        `• **Token safety & stock-paired intel** — "is CASHCAT safe", "fee flywheel for $REAL"\n\n` +
+        `• **Token safety & stock-paired intel** — "is CASHCAT safe", "fee flywheel for $REAL"\n` +
+        `• **$SKOPOS trades here too** — NVDA-paired: "buy $10 of SKOPOS on robinhood", "fee flywheel for $SKOPOS"\n\n` +
         `Non-custodial end to end — I never touch your funds.`,
     });
   }
