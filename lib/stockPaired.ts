@@ -30,11 +30,19 @@ export const DOPPLER_FEE_RATE = 0.007;
 export const DOPPLER_CREATOR_SHARE = 0.95;
 
 export interface StockPairing {
+  // The traded token's symbol as the pool reports it — authoritative when the
+  // user queried by address, where the caller has no symbol to pass in.
+  baseSymbol: string;
   stockSymbol: string;
   stockTokenAddress: string | null;
   // quoteToken.address matches Robinhood's own registry entry for this ticker
   // — a same-symbol impersonator pool fails this check.
   stockVerified: boolean;
+  // The traded token itself is named after an equity ticker but is NOT that
+  // ticker's registry token. Verification covers the quote side only, so
+  // without this a "NVDA ⇄ TSLA · registry-verified" card reads as if the
+  // impersonator were blessed.
+  tokenImpersonatesTicker: boolean;
   priceInStockTerms: string | null; // DexScreener priceNative — token priced in stock units
   tokenPriceUsd: string | null;
   pairAddress: string;
@@ -86,11 +94,21 @@ export function detectStockPairing(pairs: DexPair[]): StockPairing | null {
 
   const registryAddress = RH_STOCK_TOKENS[stockSymbol] ?? null;
   const quoteAddress = top.quoteToken.address ?? null;
+
+  const baseSymbol = top.baseToken?.symbol?.toUpperCase() ?? "";
+  const baseRegistryAddress = RH_STOCK_TOKENS[baseSymbol] ?? null;
+  const tokenImpersonatesTicker =
+    STOCK_PAIR_TICKERS.includes(baseSymbol) &&
+    !(baseRegistryAddress && top.baseToken?.address &&
+      baseRegistryAddress.toLowerCase() === top.baseToken.address.toLowerCase());
+
   return {
+    baseSymbol,
     stockSymbol,
     stockTokenAddress: quoteAddress,
     stockVerified: !!(registryAddress && quoteAddress &&
       registryAddress.toLowerCase() === quoteAddress.toLowerCase()),
+    tokenImpersonatesTicker,
     priceInStockTerms: top.priceNative ?? null,
     tokenPriceUsd: top.priceUsd ?? null,
     pairAddress: top.pairAddress,
@@ -140,7 +158,13 @@ export async function buildStockPairedItem(
   const pairing = detectStockPairing(pairs);
   if (!pairing) return null;
   const estimates = await buildEstimates(pairing);
-  return { tokenSymbol: tokenSymbol.toUpperCase(), tokenAddress, isEstimate: true, ...pairing, ...estimates };
+  // Address queries pass the address itself as the symbol — the pool knows the
+  // real one.
+  const querySymbol = tokenSymbol.trim();
+  const resolvedSymbol = /^0x[0-9a-f]{40}$/i.test(querySymbol)
+    ? pairing.baseSymbol || querySymbol
+    : querySymbol.toUpperCase();
+  return { tokenSymbol: resolvedSymbol, tokenAddress, isEstimate: true, ...pairing, ...estimates };
 }
 
 // Cheap detection off an already-fetched top pair (scanToken's topPair) — used

@@ -110,6 +110,8 @@
       "lastClose": "last close",
       "noFeed": "no live price feed",
       "poolLiquidity": "Pool liquidity",
+      "liquidityNotIndexed": "not indexed yet",
+      "impersonationWarning": "⚠︎ {token} is named after an equity ticker but is not the Robinhood-issued token. Verification above covers the quote side only — treat this token's name as decoration.",
       "flywheelTitle": "Fee flywheel — estimated",
       "dailyEst": "Est. daily creator fees",
       "sinceLaunch": "Since launch (~{days}d)",

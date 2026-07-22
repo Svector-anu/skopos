@@ -368,6 +368,9 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
         const tok = clean(it.tokenSymbol, 16) || "?";
         const stock = clean(it.stockSymbol, 16) || "?";
         const verified = it.stockVerified ? "" : " (quote token NOT verified against Robinhood's registry)";
+        const impersonation = it.tokenImpersonatesTicker
+          ? ` WARNING: ${tok} is named after an equity ticker but is NOT the Robinhood-issued ${tok} token — verification covers the ${stock} quote side only`
+          : "";
         const ratio = str(it.priceInStockTerms);
         const px = num(it.stockPriceUsd);
         const daily = num(it.dailyStockValueEstimate);
@@ -375,7 +378,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
         const total = num(it.totalAccumulatedEstimate);
         const days = num(it.daysOld);
         const parts = [
-          `${tok} is paired against ${stock}${verified}`,
+          `${tok} is paired against ${stock}${verified}${impersonation}`,
           ratio ? `1 ${tok} = ${ratio} ${stock}` : null,
           px !== null ? `${stock} ${fmtUsd(px)}` : `no live ${stock} price feed`,
           daily !== null ? `est. fees to creator ~${fmtUsd(daily)}/day${dailyTok !== null ? ` (~${dailyTok.toFixed(2)} ${stock}/day)` : ""}` : null,

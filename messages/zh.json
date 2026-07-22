@@ -110,6 +110,8 @@
       "lastClose": "收盘价",
       "noFeed": "暂无实时价格",
       "poolLiquidity": "池流动性",
+      "liquidityNotIndexed": "尚未收录",
+      "impersonationWarning": "⚠︎ {token} 以股票代码命名，但并非 Robinhood 官方发行的代币。上方验证仅涵盖报价代币一侧 — 请将该代币名称视为无实质意义。",
       "flywheelTitle": "费用飞轮 — 估算",
       "dailyEst": "创建者日费用估算",
       "sinceLaunch": "自启动以来（约{days}天）",

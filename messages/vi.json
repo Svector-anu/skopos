@@ -110,6 +110,8 @@
       "lastClose": "giá đóng cửa",
       "noFeed": "chưa có giá trực tiếp",
       "poolLiquidity": "Thanh khoản pool",
+      "liquidityNotIndexed": "chưa được lập chỉ mục",
+      "impersonationWarning": "⚠︎ {token} được đặt tên theo mã cổ phiếu nhưng không phải token do Robinhood phát hành. Xác minh ở trên chỉ áp dụng cho token định giá — hãy xem tên token này là vô nghĩa.",
       "flywheelTitle": "Bánh đà phí — ước tính",
       "dailyEst": "Phí ước tính mỗi ngày cho người tạo",
       "sinceLaunch": "Từ khi ra mắt (~{days} ngày)",

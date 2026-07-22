@@ -206,6 +206,7 @@ type RobinhoodLaunchesResult = {
 type StockPairedItemT = {
   tokenSymbol: string; tokenAddress: string;
   stockSymbol: string; stockTokenAddress: string | null; stockVerified: boolean;
+  tokenImpersonatesTicker?: boolean;
   priceInStockTerms: string | null; tokenPriceUsd: string | null;
   pairAddress: string; pairLiquidityUsd: number; pairVolume24hUsd: number;
   pairCreatedAt: number | null; pairUrl: string;
@@ -354,11 +355,11 @@ const HORIZON_PILLS: { key: string; label: string; prompt: string; soon?: boolea
   { key: "robinhoodLaunches", label: "robinhood launches", prompt: "what's launching on robinhood chain" },
   { key: "polymarket",        label: "polymarket",       prompt: "what are the current odds ETH hits $5k this year?" },
   { key: "yieldScanner",      label: "yield scanner",    prompt: "find the highest yield for USDC on base" },
+  { key: "limitOrders",       label: "limit orders",     prompt: "buy $500 of ETH at $1800 on arbitrum" },
+  { key: "onchainMcp",        label: "on-chain MCP",     prompt: "connect skopos to my claude desktop via MCP" },
   { key: "agentMode",         label: "agent mode",       prompt: "set up an agent to DCA $20 into ETH every week on base", soon: true },
-  { key: "limitOrders",       label: "limit orders",     prompt: "buy 0.05 ETH when price drops to $2800 on arbitrum",     soon: true },
   { key: "offrampCard",       label: "offramp to card",  prompt: "cash out 200 USDC to my debit card",                     soon: true },
   { key: "deepResearch",      label: "deep research",    prompt: "compare gas costs across all supported bridges for 1 ETH", soon: true },
-  { key: "onchainMcp",        label: "on-chain MCP",     prompt: "connect skopos to my claude desktop via MCP",            soon: true },
   { key: "whaleSignals",      label: "whale signals",    prompt: "show me what top wallets are bridging this week",         soon: true },
 ];
 
@@ -5143,6 +5144,17 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
             {t("pairedWith", { stock: it.stockSymbol })}
           </p>
 
+          {it.tokenImpersonatesTicker && (
+            <p style={{
+              ...MONO, fontSize: "0.63rem", lineHeight: 1.45, margin: "8px 0 0",
+              padding: "7px 10px", borderRadius: 8,
+              background: "rgba(248,113,113,0.07)", border: "1px solid rgba(248,113,113,0.28)",
+              color: "rgba(248,113,113,0.92)",
+            }}>
+              {t("impersonationWarning", { token: it.tokenSymbol })}
+            </p>
+          )}
+
           {/* Ratio + prices */}
           <div style={{ margin: "10px 0 0", padding: "10px 12px", background: "var(--card-bg)", border: "1px solid var(--card-border-faint)", borderRadius: 10 }}>
             {it.priceInStockTerms && (
@@ -5169,7 +5181,9 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
               <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("poolLiquidity")}</span>
-              <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>{fmtUsd(it.pairLiquidityUsd)}</span>
+              <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>
+                {it.pairLiquidityUsd > 0 ? fmtUsd(it.pairLiquidityUsd) : t("liquidityNotIndexed")}
+              </span>
             </div>
           </div>
 
