@@ -42,6 +42,7 @@ import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled, fetchSmartMoneyServer } from "@/lib/smartMoneyServer";
 import { getRecentRobinhoodLaunches, robinhoodFeedEnabled, MAX_LIMIT, scanRobinhoodLaunchRisk } from "@/lib/robinhoodLaunches";
 import { discoverX402Endpoint } from "@/lib/x402Discover";
+import { findFundingChains, type FundingScan } from "@/lib/flashChainPicker";
 import { buildStockPairedItem, findStockPairedTokens, topPairLooksStockPaired, STOCK_PAIR_TICKERS, type StockPairedItem } from "@/lib/stockPaired";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
@@ -237,7 +238,10 @@ export type LegOk = {
   raw: unknown;
 };
 
-export type LegErr = { ok: false; text: string };
+// `ask` marks a result that is a question to the user rather than a failure —
+// missing information, not something that went wrong. Callers render it as a
+// normal reply instead of an error card.
+export type LegErr = { ok: false; text: string; ask?: true };
 
 const SOLANA_CHAIN_ID = 1000000001;
 
@@ -935,6 +939,60 @@ const FLASH_NATIVE_WRAP_SYMBOL: Record<FlashChain, string | undefined> = {
   solana: undefined, hyperevm: undefined, plasma: undefined, monad: undefined,
 };
 
+// A sell spends the token being sold; a buy spends the contra stablecoin,
+// which differs on Robinhood Chain (USDG) from everywhere else (USDC). Since
+// the stablecoin is chain-dependent and the chain is what we're trying to
+// determine, a buy checks USDC across the seven and lets Robinhood Chain be
+// covered by its own USDG entry.
+function fundingSymbolFor(order: FlashOrderIntent): string {
+  return order.side === "sell" ? order.token : "USDC";
+}
+
+async function pickOrderChain(
+  order: FlashOrderIntent,
+  senderAddress: string,
+): Promise<{ chainId: number } | { ask: string }> {
+  const symbol = fundingSymbolFor(order).toUpperCase();
+  const needed = parseFloat(order.qty);
+  let scan: FundingScan;
+  try {
+    scan = await findFundingChains(senderAddress, symbol, needed);
+  } catch {
+    return { ask: `I couldn't check your balances just now — which chain should this order use? e.g. "${restate(order)} on base".` };
+  }
+  const { funded, unreadable } = scan;
+
+  // One chain funded is an answer even if others couldn't be read: we know the
+  // order can be filled there.
+  if (funded.length === 1) return { chainId: funded[0].chainId };
+
+  if (funded.length === 0) {
+    return {
+      ask: unreadable > 0
+        ? `I couldn't read your balance on every chain, so I don't want to guess where to place this. Which chain? e.g. "${restate(order)} on base".`
+        : `You don't have ${order.qty} ${symbol} on any chain that supports advanced orders (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Robinhood Chain). Fund one of those, or name a chain to quote it anyway — e.g. "${restate(order)} on base".`,
+    };
+  }
+
+  const options = funded
+    .slice(0, 4)
+    .map((f) => `${f.chainName} (${f.balance.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${symbol})`)
+    .join(", ");
+  return {
+    ask: `You hold ${symbol} on more than one chain — ${options}. Which one should this order use? Add it to the end, e.g. "${restate(order)} on ${funded[0].chainName.toLowerCase().split(" ")[0]}".`,
+  };
+}
+
+// Short restatement of the order for the "add a chain" examples above, so the
+// suggestion the user is told to type is their own request plus a chain.
+function restate(order: FlashOrderIntent): string {
+  const sym = order.token.toUpperCase();
+  if (order.orderType === "twap") return `${order.side} ${order.qty} ${sym} over ${Math.round((order.durationSeconds ?? 86400) / 86400)} days`;
+  if (order.orderType === "stop-loss") return `sell ${order.qty} ${sym} if it drops below $${order.priceLevel}`;
+  if (order.orderType === "take-profit") return `sell ${order.qty} ${sym} when it hits $${order.priceLevel}`;
+  return `${order.side} ${order.qty} ${sym} at $${order.priceLevel}`;
+}
+
 export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddress?: string): Promise<FlashOrderLegOk | LegErr> {
   const parsedQty = parseFloat(order.qty);
   if (!isFinite(parsedQty) || parsedQty <= 0) {
@@ -944,7 +1002,18 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
     return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
   }
 
-  const chainId = order.chain ? resolveChainId(order.chain) : ROBINHOOD_CHAIN_ID;
+  // An unstated chain is resolved from the wallet's own balances rather than
+  // defaulting to Robinhood Chain, which was only ever correct while Flash
+  // support was Robinhood-only. Ambiguity is handed back to the caller as a
+  // question instead of being guessed at.
+  let chainId: number | null;
+  if (order.chain) {
+    chainId = resolveChainId(order.chain);
+  } else {
+    const picked = await pickOrderChain(order, senderAddress);
+    if ("ask" in picked) return { ok: false, text: picked.ask, ask: true };
+    chainId = picked.chainId;
+  }
   if (!chainId) {
     return { ok: false, text: `I don't recognize "${order.chain}" as a chain.` };
   }
@@ -1927,7 +1996,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         return json({ type: "text", text: orderParse.ask });
       }
       const result = await resolveFlashOrderLeg(orderParse.order, senderAddress);
-      if (!result.ok) return json({ type: "error", text: result.text });
+      if (!result.ok) return json({ type: result.ask ? "text" : "error", text: result.text });
       return json({
         type: "quote", mode: "preview", quotedAt: Date.now(),
         intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
