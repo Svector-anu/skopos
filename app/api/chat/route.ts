@@ -42,7 +42,7 @@ import { fetchWebContext, extractUrl } from "@/lib/intel";
 import { agentPaidEnabled, fetchSmartMoneyServer } from "@/lib/smartMoneyServer";
 import { getRecentRobinhoodLaunches, robinhoodFeedEnabled, MAX_LIMIT, scanRobinhoodLaunchRisk } from "@/lib/robinhoodLaunches";
 import { discoverX402Endpoint } from "@/lib/x402Discover";
-import { buildStockPairedItem, topPairLooksStockPaired, STOCK_PAIR_TICKERS, type StockPairedItem } from "@/lib/stockPaired";
+import { buildStockPairedItem, findStockPairedTokens, topPairLooksStockPaired, STOCK_PAIR_TICKERS, type StockPairedItem } from "@/lib/stockPaired";
 import { parseTimeframe } from "@/lib/timeframe";
 import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
 import { sanitizeForPrompt } from "@/lib/sanitizeForPrompt";
@@ -2366,34 +2366,21 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   }
 
   // "show stock-paired tokens" / "research stock-paired tokens on robinhood"
+  // Scans the whole chain (every registry stock token's pools), not the launch
+  // feed — anything that launched more than ~30 minutes ago, REAL and SKOPOS
+  // included, is invisible to a launch-feed sweep.
   if (/\bstock[\s-]?paired\b/i.test(trimmed) && /\b(?:tokens?|memecoins?|coins?|plays?)\b/i.test(trimmed)) {
-    if (!robinhoodFeedEnabled()) {
-      return json({ type: "error", text: "Stock-paired token discovery isn't configured right now." });
-    }
-    const launches = await getRecentRobinhoodLaunches(MAX_LIMIT);
-    if (!launches || launches.length === 0) {
-      return json({ type: "error", text: "Couldn't fetch Robinhood Chain launches right now — try again shortly." });
-    }
-    // Cheap pass first (scanRobinhoodLaunchRisk is cached, 60s TTL): find
-    // launches whose top pair quotes against an equity ticker, then build the
-    // full item only for those hits — never 25 full builds.
-    const risks = await Promise.all(launches.map((l) => scanRobinhoodLaunchRisk(l.address)));
-    const hits = launches.filter((_, i) => topPairLooksStockPaired(risks[i]?.topPair));
-    const items = (
-      await Promise.all(hits.map((l) => buildStockPairedItem(l.symbol, l.address)))
-    ).filter((x): x is StockPairedItem => x !== null)
-      .sort((a, b) => b.pairLiquidityUsd - a.pairLiquidityUsd);
-    const spanMinutes = Math.max(...launches.map((l) => l.ageMinutes));
+    const items = await findStockPairedTokens(12);
     if (items.length === 0) {
       return json({
         type: "text",
-        text: `No stock-paired tokens in the ${launches.length} most recent Robinhood Chain launches (spans the last ~${spanMinutes}m). This feed only sees recent launches — a known token can be checked directly: "fee flywheel for $REAL".`,
+        text: `Couldn't find any stock-paired tokens on Robinhood Chain right now — DexScreener may be rate-limiting. Try again shortly, or check a known one directly: "fee flywheel for $REAL".`,
       });
     }
     return json({
       type: "stock_paired",
       mode: "list",
-      heading: `Stock-paired tokens · ${items.length} of the last ${launches.length} launches`,
+      heading: `Stock-paired tokens · top ${items.length} by liquidity`,
       note: STOCK_PAIRED_ESTIMATE_NOTE,
       items,
     });

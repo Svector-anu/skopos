@@ -14,13 +14,13 @@ const BASE = "https://api.dexscreener.com";
 const ROBINHOOD_CHAIN_SLUG = "robinhood";
 
 // Equity tickers that count as a stock pairing when seen on the quote side.
-// Symbols, deliberately not addresses — easy to extend as Robinhood Chain
-// lists more stocks. Detection is symbol-based; address verification against
-// Robinhood's registry happens separately (stockVerified below).
-export const STOCK_PAIR_TICKERS: readonly string[] = [
-  "NVDA", "TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "META",
-  "SPY", "QQQ", "AMD", "COIN", "NFLX", "GME", "JPM", "MA", "BAC", "XOM",
-];
+// Derived from Robinhood's own registry so the two can't drift: a hand-kept
+// list had gone stale in both directions — it missed 14 tickers actually
+// trading on the chain (PLTR, INTC, ORCL, MU, CRCL…) and carried 6 that have
+// no token here at all. Detection stays symbol-based (an impersonator quote
+// token still gets detected, then fails stockVerified below); the registry is
+// only the source of which symbols count.
+export const STOCK_PAIR_TICKERS: readonly string[] = Object.keys(RH_STOCK_TOKENS);
 
 // Fee flywheel constants — based on standard Doppler launch parameters from
 // Bankr's published docs (0.7% pool fee, 95% to the creator). Individual
@@ -91,7 +91,10 @@ export function detectStockPairing(pairs: DexPair[]): StockPairing | null {
   if (!top?.quoteToken?.symbol) return null;
   const stockSymbol = top.quoteToken.symbol.toUpperCase();
   if (!STOCK_PAIR_TICKERS.includes(stockSymbol)) return null;
+  return pairingFromPair(top, stockSymbol);
+}
 
+function pairingFromPair(top: DexPair, stockSymbol: string): StockPairing {
   const registryAddress = RH_STOCK_TOKENS[stockSymbol] ?? null;
   const quoteAddress = top.quoteToken.address ?? null;
 
@@ -165,6 +168,107 @@ export async function buildStockPairedItem(
     ? pairing.baseSymbol || querySymbol
     : querySymbol.toUpperCase();
   return { tokenSymbol: resolvedSymbol, tokenAddress, isEstimate: true, ...pairing, ...estimates };
+}
+
+// ─── Chain-wide discovery ─────────────────────────────────────────────────────
+// Asking DexScreener for a stock token's pairs returns the pools that quote
+// against it — i.e. the stock-paired tokens themselves. One call per registry
+// ticker covers the chain, instead of the launch feed's 25-token / ~30-minute
+// window, which structurally can't see anything that launched earlier (REAL
+// and SKOPOS included).
+
+const CHAIN_WIDE_TTL_MS = 5 * 60_000;
+const DISCOVERY_CONCURRENCY = 6;
+// DexScreener returns at most 30 pairs per token, liquidity-ranked, so a very
+// busy stock token's thinnest pools can fall off the end. Deep pools — the
+// ones worth surfacing — are unaffected.
+const VERIFY_CANDIDATES = 18;
+
+let chainWideCache: { at: number; items: StockPairedItem[] } | null = null;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// Pairs quoting against one registry stock token, on Robinhood Chain, with the
+// quote address matching the registry — an impersonator "NVDA" pool can't
+// smuggle its tokens into the chain-wide list.
+async function pairsQuotedAgainst(stockAddress: string): Promise<DexPair[]> {
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(`${BASE}/latest/dex/tokens/${stockAddress}`);
+  } catch {
+    return [];
+  }
+  if (!res.ok) return [];
+  let data: { pairs?: DexPair[] };
+  try {
+    data = await res.json();
+  } catch {
+    return [];
+  }
+  return (data.pairs ?? []).filter(
+    (p) =>
+      p.chainId === ROBINHOOD_CHAIN_SLUG &&
+      (p.quoteToken?.address ?? "").toLowerCase() === stockAddress.toLowerCase(),
+  );
+}
+
+// Every stock-paired token on Robinhood Chain, liquidity-descending. Candidates
+// come from the stock tokens' own pair lists; each survivor is then re-checked
+// through buildStockPairedItem, which reads that token's *primary* pool — a
+// token with a deep USDG pool and a shallow NVDA one is not stock-paired by the
+// card's own definition, and gets dropped rather than shown with a headline it
+// doesn't earn.
+export async function findStockPairedTokens(limit = 12): Promise<StockPairedItem[]> {
+  const cached = chainWideCache;
+  if (cached && Date.now() - cached.at < CHAIN_WIDE_TTL_MS) {
+    return cached.items.slice(0, limit);
+  }
+
+  const registry = Object.entries(RH_STOCK_TOKENS);
+  const perStock = await mapWithConcurrency(registry, DISCOVERY_CONCURRENCY, ([, addr]) =>
+    pairsQuotedAgainst(addr),
+  );
+
+  const bestByToken = new Map<string, DexPair>();
+  for (const pair of perStock.flat()) {
+    const key = pair.baseToken?.address?.toLowerCase();
+    if (!key) continue;
+    const existing = bestByToken.get(key);
+    if (!existing || (pair.liquidity?.usd ?? 0) > (existing.liquidity?.usd ?? 0)) {
+      bestByToken.set(key, pair);
+    }
+  }
+
+  const candidates = [...bestByToken.values()]
+    .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))
+    .slice(0, VERIFY_CANDIDATES);
+
+  const items = (
+    await mapWithConcurrency(candidates, DISCOVERY_CONCURRENCY, (p) =>
+      buildStockPairedItem(p.baseToken.symbol, p.baseToken.address),
+    )
+  )
+    .filter((x): x is StockPairedItem => x !== null)
+    .sort((a, b) => b.pairLiquidityUsd - a.pairLiquidityUsd);
+
+  if (items.length > 0) chainWideCache = { at: Date.now(), items };
+  return items.slice(0, limit);
 }
 
 // Cheap detection off an already-fetched top pair (scanToken's topPair) — used
