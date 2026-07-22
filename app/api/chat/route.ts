@@ -796,6 +796,18 @@ const FLASH_ORDER_VERB_RE     = /\b(?:buy|sell|purchase)\b/i;
 const FLASH_ORDER_SIGNAL_RE   = /\$\s?\d|\bat\s+\d|\bdollars?\b|\bdrops?\b|\bfalls?\b|\bhits\b|\breaches\b|\bbelow\b|\bunder\b|\babove\b|\bcrosses\b|\bover\s+(?:a|an|the|\d)/i;
 const FLASH_ORDER_BARE_RE     = /^(?:please\s+|can\s+you\s+)?(?:buy|sell|purchase)\s+(?:my|your|the|our|some|all)\b/i;
 
+// Narrower than the LLM gate: a trade verb plus an explicit price condition or
+// schedule. Deliberately excludes a bare "$N of TOKEN" spend, which is a plain
+// market buy and works headless today.
+const ADVANCED_ORDER_CONDITION_RE =
+  /\bat\s+\$?\d|\b(?:drops?|falls?|dips?)\s+(?:to|below|under)\b|\b(?:hits|reaches|crosses)\b|\bwhen\s+(?:the\s+)?price\b|\bover\s+(?:a|an|the\s+next|\d)/i;
+
+function looksLikeAdvancedOrder(trimmed: string): boolean {
+  if (FLASH_ORDER_QUESTION_RE.test(trimmed)) return false;
+  if (FLASH_ORDER_VOCAB_RE.test(trimmed)) return true;
+  return FLASH_ORDER_VERB_RE.test(trimmed) && ADVANCED_ORDER_CONDITION_RE.test(trimmed);
+}
+
 function flashOrderLlmGate(trimmed: string): boolean {
   if (FLASH_ORDER_QUESTION_RE.test(trimmed)) return false;
   if (FLASH_ORDER_VOCAB_RE.test(trimmed)) return true;
@@ -808,6 +820,12 @@ function flashOrderLlmGate(trimmed: string): boolean {
 // this layer changes how orders are understood, never how they execute.
 // The market variant is handled at the call site (it feeds resolveFlashLeg,
 // not resolveFlashOrderLeg), so it never reaches this function.
+// 0.05 * 2800 is 140.00000000000003 in binary floating point — an order size
+// must not carry that tail into a signed payload.
+function trimFloat(n: number): string {
+  return String(parseFloat(n.toFixed(8)));
+}
+
 function mapLlmFlashOrder(llm: Exclude<FlashOrderLlmResult, { orderType: "market" }>): FlashOrderParse {
   const sym = llm.token.toUpperCase();
   const chain = llm.chain ? { chain: llm.chain.trim() } : {};
@@ -823,7 +841,15 @@ function mapLlmFlashOrder(llm: Exclude<FlashOrderLlmResult, { orderType: "market
         ? { ask: `How much would you like to spend (in USD) on ${sym} once it hits $${price}? e.g. "buy $2000 of ${sym} at $${price}"` }
         : { ask: `How much ${sym} would you like this limit sell to cover, at $${price}? e.g. "sell 2 ${sym} at $${price}"` };
     }
-    return { order: { side: llm.side, orderType: "limit", token: llm.token, qty: String(llm.qty), priceLevel: price, ...chain } };
+    // Flash sizes a buy in contra (USD) units, but "buy 0.05 ETH at $2800"
+    // states the target quantity instead. A limit buy fills at the limit price
+    // or better, so the spend is exactly qty × limitPrice — arithmetic on two
+    // numbers the user typed, not an invented one, and the quote card shows
+    // the resulting order before anything is signed.
+    const qty = llm.side === "buy" && llm.qtyUnit === "token"
+      ? trimFloat(llm.qty * llm.limitPrice)
+      : String(llm.qty);
+    return { order: { side: llm.side, orderType: "limit", token: llm.token, qty, priceLevel: price, ...chain } };
   }
 
   if (llm.orderType === "stop-loss" || llm.orderType === "take-profit") {
@@ -1843,6 +1869,16 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       return json({
         type: "text",
         text: `Advanced Flash orders (${parsed.order.orderType}) aren't available in headless mode yet — open the Skopos app to place this order.`,
+      });
+    }
+    // Headless has no LLM order parse (issue #80), so phrasings the regexes
+    // miss used to fall through to the swap pipeline, which read "buy 0.05 ETH
+    // at $2800 on arbitrum" as a same-token swap and handed back "ETH on
+    // arbitrum → ETH on arbitrum". Say what's actually true instead.
+    if (looksLikeAdvancedOrder(trimmed)) {
+      return json({
+        type: "text",
+        text: `That looks like an advanced order (a price condition or a schedule). Those aren't available in headless mode yet — open the Skopos app to place it.`,
       });
     }
   } else {
@@ -3192,12 +3228,25 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     // Headless clients have no wallet, so a quote build would fail the wallet guard.
     // Hand the intent off to the app via the link instead of building/quoting.
     if (textMode) {
+      // resolveLeg rejects a same-chain same-token no-op, but the handoff
+      // never calls it — without this the parsed intent gets echoed back as
+      // "ETH on arbitrum → ETH on arbitrum".
+      const destToken = intent.destinationToken || intent.token;
+      if (
+        resolveChainId(intent.originChain) === resolveChainId(intent.destinationChain) &&
+        intent.token.toUpperCase() === destToken.toUpperCase()
+      ) {
+        return json({
+          type: "text",
+          text: `That reads as ${intent.token.toUpperCase()} to itself on the same chain, which isn't a trade I can route. Tell me what to swap into, or name a destination chain.`,
+        });
+      }
       return json({
         type: "quote",
         mode: "handoff",
         intent: {
           from: { chain: intent.originChain, token: intent.token, amount: intent.amount },
-          to:   { chain: intent.destinationChain, token: intent.destinationToken || intent.token },
+          to:   { chain: intent.destinationChain, token: destToken },
         },
       });
     }

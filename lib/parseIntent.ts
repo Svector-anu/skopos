@@ -494,7 +494,11 @@ const flashChain = z.string().nullable();
 const FlashOrderLlmSchema = z.discriminatedUnion("orderType", [
   z.object({ orderType: z.literal("limit"),
              side: z.enum(["buy", "sell"]), token: z.string().min(1),
-             qty: flashQty, limitPrice: flashPrice, chain: flashChain }),
+             qty: flashQty, limitPrice: flashPrice,
+             // Buy-side qty is a USD spend in Flash's model, but people size
+             // buys in token units just as often ("buy 0.05 ETH at $2800").
+             // Nullish so an older/terser model reply still validates.
+             qtyUnit: z.enum(["usd", "token"]).nullish(), chain: flashChain }),
   z.object({ orderType: z.literal("stop-loss"),
              side: z.literal("sell"), token: z.string().min(1),
              qty: flashQty, triggerPrice: flashPrice, chain: flashChain }),
@@ -518,7 +522,7 @@ const FLASH_ORDER_PARSE_SYSTEM = `You are a trading-order intent parser. Decide 
 Return ONLY a JSON object (no markdown, no explanation) of exactly one of these shapes:
 
 Not an order (questions, opinions, price checks, general chat): {"orderType":"none"}
-Limit (buy/sell at a stated price): {"orderType":"limit","side":"buy"|"sell","token":string,"qty":number|null,"limitPrice":number|null,"chain":string|null}
+Limit (buy/sell at a stated price): {"orderType":"limit","side":"buy"|"sell","token":string,"qty":number|null,"qtyUnit":"usd"|"token"|null,"limitPrice":number|null,"chain":string|null}
 Stop loss (sell if price FALLS to a level): {"orderType":"stop-loss","side":"sell","token":string,"qty":number|null,"triggerPrice":number|null,"chain":string|null}
 Take profit (sell when price RISES to a level): {"orderType":"take-profit","side":"sell","token":string,"qty":number|null,"triggerPrice":number|null,"chain":string|null}
 TWAP/DCA (spread a buy or sell over a time window): {"orderType":"twap","side":"buy"|"sell","token":string,"qty":number|null,"durationSeconds":number|null,"twapBucketCount":number|null,"chain":string|null}
@@ -526,7 +530,7 @@ Market buy (immediate purchase, no price condition, no time window): {"orderType
 
 Field rules:
 - token: ticker symbol, uppercased (NVDA, ETH, TSLA, ...).
-- qty: on a BUY, the total spend in USD; on a SELL, the token quantity being sold.
+- qty: on a BUY, the amount the user stated — set qtyUnit to "usd" when they gave a dollar figure ("buy $2000 of ETH") or "token" when they gave a token quantity ("buy 0.05 ETH"). On a SELL, qty is always the token quantity and qtyUnit is null.
 - chain: only when the user names a chain ("on base", "on robinhood") — otherwise null.
 - durationSeconds: unit-convert the stated window ("over 2 hours" → 7200, "over a week" → 604800).
 
@@ -536,6 +540,8 @@ CRITICAL — never invent numbers:
 - Distinguish spend from price: in "buy $2000 of NVDA at $500", qty is 2000 and limitPrice is 500.
 
 Classification rules:
+- Stop-loss and take-profit are SELL-side only. Never emit them with side "buy".
+- A BUY at or around any stated price is a LIMIT buy — whatever the wording. "buy ETH at $2800", "buy ETH when it drops to $2800", "buy the dip at $2800", "buy ETH if it falls under $2800" are all {"orderType":"limit","side":"buy",...} with limitPrice 2800. Falling wording does NOT make a buy a stop-loss.
 - Sell when price FALLS ("if it drops below", "once it falls under") → stop-loss.
 - Sell when price RISES ("when it hits", "once it reaches") → take-profit.
 - "at $X" with no rise/fall wording → limit.
@@ -544,10 +550,13 @@ Classification rules:
 - A bare sell with no price condition and no time window → limit with limitPrice null (the app will ask for the price).
 
 Examples:
-"sell my NVDA at $500" → {"orderType":"limit","side":"sell","token":"NVDA","qty":null,"limitPrice":500,"chain":null}
+"sell my NVDA at $500" → {"orderType":"limit","side":"sell","token":"NVDA","qty":null,"qtyUnit":null,"limitPrice":500,"chain":null}
+"buy 0.05 ETH at $2800 on arbitrum" → {"orderType":"limit","side":"buy","token":"ETH","qty":0.05,"qtyUnit":"token","limitPrice":2800,"chain":"arbitrum"}
+"buy 0.05 ETH when it drops to $2800" → {"orderType":"limit","side":"buy","token":"ETH","qty":0.05,"qtyUnit":"token","limitPrice":2800,"chain":null}
+"buy $2000 of ETH when the price drops to $1800" → {"orderType":"limit","side":"buy","token":"ETH","qty":2000,"qtyUnit":"usd","limitPrice":1800,"chain":null}
 "sell 2 NVDA once it drops below $400" → {"orderType":"stop-loss","side":"sell","token":"NVDA","qty":2,"triggerPrice":400,"chain":null}
 "once NVDA hits 600 sell it" → {"orderType":"take-profit","side":"sell","token":"NVDA","qty":null,"triggerPrice":600,"chain":null}
-"buy 2000 dollars of NVDA at 500" → {"orderType":"limit","side":"buy","token":"NVDA","qty":2000,"limitPrice":500,"chain":null}
+"buy 2000 dollars of NVDA at 500" → {"orderType":"limit","side":"buy","token":"NVDA","qty":2000,"qtyUnit":"usd","limitPrice":500,"chain":null}
 "buy $500 worth of eth over the next 7 days" → {"orderType":"twap","side":"buy","token":"ETH","qty":500,"durationSeconds":604800,"twapBucketCount":null,"chain":null}
 "sell 2 eth over 3 days on arbitrum" → {"orderType":"twap","side":"sell","token":"ETH","qty":2,"durationSeconds":259200,"twapBucketCount":null,"chain":"arbitrum"}
 "purchase $50 of TSLA on robinhood" → {"orderType":"market","side":"buy","token":"TSLA","qty":50,"chain":"robinhood"}
