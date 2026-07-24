@@ -22,6 +22,39 @@ interface Entry {
 
 const ENTRIES: Entry[] = [
   {
+    date: "Jul 22, 2026",
+    title: "Advanced orders, trustworthy end to end",
+    lede:
+      "Limit, stop-loss, take-profit, and TWAP in plain English — now across Robinhood Chain and 7 EVM chains — and you can track them after they're created, cancel anytime, and see what you'll receive before they execute.",
+    highlights: [
+      "Track and cancel: your standing orders show status and fill progress, with a cancel button on anything still open.",
+      "Previews show what the trigger price actually implies, labeled apart from the current-price quote — no more mistaking a market quote for trigger proceeds.",
+      "Orders land on the chain that already holds your funds, chosen from your balances — never a default that can't fill.",
+      "Phrasings the strict patterns miss now parse through a checked LLM layer that can never place a number you didn't type.",
+    ],
+  },
+  {
+    date: "Jul 21, 2026",
+    title: "Stock-paired token intelligence",
+    lede:
+      "A category native to Robinhood Chain: tokens that trade against a tokenized stock instead of a stablecoin, so their fees accrue to the creator in stock. Skopos now reads the whole category — the pairing, the ratio, and the fee flywheel — and warns you when a token is named after a ticker it isn't. Built with Bankr.",
+    highlights: [
+      "\"price of $REAL vs NVDA\", \"show stock-paired tokens\", \"fee flywheel for $REAL\" — priced in stock terms, with a registry-verified badge a copycat can't earn.",
+      "Ticker-impersonation warnings catch a token dressed as a stock it has no connection to, before you trade.",
+    ],
+  },
+  {
+    date: "Jul 20, 2026",
+    title: "A security pass: approvals, alerts, and metadata",
+    lede:
+      "Skopos now scans your wallet for risky token approvals across every chain it tracks, proves wallet ownership before it sends you alerts, and hardens how it handles attacker-chosen token names.",
+    highlights: [
+      "\"scan my wallet for risky approvals\" reads ~90 days of allowances across 10 chains, flags the unlimited ones, and revokes with one tap.",
+      "Alert delivery now requires a signature, so nobody can hijack your notifications by claiming your address.",
+      "Token names, ENS labels, and memos are sanitized before any agent reads them as context.",
+    ],
+  },
+  {
     date: "Jul 18, 2026",
     title: "Skopos now speaks Chinese and Vietnamese",
     lede:
