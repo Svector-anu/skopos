@@ -260,8 +260,8 @@ export const CHANGELOG_ENTRIES: Entry[] = [
   },
   {
     date: "May 17, 2026",
-    title: "Agents reach Skopos over Vara",
+    title: "Agent-to-agent: other agents reach Skopos onchain",
     lede:
-      "An off-chain relay bridges the Vara network to Skopos: agents request prices, risk, yield, markets, quotes and portfolios through a single secured endpoint, with crash-safe delivery and no double-spend.",
+      "Another onchain agent can query Skopos directly — a request emits an onchain event, our relay catches it and writes the answer back onchain within a single finalized block (~6s). Prices, risk, yield, markets, quotes, and portfolios: the same data you get in chat, agent to agent. Crash-safe delivery, no double-spend.",
   },
 ];
