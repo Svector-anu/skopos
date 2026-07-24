@@ -2399,7 +2399,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       text:
         `Yes — Robinhood Chain (chain 4663) is Robinhood's own L2, where tokenized stocks and memecoins trade onchain. Here's what I can do there:\n\n` +
         `• **Swap natively** — "swap 10 USDG to ETH on robinhood" (live Flash quotes, you sign everything)\n` +
-        `• **Buy tokenized stocks** — "buy $10 of NVDA on robinhood" (24 registry-verified stocks & ETFs)\n` +
+        `• **Buy tokenized stocks** — "buy $10 of NVDA on robinhood" (25 registry-verified stocks & ETFs)\n` +
         `• **Advanced orders** — "sell 2 NVDA if it drops below $400" (limit / stop-loss / take-profit / TWAP)\n` +
         `• **Bridge in or out** — "bridge 0.05 ETH from base to robinhood chain"\n` +
         `• **Launch feed** — "what's launching on robinhood chain" (risk-scanned, deployer history)\n` +

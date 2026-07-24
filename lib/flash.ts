@@ -81,7 +81,7 @@ export const RH_CHAIN_WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 // these tickers (copycat "AAPL"/"TSLA"/etc. tokens, some with tens of
 // thousands of dollars of their own liquidity). The registry page itself
 // warns of exactly this: "a token with a matching name/ticker but a
-// different contract address is not a Robinhood Stock Token." All 24
+// different contract address is not a Robinhood Stock Token." All 25
 // addresses below were cross-checked against the page directly, not
 // transcribed from a prior DexScreener resolution.
 //
@@ -97,7 +97,7 @@ export const RH_CHAIN_WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
 // way — flagging so a future pass knows this claim came from outside these
 // docs, not confirmed within them.
 export const RH_STOCK_TOKENS: Record<string, string> = {
-  // Stock tokens (19)
+  // Stock tokens (20)
   AAPL: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
   AMD:  "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
   AMZN: "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
@@ -149,7 +149,7 @@ function cacheKey(symbol: string): string {
 // DexScreener's search has no way to distinguish the real Robinhood-issued
 // token from a same-symbol impersonator — it just returns the first result
 // above the liquidity floor. RH_STOCK_TOKENS sidesteps that entirely for the
-// 24 symbols it covers.
+// 25 symbols it covers.
 //
 // DexScreener path cached in Upstash (rh:token:{symbol}, 24h TTL) — popular
 // symbols get re-queried on every swap attempt and DexScreener's search
