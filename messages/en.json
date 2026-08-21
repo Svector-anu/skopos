@@ -160,19 +160,49 @@
       "chooseResponseTier": "Choose response tier"
     },
     "tiers": {
-      "smart": { "label": "✦ Smart", "desc": "frontier models · depth" },
-      "fast": { "label": "⚡ Fast", "desc": "quick & free" }
+      "smart": {
+        "label": "✦ Smart",
+        "desc": "frontier models · depth"
+      },
+      "fast": {
+        "label": "⚡ Fast",
+        "desc": "quick & free"
+      }
     },
     "aiDisclaimer": "Skopos is AI and can make mistakes. Please double-check responses.",
     "featureSlides": {
-      "bridge": { "label": "Bridge", "sub": "25+ chains supported" },
-      "bestRoute": { "label": "Best Route", "sub": "AI finds cheapest path" },
-      "swap": { "label": "Swap", "sub": "Any token, any chain" },
-      "plainLanguage": { "label": "Plain Language", "sub": "Just describe what you want" },
-      "fiveBridges": { "label": "5 Bridges", "sub": "Relay, Across, Mayan & more" },
-      "liveQuotes": { "label": "Live Quotes", "sub": "Real-time cross-chain pricing" },
-      "txHistory": { "label": "Tx History", "sub": "Track all your moves" },
-      "portfolio": { "label": "Portfolio", "sub": "Balances across chains" }
+      "bridge": {
+        "label": "Bridge",
+        "sub": "25+ chains supported"
+      },
+      "bestRoute": {
+        "label": "Best Route",
+        "sub": "AI finds cheapest path"
+      },
+      "swap": {
+        "label": "Swap",
+        "sub": "Any token, any chain"
+      },
+      "plainLanguage": {
+        "label": "Plain Language",
+        "sub": "Just describe what you want"
+      },
+      "fiveBridges": {
+        "label": "5 Bridges",
+        "sub": "Relay, Across, Mayan & more"
+      },
+      "liveQuotes": {
+        "label": "Live Quotes",
+        "sub": "Real-time cross-chain pricing"
+      },
+      "txHistory": {
+        "label": "Tx History",
+        "sub": "Track all your moves"
+      },
+      "portfolio": {
+        "label": "Portfolio",
+        "sub": "Balances across chains"
+      }
     },
     "quote": {
       "rejectedInWallet": "Transaction rejected in wallet.",
@@ -442,13 +472,26 @@
         "ORDER_STATUS_TERMINATED": "terminated",
         "ORDER_STATUS_UNSPECIFIED": "unknown"
       },
-      "triggerLine": "Trigger: ${price}",
+      "triggerLine": "Trigger: {price}",
       "twapLine": "Spread over {count} buckets",
       "filledLine": "Filled: {amount} {symbol}",
       "cancelling": "cancelling…",
       "cancelArrow": "cancel →",
       "rejectedInWallet": "Cancel rejected in wallet.",
-      "errorPrefix": "Error: {msg}"
+      "errorPrefix": "Error: {msg}",
+      "limitLine": "Limit: {price}",
+      "moveTrigger": "move trigger →",
+      "movePrice": "move price →",
+      "newPriceUsd": "New price (USD)",
+      "newPriceRate": "New price ({symbol} per unit)",
+      "signUpdate": "sign update",
+      "updating": "updating…",
+      "cancelEdit": "cancel",
+      "updateSubmitted": "Update submitted — Flash re-places the order at the new price. Re-check your orders in a moment to confirm.",
+      "badPrice": "Enter a plain number, e.g. 3200.",
+      "funderNotConnected": "Connect {address} — the wallet that placed this order is the only one that can sign the update.",
+      "updateFailed": "Update failed.",
+      "updateRejectedInWallet": "Update rejected in wallet."
     },
     "polymarket": {
       "volumeM": "${n}M vol",

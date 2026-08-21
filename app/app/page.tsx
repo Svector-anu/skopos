@@ -13,6 +13,12 @@ useAccount, useBalance, useChainId,
 import { fetchSmartMoney } from "@/lib/smartMoneyClient";
 import { callX402Endpoint } from "@/lib/x402GenericClient";
 import { subscribe } from "@/lib/subscribeClient";
+// Pure module deliberately, never @/lib/flash — that one imports @upstash/redis
+// and would land the server module graph in the client bundle.
+import {
+  buildFlashUpdate, normalizeFlashPrice, flashUpdateAxis, isFlashOrderUpdatable,
+  limitPriceOf, triggerPriceOf,
+} from "@/lib/flashUpdate";
 import {
   useWallet as useSolanaWallet,
   useConnection as useSolanaConnection,
@@ -234,12 +240,20 @@ type FlashOrder = {
   side: "buy" | "sell";
   status: "ORDER_STATUS_UNSPECIFIED" | "ORDER_STATUS_PENDING" | "ORDER_STATUS_ACCEPTED" | "ORDER_STATUS_PARTIALLY_FILLED" | "ORDER_STATUS_FILLED" | "ORDER_STATUS_CANCELLED" | "ORDER_STATUS_REJECTED" | "ORDER_STATUS_TERMINATED";
   closeReason: string | null;
+  // The wallet that signed the order. Cancel and update signatures are only
+  // accepted from this address, so it has to travel to the client rather
+  // than being inferred from whichever wallet happens to be connected.
+  funderAddress: string;
   targetAsset: { ticker: string };
   contraAsset: { ticker: string };
   qty: string;
   filled: { targetAmount: string | null; contraAmount: string | null } | null;
   limitNotionalPrice: string | null;
-  trigger: { notionalPrice: string; triggerType: "upper" | "lower" } | null;
+  limitCrossPrice: string | null;
+  // Exactly one price is set. Cross basis only appears on orders placed
+  // through another Flash client on the same funder wallet, but those are
+  // listed here too — see lib/flash.ts's FlashPriceTrigger.
+  trigger: { notionalPrice?: string; crossPrice?: string; triggerType: "upper" | "lower" } | null;
   twapBucketCount: number | null;
   placedAt: string;
 };
@@ -2950,6 +2964,10 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelled, setCancelled] = useState(order.status === "ORDER_STATUS_CANCELLED");
   const [err, setErr] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draftPrice, setDraftPrice] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateSubmitted, setUpdateSubmitted] = useState(false);
 
   const status = cancelled ? "ORDER_STATUS_CANCELLED" : order.status;
   const cancellable = !cancelled && FLASH_ORDER_CANCELLABLE.has(order.status);
@@ -2984,6 +3002,72 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
     : `${order.qty} ${order.targetAsset.ticker} → ${order.contraAsset.ticker}`;
   const filledAmount = order.filled?.targetAmount ?? order.filled?.contraAmount;
 
+  // Which price this order can move, and what it currently reads. Flash fixes
+  // a trigger's direction and basis for the order's life, so both are taken
+  // from the order itself and never from anything the user typed.
+  const axis = flashUpdateAxis(order);
+  const currentTrigger = triggerPriceOf(order.trigger);
+  const currentLimit = limitPriceOf(order);
+  const current = axis === "trigger" ? currentTrigger : currentLimit;
+  // A cross-basis price is a pair rate, not dollars — labelling it with a
+  // "$" would misstate it by orders of magnitude on a thin pair.
+  const priceLabel = (p: { price: string; basis: "notional" | "cross" }) =>
+    p.basis === "notional" ? `$${p.price}` : p.price;
+  const updatable = !cancelled && !updateSubmitted && isFlashOrderUpdatable(order) && current !== null;
+
+  async function submitUpdate() {
+    setErr(null);
+    const price = normalizeFlashPrice(draftPrice);
+    if (!price) {
+      setErr(t("badPrice"));
+      return;
+    }
+    if (!axis || !current) return;
+    setIsUpdating(true);
+    try {
+      // Signature is only accepted from the wallet that placed the order.
+      // Deliberately not "the first connected EVM wallet" — with several
+      // wallets linked, that can be a different address, and Flash answers a
+      // wrong signer with a bare 404 that reads like a missing order.
+      const funder = order.funderAddress.toLowerCase();
+      const funderWallet = wallets.find(w => w.address?.toLowerCase() === funder);
+      if (!funderWallet) throw new Error(t("funderNotConnected", { address: shortAddr(order.funderAddress) }));
+
+      // Built immediately before signing: the message carries an "Issued At"
+      // stamp Flash only accepts within a minute of its own clock.
+      const built = buildFlashUpdate({
+        orderId: order.orderId,
+        ...(axis === "trigger"
+          ? { trigger: { price, basis: currentTrigger!.basis, triggerType: currentTrigger!.triggerType } }
+          : { limit: { price, basis: currentLimit!.basis } }),
+      });
+      if (!built) throw new Error(t("badPrice"));
+
+      const { signature: userSignature } = await signMessageWithWallet(
+        { message: built.updateMessage },
+        { address: funderWallet.address },
+      );
+      const res = await fetch("/api/flash/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.orderId, ...built.body, userSignature }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error ?? t("updateFailed"));
+      // A 200 means Flash ACCEPTED the update, not that it applied — it runs
+      // as an async cancel-and-replace. Saying "moved to $X" here would be a
+      // claim the API never made, so the row reports it as submitted and asks
+      // the user to re-check.
+      setUpdateSubmitted(true);
+      setEditing(false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("updateRejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 140) }));
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 0", borderTop: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -3006,18 +3090,54 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))" }}>
           {[
-            order.trigger ? t("triggerLine", { price: order.trigger.notionalPrice }) : null,
+            currentTrigger ? t("triggerLine", { price: priceLabel(currentTrigger) }) : null,
+            currentLimit ? t("limitLine", { price: priceLabel(currentLimit) }) : null,
             order.twapBucketCount ? t("twapLine", { count: order.twapBucketCount }) : null,
             filledAmount ? t("filledLine", { amount: filledAmount, symbol: order.targetAsset.ticker }) : null,
           ].filter(Boolean).join(" · ")}
         </span>
-        {cancellable && (
-          <button onClick={cancel} disabled={isCancelling}
-            style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.05em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,85,85,0.25)", background: "rgba(255,85,85,0.05)", color: "#ff5555", cursor: isCancelling ? "wait" : "pointer", whiteSpace: "nowrap" }}>
-            {isCancelling ? t("cancelling") : t("cancelArrow")}
-          </button>
-        )}
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {updatable && !editing && (
+            <button onClick={() => { setErr(null); setDraftPrice(current!.price); setEditing(true); }}
+              style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.05em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 6, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-bg, rgba(255,255,255,0.04))", color: "var(--card-text-muted, rgba(255,255,255,0.7))", cursor: "pointer", whiteSpace: "nowrap" }}>
+              {axis === "trigger" ? t("moveTrigger") : t("movePrice")}
+            </button>
+          )}
+          {cancellable && (
+            <button onClick={cancel} disabled={isCancelling}
+              style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.05em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,85,85,0.25)", background: "rgba(255,85,85,0.05)", color: "#ff5555", cursor: isCancelling ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+              {isCancelling ? t("cancelling") : t("cancelArrow")}
+            </button>
+          )}
+        </span>
       </div>
+      {editing && current && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", paddingTop: 2 }}>
+          <label htmlFor={`price-${order.orderId}`} style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+            {current.basis === "notional" ? t("newPriceUsd") : t("newPriceRate", { symbol: order.contraAsset.ticker })}
+          </label>
+          <input
+            id={`price-${order.orderId}`}
+            value={draftPrice}
+            onChange={e => setDraftPrice(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !isUpdating) void submitUpdate(); if (e.key === "Escape") setEditing(false); }}
+            inputMode="decimal"
+            autoComplete="off"
+            style={{ ...MONO, fontSize: "0.65rem", width: 120, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-surface, rgba(255,255,255,0.05))", color: "var(--card-text, #fff)" }}
+          />
+          <button onClick={() => void submitUpdate()} disabled={isUpdating}
+            style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.05em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(245,184,0,0.3)", background: "rgba(245,184,0,0.08)", color: "#F5B800", cursor: isUpdating ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+            {isUpdating ? t("updating") : t("signUpdate")}
+          </button>
+          <button onClick={() => { setEditing(false); setErr(null); }} disabled={isUpdating}
+            style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.05em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 6, border: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))", background: "transparent", color: "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: "pointer", whiteSpace: "nowrap" }}>
+            {t("cancelEdit")}
+          </button>
+        </div>
+      )}
+      {updateSubmitted && (
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "#F5B800" }}>{t("updateSubmitted")}</span>
+      )}
       {err && <span style={{ ...MONO, fontSize: "0.58rem", color: "#ff5555" }}>{err}</span>}
     </div>
   );

@@ -160,19 +160,49 @@
       "chooseResponseTier": "选择响应等级"
     },
     "tiers": {
-      "smart": { "label": "✦ Smart", "desc": "前沿模型 · 深度解析" },
-      "fast": { "label": "⚡ Fast", "desc": "快速 & 免费" }
+      "smart": {
+        "label": "✦ Smart",
+        "desc": "前沿模型 · 深度解析"
+      },
+      "fast": {
+        "label": "⚡ Fast",
+        "desc": "快速 & 免费"
+      }
     },
     "aiDisclaimer": "Skopos 是 AI，可能会出错。请自行核实回复内容。",
     "featureSlides": {
-      "bridge": { "label": "跨链", "sub": "支持 25+ 条链" },
-      "bestRoute": { "label": "最优路径", "sub": "AI 寻找最低成本路线" },
-      "swap": { "label": "兑换", "sub": "任意代币，任意链" },
-      "plainLanguage": { "label": "自然语言", "sub": "只需描述你想做什么" },
-      "fiveBridges": { "label": "5 个跨链桥", "sub": "Relay、Across、Mayan 等" },
-      "liveQuotes": { "label": "实时报价", "sub": "实时跨链定价" },
-      "txHistory": { "label": "交易记录", "sub": "追踪你的每一笔操作" },
-      "portfolio": { "label": "投资组合", "sub": "跨链余额一览" }
+      "bridge": {
+        "label": "跨链",
+        "sub": "支持 25+ 条链"
+      },
+      "bestRoute": {
+        "label": "最优路径",
+        "sub": "AI 寻找最低成本路线"
+      },
+      "swap": {
+        "label": "兑换",
+        "sub": "任意代币，任意链"
+      },
+      "plainLanguage": {
+        "label": "自然语言",
+        "sub": "只需描述你想做什么"
+      },
+      "fiveBridges": {
+        "label": "5 个跨链桥",
+        "sub": "Relay、Across、Mayan 等"
+      },
+      "liveQuotes": {
+        "label": "实时报价",
+        "sub": "实时跨链定价"
+      },
+      "txHistory": {
+        "label": "交易记录",
+        "sub": "追踪你的每一笔操作"
+      },
+      "portfolio": {
+        "label": "投资组合",
+        "sub": "跨链余额一览"
+      }
     },
     "quote": {
       "rejectedInWallet": "交易在钱包中被拒绝。",
@@ -442,13 +472,26 @@
         "ORDER_STATUS_TERMINATED": "已终止",
         "ORDER_STATUS_UNSPECIFIED": "未知"
       },
-      "triggerLine": "触发价：${price}",
+      "triggerLine": "触发价：{price}",
       "twapLine": "分 {count} 批执行",
       "filledLine": "已成交：{amount} {symbol}",
       "cancelling": "取消中…",
       "cancelArrow": "取消 →",
       "rejectedInWallet": "取消操作在钱包中被拒绝。",
-      "errorPrefix": "错误：{msg}"
+      "errorPrefix": "错误：{msg}",
+      "limitLine": "限价：{price}",
+      "moveTrigger": "调整触发价 →",
+      "movePrice": "调整价格 →",
+      "newPriceUsd": "新价格（美元）",
+      "newPriceRate": "新价格（每单位 {symbol}）",
+      "signUpdate": "签名更新",
+      "updating": "更新中…",
+      "cancelEdit": "取消",
+      "updateSubmitted": "更新已提交 — Flash 将按新价格重新挂单。请稍后重新查看订单以确认。",
+      "badPrice": "请输入纯数字，例如 3200。",
+      "funderNotConnected": "请连接 {address} — 只有下单的钱包才能签署此次更新。",
+      "updateFailed": "更新失败。",
+      "updateRejectedInWallet": "更新在钱包中被拒绝。"
     },
     "polymarket": {
       "volumeM": "${n}M 交易量",
