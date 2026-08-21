@@ -15,11 +15,11 @@ import {
 } from "../flashUpdate";
 import type { FlashOrder } from "../flash";
 
-// Flash validates the update message byte-for-byte and returns a bare 404 on
-// a mismatch — indistinguishable from an order that never existed. That makes
-// these assertions the only cheap way to prove the format without a funded
-// wallet, so they are written against the literal strings in Flash's docs
-// (https://flash.definitive.fi/docs/updating-orders), not against the
+// Flash validates the update message byte-for-byte and answers a mismatch
+// with a bare 404 — indistinguishable from an order that never existed. That
+// makes these assertions the only cheap way to prove the format without a
+// funded wallet, so they are written against the literal strings in Flash's
+// docs (https://flash.definitive.fi/docs/updating-orders), not against the
 // implementation's own constants.
 
 const ORDER_ID = "887ccf13-1f4a-4a1e-9b1c-2c9f0d5e7a10";
@@ -50,230 +50,400 @@ function orderStub(over: Partial<FlashOrder> = {}): FlashOrder {
   };
 }
 
-describe("buildFlashUpdate — message bytes", () => {
-  it("builds the stop-loss example from Flash's docs verbatim", () => {
-    const built = buildFlashUpdate({
-      orderId: ORDER_ID,
-      trigger: { price: "1800", basis: "notional", triggerType: "lower" },
-      issuedAt: ISSUED_AT,
+describe("buildFlashUpdate", () => {
+  describe("message bytes", () => {
+    it("should reproduce Flash's documented stop-loss message verbatim", () => {
+      // #given a lower notional trigger and a pinned issue stamp
+      const trigger = { price: "1800", basis: "notional", triggerType: "lower" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, trigger, issuedAt: ISSUED_AT });
+
+      // #then it matches the doc example byte for byte
+      expect(built?.updateMessage).toBe(
+        `Definitive Flash — Update Order\nOrder: ${ORDER_ID}\nIssued At: ${ISSUED_AT}\nTrigger Lower Notional Price: 1800`,
+      );
     });
-    expect(built?.updateMessage).toBe(
-      `Definitive Flash — Update Order\nOrder: ${ORDER_ID}\nIssued At: ${ISSUED_AT}\nTrigger Lower Notional Price: 1800`,
-    );
-  });
 
-  it("uses an em dash and omits the v1 that the cancel header carries", () => {
-    const built = buildFlashUpdate({
-      orderId: ORDER_ID,
-      limit: { price: "4000", basis: "notional" },
-      issuedAt: ISSUED_AT,
+    it("should head the message with an em dash and no v1, unlike the cancel header", () => {
+      // #given any updatable price
+      const limit = { price: "4000", basis: "notional" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, limit, issuedAt: ISSUED_AT });
+
+      // #then the header omits the "v1" that cancel carries, and uses U+2014
+      expect(built!.updateMessage.split("\n")[0]).toBe("Definitive Flash — Update Order");
     });
-    const header = built!.updateMessage.split("\n")[0];
-    expect(header).toBe("Definitive Flash — Update Order");
-    expect(header).not.toContain("v1");
-    expect(header).not.toContain("-"); // an ASCII hyphen here is rejected
-  });
 
-  it("orders the limit line before the trigger line when both are present", () => {
-    const built = buildFlashUpdate({
-      orderId: ORDER_ID,
-      limit: { price: "4000", basis: "notional" },
-      trigger: { price: "3000", basis: "notional", triggerType: "lower" },
-      issuedAt: ISSUED_AT,
+    it("should place the limit line before the trigger line when both are present", () => {
+      // #given both a limit and a trigger price
+      const limit = { price: "4000", basis: "notional" } as const;
+      const trigger = { price: "3000", basis: "notional", triggerType: "lower" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, limit, trigger, issuedAt: ISSUED_AT });
+
+      // #then the limit line precedes the trigger line
+      expect(built!.updateMessage.split("\n").slice(3)).toEqual([
+        "Limit Notional Price: 4000",
+        "Trigger Lower Notional Price: 3000",
+      ]);
     });
-    const lines = built!.updateMessage.split("\n");
-    expect(lines[3]).toBe("Limit Notional Price: 4000");
-    expect(lines[4]).toBe("Trigger Lower Notional Price: 3000");
-  });
 
-  it("names the basis and direction in the trigger line", () => {
-    const upper = buildFlashUpdate({
-      orderId: ORDER_ID,
-      trigger: { price: "0.002", basis: "cross", triggerType: "upper" },
-      issuedAt: ISSUED_AT,
+    it("should name direction and basis in the trigger line", () => {
+      // #given an upper trigger priced in cross basis
+      const trigger = { price: "0.002", basis: "cross", triggerType: "upper" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, trigger, issuedAt: ISSUED_AT });
+
+      // #then both words appear in the trigger line
+      expect(built!.updateMessage).toContain("Trigger Upper Cross Price: 0.002");
     });
-    expect(upper!.updateMessage).toContain("Trigger Upper Cross Price: 0.002");
 
-    const lower = buildFlashUpdate({
-      orderId: ORDER_ID,
-      trigger: { price: "1800", basis: "notional", triggerType: "lower" },
-      issuedAt: ISSUED_AT,
+    it("should name the basis in the limit line", () => {
+      // #given a limit priced in cross basis
+      const limit = { price: "0.0004", basis: "cross" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, limit, issuedAt: ISSUED_AT });
+
+      // #then the line is labelled Cross rather than Notional
+      expect(built!.updateMessage).toContain("Limit Cross Price: 0.0004");
     });
-    expect(lower!.updateMessage).toContain("Trigger Lower Notional Price: 1800");
-  });
 
-  it("names the basis in the limit line", () => {
-    const cross = buildFlashUpdate({
-      orderId: ORDER_ID,
-      limit: { price: "0.0004", basis: "cross" },
-      issuedAt: ISSUED_AT,
+    it("should join lines with single newlines and no trailing newline", () => {
+      // #given both prices, the longest message this builds
+      const limit = { price: "4000", basis: "notional" } as const;
+      const trigger = { price: "3000", basis: "notional", triggerType: "lower" } as const;
+
+      // #when the update is built
+      const msg = buildFlashUpdate({ orderId: ORDER_ID, limit, trigger, issuedAt: ISSUED_AT })!.updateMessage;
+
+      // #then CRLF, blank lines and a trailing newline are all absent
+      expect({ crlf: msg.includes("\r"), blank: msg.split("\n").includes(""), trailing: msg.endsWith("\n") })
+        .toEqual({ crlf: false, blank: false, trailing: false });
     });
-    expect(cross!.updateMessage).toContain("Limit Cross Price: 0.0004");
-  });
 
-  it("uses single newlines, no CRLF, no trailing newline, no blank lines", () => {
-    const built = buildFlashUpdate({
-      orderId: ORDER_ID,
-      limit: { price: "4000", basis: "notional" },
-      trigger: { price: "3000", basis: "notional", triggerType: "lower" },
-      issuedAt: ISSUED_AT,
+    it("should stamp Issued At as RFC3339 with sub-second precision by default", () => {
+      // #given no explicit issuedAt
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, limit: { price: "1", basis: "notional" } });
+
+      // #then the stamp carries milliseconds, so two updates in one second differ
+      const stamp = built!.updateMessage.split("\n")[2].replace("Issued At: ", "");
+      expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     });
-    const msg = built!.updateMessage;
-    expect(msg).not.toContain("\r");
-    expect(msg.endsWith("\n")).toBe(false);
-    expect(msg.split("\n").some(l => l === "")).toBe(false);
-  });
 
-  it("returns null when neither price is supplied — nothing to sign", () => {
-    expect(buildFlashUpdate({ orderId: ORDER_ID, issuedAt: ISSUED_AT })).toBeNull();
-  });
+    it("should stamp Issued At close to now, for the one-minute freshness window", () => {
+      // #given no explicit issuedAt
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, limit: { price: "1", basis: "notional" } });
 
-  it("defaults Issued At to now in RFC3339 with sub-second precision", () => {
-    const built = buildFlashUpdate({ orderId: ORDER_ID, limit: { price: "1", basis: "notional" } });
-    const stamp = built!.updateMessage.split("\n")[2].replace("Issued At: ", "");
-    expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    expect(Math.abs(Date.now() - Date.parse(stamp))).toBeLessThan(5_000);
-  });
-});
-
-describe("buildFlashUpdate — body matches the signed bytes", () => {
-  it("sends the decimal byte-identical to the message, never renormalized", () => {
-    const built = buildFlashUpdate({
-      orderId: ORDER_ID,
-      limit: { price: "4000", basis: "notional" },
-      issuedAt: ISSUED_AT,
+      // #then the stamp is current rather than fixed at module load
+      const stamp = built!.updateMessage.split("\n")[2].replace("Issued At: ", "");
+      expect(Math.abs(Date.now() - Date.parse(stamp))).toBeLessThan(5_000);
     });
-    expect(built!.body.limitNotionalPrice).toBe("4000");
-    expect(built!.updateMessage).toContain("Limit Notional Price: 4000");
-    // the classic failure: "4000" signed, 4000.0 sent
-    expect(built!.body.limitNotionalPrice).not.toBe("4000.0");
-  });
 
-  it("keeps a trailing-zero decimal exactly as given, in both places", () => {
-    const built = buildFlashUpdate({
-      orderId: ORDER_ID,
-      trigger: { price: "1800.50", basis: "notional", triggerType: "lower" },
-      issuedAt: ISSUED_AT,
+    it("should refuse to build when neither price is supplied", () => {
+      // #given no limit and no trigger
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, issuedAt: ISSUED_AT });
+
+      // #then there is nothing to sign, so nothing is returned
+      expect(built).toBeNull();
     });
-    expect(built!.body.trigger?.notionalPrice).toBe("1800.50");
-    expect(built!.updateMessage).toContain("Trigger Lower Notional Price: 1800.50");
   });
 
-  it("puts the price on the field matching its basis, and only that field", () => {
-    const notional = buildFlashUpdate({ orderId: ORDER_ID, limit: { price: "4000", basis: "notional" }, issuedAt: ISSUED_AT });
-    expect(notional!.body.limitNotionalPrice).toBe("4000");
-    expect(notional!.body.limitCrossPrice).toBeUndefined();
+  describe("body agreement with the signed bytes", () => {
+    it("should send the decimal byte-identical to the signed message", () => {
+      // #given a price whose formatting must survive verbatim
+      const limit = { price: "4000", basis: "notional" } as const;
 
-    const cross = buildFlashUpdate({ orderId: ORDER_ID, limit: { price: "0.002", basis: "cross" }, issuedAt: ISSUED_AT });
-    expect(cross!.body.limitCrossPrice).toBe("0.002");
-    expect(cross!.body.limitNotionalPrice).toBeUndefined();
-  });
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, limit, issuedAt: ISSUED_AT });
 
-  it("carries triggerType through unchanged — Flash fixes it for the order's life", () => {
-    const built = buildFlashUpdate({
-      orderId: ORDER_ID,
-      trigger: { price: "5000", basis: "notional", triggerType: "upper" },
-      issuedAt: ISSUED_AT,
+      // #then the body value is "4000", never a renormalized "4000.0"
+      expect(built!.body.limitNotionalPrice).toBe("4000");
     });
-    expect(built!.body.trigger?.triggerType).toBe("upper");
-    expect(built!.body.trigger?.crossPrice).toBeUndefined();
+
+    it("should preserve a trailing-zero decimal in the message", () => {
+      // #given a price with a significant trailing zero
+      const trigger = { price: "1800.50", basis: "notional", triggerType: "lower" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, trigger, issuedAt: ISSUED_AT });
+
+      // #then the message repeats it exactly as given
+      expect(built!.updateMessage).toContain("Trigger Lower Notional Price: 1800.50");
+    });
+
+    it("should preserve a trailing-zero decimal in the body", () => {
+      // #given the same price
+      const trigger = { price: "1800.50", basis: "notional", triggerType: "lower" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, trigger, issuedAt: ISSUED_AT });
+
+      // #then the body agrees with the message
+      expect(built!.body.trigger?.notionalPrice).toBe("1800.50");
+    });
+
+    it("should populate only the limit field matching the basis", () => {
+      // #given a cross-basis limit price
+      const limit = { price: "0.002", basis: "cross" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, limit, issuedAt: ISSUED_AT });
+
+      // #then the notional field stays absent — the two are mutually exclusive
+      expect({ cross: built!.body.limitCrossPrice, notional: built!.body.limitNotionalPrice })
+        .toEqual({ cross: "0.002", notional: undefined });
+    });
+
+    it("should populate only the trigger field matching the basis", () => {
+      // #given a notional-basis trigger price
+      const trigger = { price: "5000", basis: "notional", triggerType: "upper" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, trigger, issuedAt: ISSUED_AT });
+
+      // #then the cross field stays absent
+      expect({ notional: built!.body.trigger?.notionalPrice, cross: built!.body.trigger?.crossPrice })
+        .toEqual({ notional: "5000", cross: undefined });
+    });
+
+    it("should carry triggerType through unchanged, since Flash fixes it for the order's life", () => {
+      // #given an upper trigger
+      const trigger = { price: "5000", basis: "notional", triggerType: "upper" } as const;
+
+      // #when the update is built
+      const built = buildFlashUpdate({ orderId: ORDER_ID, trigger, issuedAt: ISSUED_AT });
+
+      // #then the direction is echoed rather than re-derived
+      expect(built!.body.trigger?.triggerType).toBe("upper");
+    });
   });
 });
 
 describe("normalizeFlashPrice", () => {
-  it("accepts what a person actually types", () => {
-    expect(normalizeFlashPrice("3200")).toBe("3200");
-    expect(normalizeFlashPrice(" 3200 ")).toBe("3200");
-    expect(normalizeFlashPrice("$3200")).toBe("3200");
-    expect(normalizeFlashPrice("3,200")).toBe("3200");
-    expect(normalizeFlashPrice("$3,200.50")).toBe("3200.50");
-    expect(normalizeFlashPrice("0.0004")).toBe("0.0004");
+  it("should accept the shapes a person actually types", () => {
+    // #given plain, padded, dollar-prefixed and grouped inputs
+    const typed = ["3200", " 3200 ", "$3200", "3,200"];
+
+    // #when each is normalized
+    const out = typed.map(normalizeFlashPrice);
+
+    // #then all resolve to the same canonical decimal
+    expect(out).toEqual(["3200", "3200", "3200", "3200"]);
   });
 
-  it("preserves the decimal exactly rather than reformatting it", () => {
-    expect(normalizeFlashPrice("4000.00")).toBe("4000.00");
-    expect(normalizeFlashPrice("0.500")).toBe("0.500");
+  it("should preserve the decimal exactly rather than reformatting it", () => {
+    // #given decimals whose formatting is significant to the signature
+    const typed = ["4000.00", "0.500", "0.0004"];
+
+    // #when each is normalized
+    const out = typed.map(normalizeFlashPrice);
+
+    // #then none are rounded, padded or trimmed
+    expect(out).toEqual(["4000.00", "0.500", "0.0004"]);
   });
 
-  it("refuses anything that is not a positive decimal", () => {
-    for (const bad of ["", "  ", "abc", "3200 NVDA", "-100", "0", "1e5", "3.2.1", "$", "0.002 NVDA"]) {
-      expect(normalizeFlashPrice(bad)).toBeNull();
-    }
+  it("should strip commas only from well-formed thousands grouping", () => {
+    // #given valid grouped numbers
+    const typed = ["1,000", "12,345,678.90"];
+
+    // #when each is normalized
+    const out = typed.map(normalizeFlashPrice);
+
+    // #then the separators are removed and the value is unchanged
+    expect(out).toEqual(["1000", "12345678.90"]);
   });
 
-  it("refuses ambiguous comma placement rather than guessing", () => {
-    // "3,2" is 3.2 to most of continental Europe. Stripping commas blindly
-    // would sign it as 32 — a 10x error on a price about to be committed.
-    for (const ambiguous of ["3,2", "1,,000", "1,00", "3,20", ",100", "1,000,00"]) {
-      expect(normalizeFlashPrice(ambiguous)).toBeNull();
-    }
+  it("should refuse ambiguous comma placement rather than guessing", () => {
+    // #given inputs where a comma is not an unambiguous thousands separator.
+    // "3,2" is 3.2 to most of continental Europe; stripping blindly would
+    // sign it as 32, a 10x error on a price about to be committed.
+    const ambiguous = ["3,2", "1,,000", "1,00", "3,20", ",100", "1,000,00"];
+
+    // #when each is normalized
+    const out = ambiguous.map(normalizeFlashPrice);
+
+    // #then every one is refused so the caller can ask instead
+    expect(out).toEqual(ambiguous.map(() => null));
   });
 
-  it("strips commas only from well-formed thousands grouping", () => {
-    expect(normalizeFlashPrice("1,000")).toBe("1000");
-    expect(normalizeFlashPrice("12,345,678.90")).toBe("12345678.90");
+  it("should refuse anything that is not a positive decimal", () => {
+    // #given empty, non-numeric, signed, zero, exponent and trailing-token input
+    const bad = ["", "  ", "abc", "3200 NVDA", "-100", "0", "1e5", "3.2.1", "$", "0.002 NVDA"];
+
+    // #when each is normalized
+    const out = bad.map(normalizeFlashPrice);
+
+    // #then all are rejected before any wallet prompt
+    expect(out).toEqual(bad.map(() => null));
   });
 });
 
-describe("updatability rules", () => {
-  it("does not treat PENDING as updatable, though it is cancellable", () => {
-    expect(FLASH_CANCELLABLE_STATUSES.has("ORDER_STATUS_PENDING")).toBe(true);
-    expect(FLASH_UPDATABLE_STATUSES.has("ORDER_STATUS_PENDING")).toBe(false);
-    expect(isFlashOrderUpdatable(orderStub({ status: "ORDER_STATUS_PENDING" }))).toBe(false);
+describe("isFlashOrderUpdatable", () => {
+  it("should not treat PENDING as updatable even though it is cancellable", () => {
+    // #given an order still being processed
+    const order = orderStub({ status: "ORDER_STATUS_PENDING" });
+
+    // #when updatability is checked
+    const updatable = isFlashOrderUpdatable(order);
+
+    // #then it is refused, unlike cancellation — reusing the cancellable set
+    // here would surface an edit control that always 422s
+    expect({ updatable, cancellable: FLASH_CANCELLABLE_STATUSES.has("ORDER_STATUS_PENDING") })
+      .toEqual({ updatable: false, cancellable: true });
   });
 
-  it("allows the two live statuses", () => {
-    for (const status of ["ORDER_STATUS_ACCEPTED", "ORDER_STATUS_PARTIALLY_FILLED"] as FlashOrderStatus[]) {
-      expect(isFlashOrderUpdatable(orderStub({ status }))).toBe(true);
-    }
+  it("should allow the two live statuses", () => {
+    // #given the statuses Flash documents as updatable
+    const live = ["ORDER_STATUS_ACCEPTED", "ORDER_STATUS_PARTIALLY_FILLED"] as FlashOrderStatus[];
+
+    // #when each is checked
+    const out = live.map(status => isFlashOrderUpdatable(orderStub({ status })));
+
+    // #then all are updatable
+    expect(out).toEqual([true, true]);
   });
 
-  it("refuses terminal statuses", () => {
-    for (const status of [
+  it("should refuse terminal statuses", () => {
+    // #given statuses past the point of repricing
+    const terminal = [
       "ORDER_STATUS_FILLED", "ORDER_STATUS_CANCELLED",
       "ORDER_STATUS_REJECTED", "ORDER_STATUS_TERMINATED",
-    ] as FlashOrderStatus[]) {
-      expect(isFlashOrderUpdatable(orderStub({ status }))).toBe(false);
-    }
+    ] as FlashOrderStatus[];
+
+    // #when each is checked
+    const out = terminal.map(status => isFlashOrderUpdatable(orderStub({ status })));
+
+    // #then none are updatable
+    expect(out).toEqual(terminal.map(() => false));
   });
 
-  it("maps each order type to the axis Flash accepts for it", () => {
-    expect(flashUpdateAxis({ orderType: "limit" })).toBe("limit");
-    for (const orderType of ["stop", "stop-loss", "take-profit"] as FlashOrderType[]) {
-      expect(flashUpdateAxis({ orderType })).toBe("trigger");
-    }
-  });
+  it("should keep the updatable status set narrower than the cancellable one", () => {
+    // #given both sets
+    // #when PENDING membership is compared
+    const inBoth = [...FLASH_UPDATABLE_STATUSES].every(s => FLASH_CANCELLABLE_STATUSES.has(s));
 
-  it("refuses the types Flash rejects with 422", () => {
-    for (const orderType of ["twap", "market", "bracket"] as FlashOrderType[]) {
-      expect(flashUpdateAxis({ orderType })).toBeNull();
-      expect(isFlashOrderUpdatable(orderStub({ orderType }))).toBe(false);
-    }
+    // #then updatable is a strict subset of cancellable
+    expect({ inBoth, sameSize: FLASH_UPDATABLE_STATUSES.size === FLASH_CANCELLABLE_STATUSES.size })
+      .toEqual({ inBoth: true, sameSize: false });
   });
 });
 
-describe("basis readers", () => {
-  it("reads a notional trigger with its basis", () => {
-    expect(triggerPriceOf({ notionalPrice: "1800", triggerType: "lower" }))
-      .toEqual({ price: "1800", basis: "notional", triggerType: "lower" });
+describe("flashUpdateAxis", () => {
+  it("should map a limit order to the limit axis", () => {
+    // #given a resting limit order
+    // #when its axis is resolved
+    const axis = flashUpdateAxis({ orderType: "limit" });
+
+    // #then the repriceable value is its limit price
+    expect(axis).toBe("limit");
   });
 
-  it("reads a cross trigger placed by another Flash client", () => {
-    expect(triggerPriceOf({ crossPrice: "0.002", triggerType: "upper" }))
-      .toEqual({ price: "0.002", basis: "cross", triggerType: "upper" });
+  it("should map each trigger type to the trigger axis", () => {
+    // #given the three trigger order types
+    const triggerTypes = ["stop", "stop-loss", "take-profit"] as FlashOrderType[];
+
+    // #when each axis is resolved
+    const out = triggerTypes.map(orderType => flashUpdateAxis({ orderType }));
+
+    // #then all reprice their threshold
+    expect(out).toEqual(["trigger", "trigger", "trigger"]);
   });
 
-  it("returns null for absent or empty triggers", () => {
-    expect(triggerPriceOf(null)).toBeNull();
-    expect(triggerPriceOf(undefined)).toBeNull();
-    expect(triggerPriceOf({ triggerType: "lower" })).toBeNull();
+  it("should refuse the order types Flash rejects with 422", () => {
+    // #given types with no repriceable axis
+    const unsupported = ["twap", "market", "bracket"] as FlashOrderType[];
+
+    // #when each axis is resolved
+    const out = unsupported.map(orderType => flashUpdateAxis({ orderType }));
+
+    // #then none offer an update
+    expect(out).toEqual(unsupported.map(() => null));
+  });
+});
+
+describe("triggerPriceOf", () => {
+  it("should read a notional trigger with its basis", () => {
+    // #given a trigger placed in USD basis
+    const trigger = { notionalPrice: "1800", triggerType: "lower" } as const;
+
+    // #when it is read
+    const out = triggerPriceOf(trigger);
+
+    // #then price, basis and direction come back together
+    expect(out).toEqual({ price: "1800", basis: "notional", triggerType: "lower" });
   });
 
-  it("reads a limit price in whichever basis the order carries", () => {
-    expect(limitPriceOf({ limitNotionalPrice: "4000", limitCrossPrice: null }))
-      .toEqual({ price: "4000", basis: "notional" });
-    expect(limitPriceOf({ limitNotionalPrice: null, limitCrossPrice: "0.0004" }))
-      .toEqual({ price: "0.0004", basis: "cross" });
-    expect(limitPriceOf({ limitNotionalPrice: null, limitCrossPrice: null })).toBeNull();
+  it("should read a cross trigger placed through another Flash client", () => {
+    // #given a trigger placed in pair-rate basis
+    const trigger = { crossPrice: "0.002", triggerType: "upper" } as const;
+
+    // #when it is read
+    const out = triggerPriceOf(trigger);
+
+    // #then the cross basis is reported, not silently treated as notional
+    expect(out).toEqual({ price: "0.002", basis: "cross", triggerType: "upper" });
+  });
+
+  it("should return null for an absent trigger", () => {
+    // #given orders with no trigger at all
+    // #when each is read
+    const out = [triggerPriceOf(null), triggerPriceOf(undefined)];
+
+    // #then nothing is reported
+    expect(out).toEqual([null, null]);
+  });
+
+  it("should return null for a trigger carrying neither price", () => {
+    // #given a malformed trigger
+    const trigger = { triggerType: "lower" } as const;
+
+    // #when it is read
+    const out = triggerPriceOf(trigger);
+
+    // #then it is treated as unreadable rather than defaulting a basis
+    expect(out).toBeNull();
+  });
+});
+
+describe("limitPriceOf", () => {
+  it("should read a notional limit price", () => {
+    // #given an order priced in USD
+    const order = { limitNotionalPrice: "4000", limitCrossPrice: null };
+
+    // #when the limit is read
+    const out = limitPriceOf(order);
+
+    // #then the notional basis is reported
+    expect(out).toEqual({ price: "4000", basis: "notional" });
+  });
+
+  it("should read a cross limit price", () => {
+    // #given an order priced in the pair rate
+    const order = { limitNotionalPrice: null, limitCrossPrice: "0.0004" };
+
+    // #when the limit is read
+    const out = limitPriceOf(order);
+
+    // #then the cross basis is reported
+    expect(out).toEqual({ price: "0.0004", basis: "cross" });
+  });
+
+  it("should return null when the order carries no limit price", () => {
+    // #given a pure trigger order
+    const order = { limitNotionalPrice: null, limitCrossPrice: null };
+
+    // #when the limit is read
+    const out = limitPriceOf(order);
+
+    // #then nothing is reported
+    expect(out).toBeNull();
   });
 });
