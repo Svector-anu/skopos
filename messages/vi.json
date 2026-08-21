@@ -269,7 +269,8 @@
         "pair": "Đã bảo vệ: bán {token} ở ${stop} (cắt lỗ) hoặc ${target} (chốt lời) — tùy điều kiện nào đến trước.",
         "cap": "Bảo vệ áp dụng tối đa {amount} {token}. Phần khớp vượt quá mức đó không được bảo vệ.",
         "keepFunds": "Giữ {token} trong ví này khi bảo vệ còn hiệu lực — lệnh thoát sẽ bán từ đây."
-      }
+      },
+      "streamingLive": "trực tiếp · đang cập nhật giá"
     },
     "solana": {
       "routeFailedRecheck": "Đường đi này vừa không qua được kiểm tra on-chain mới nhất — báo giá đã được làm mới. Hãy xem lại và thử lại.",

@@ -269,7 +269,8 @@
         "pair": "已保护：将在 ${stop}（止损）或 ${target}（止盈）卖出 {token}，以先触发者为准。",
         "cap": "保护范围最多 {amount} {token}。超出部分不在保护范围内。",
         "keepFunds": "保护生效期间请将 {token} 保留在此钱包中 — 平仓将从这里卖出。"
-      }
+      },
+      "streamingLive": "实时 · 持续更新报价"
     },
     "solana": {
       "routeFailedRecheck": "该路径刚刚未通过链上复核 — 报价已刷新。请检查后重试。",

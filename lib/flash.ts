@@ -243,7 +243,10 @@ const FLASH_DEV_API_KEY = "dpka_513a2bd7_57a2_46d2_927b_2a3857fe271b";
 const FLASH_QUOTE_TIMEOUT_MS = 12_000;
 const FLASH_SUBMIT_TIMEOUT_MS = 15_000;
 
-function flashApiKey(): string {
+// Exported for the streaming-quote proxy (app/api/flash/quote-stream), which
+// authenticates in-band on every subscribe frame rather than via a header.
+// Server-side callers only — this must never reach the browser.
+export function flashApiKey(): string {
   return process.env.FLASH_API_KEY?.trim() || FLASH_DEV_API_KEY;
 }
 

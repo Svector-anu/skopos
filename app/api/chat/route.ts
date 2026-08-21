@@ -175,7 +175,7 @@ What you can do:
 • FX, gold, equities — e.g. "USD to EUR", "gold price"
 • Look up any tx, ENS name, or address — just paste it
 
-Not live yet: perpetual/recurring DCA, off-ramp to bank/card.
+Not live: perpetual agents that keep buying on a schedule, and off-ramp to a bank or card. (DCA over a set window IS live — "buy $500 of ETH over 7 days".)
 
 Just type what you want to do.`;
 
@@ -3083,8 +3083,11 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // ask used to become a nonsensical bridge prompt). Fires before execution and
   // rebalance parsing, so "buy ETH when it hits $X" isn't run as a market order.
   const NOT_LIVE: Array<[RegExp, string]> = [
+    // Reached only when the order block above did NOT parse a TWAP — i.e. no
+    // window was given, or the ask is open-ended. Scheduled DCA over a fixed
+    // window shipped, so this must not claim DCA is unavailable outright.
     [/\b(dca|dollar[-\s]?cost\s*averag\w*|recurring|every\s+(?:day|week|month|hour|other\s+day)|set\s+up\s+an?\s+agent|automate\s+(?:my|a|the)\s+(?:buy|swap|purchase|dca))\b/i,
-      `Recurring buys and DCA agents aren't live yet — that's on the roadmap. For now I can do one-off swaps and bridges, e.g. "swap $20 of USDC to ETH on base".`],
+      `DCA over a set window is live — try "buy $500 of ETH over 7 days" and I'll spread it across that period. An open-ended agent that keeps buying every week isn't live.`],
     // "limit order"/"stop-loss"/"take-profit" removed from this alternation —
     // those order types shipped (parseFlashOrderIntent, above) and are always
     // intercepted earlier with real quotes or a specific follow-up question.
@@ -3095,9 +3098,14 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     [/\bwhen\s+(?:the\s+)?(?:price|it|eth|btc|sol)\s+(?:drops?|hits?|reaches?|falls?|is)\b.*\$?\d/i,
       `Add "buy" or "sell" and a token and I can place that as a real order — e.g. "sell 2 ETH when it hits $5000" or "sell if ETH drops below $2000". Want a passive notification instead? Try "alert me when eth hits $5000".`],
     [/\b(off[-\s]?ramp|cash\s*out|withdraw\s+to\s+(?:my\s+)?(?:bank|card|debit)|to\s+my\s+(?:debit|bank)\s+(?:card|account)?|fiat\s+out)\b/i,
-      `Cashing out to a bank or card isn't live yet. Skopos handles on-chain swaps and bridges; fiat off-ramp is on the roadmap.`],
+      `Cashing out to a bank or card isn't live. Skopos moves funds on-chain only — swaps, bridges and payments.`],
+    // NOT a denial. Smart-money tracking is one of Skopos's largest shipped
+    // surfaces — four Nansen-backed reads, wired far earlier in this
+    // waterfall. This entry told users it "isn't live yet", which is the same
+    // self-denial 056ac3b removed for MCP. Anything reaching here named the
+    // capability without naming a token, so point at the real commands.
     [/\b(whale\s+(?:signals?|tracking|watch\w*|alerts?)|smart\s+money|top\s+wallets|what\s+(?:others|people|whales)\s+are\s+(?:bridging|buying|trading|doing))\b/i,
-      `Whale and smart-money tracking isn't live yet. You can scan a specific wallet (paste its address) or a token's risk ("scan PEPE risk") today.`],
+      `Smart-money tracking is live. Name a token and I'll pull it: "who is buying $pepe", "who holds $pepe", or "what is smart money buying" for a cross-chain screen.`],
   ];
   for (const [re, text] of NOT_LIVE) {
     if (re.test(trimmed)) return json({ type: "text", text });
