@@ -1037,12 +1037,35 @@ async function pickOrderChain(
 
 // Short restatement of the order for the "add a chain" examples above, so the
 // suggestion the user is told to type is their own request plus a chain.
-function restate(order: FlashOrderIntent): string {
+// Rebuilds the user's order as a command they can actually send back. This is
+// quoted in every "which chain?" ask, so it has to ROUND-TRIP: whatever comes
+// out must re-parse to the same order.
+//
+// Two things it has to get right, both of which it previously got wrong:
+//
+// 1. A BUY's qty is a dollar spend (LIMIT_BUY_RE / TWAP_RE_A only capture an
+//    amount behind a literal "$"), while a SELL's is a token quantity. Emitting
+//    "buy 20 ETH at $2300" for a $20 order does not merely misstate the size —
+//    it matches NO pattern at all, so the user follows our own suggestion and
+//    gets a conversational ask instead of a quote.
+// 2. An attached bracket has to come along. Dropping it means a user who asked
+//    for protection, hit a which-chain prompt, and did exactly what we told
+//    them, silently ends up with an UNPROTECTED order.
+export function restate(order: FlashOrderIntent): string {
   const sym = order.token.toUpperCase();
-  if (order.orderType === "twap") return `${order.side} ${order.qty} ${sym} over ${Math.round((order.durationSeconds ?? 86400) / 86400)} days`;
+  // Buys are sized in USD and must carry the "$ … of" shape the parsers need.
+  const amount = order.side === "buy" ? `$${order.qty} of ${sym}` : `${order.qty} ${sym}`;
+  const bracket = order.bracket
+    ? `, stop $${order.bracket.stopLoss.price}, target $${order.bracket.takeProfit.price}`
+    : "";
+
+  if (order.orderType === "twap") {
+    return `${order.side} ${amount} over ${Math.round((order.durationSeconds ?? 86400) / 86400)} days${bracket}`;
+  }
   if (order.orderType === "stop-loss") return `sell ${order.qty} ${sym} if it drops below $${order.priceLevel}`;
   if (order.orderType === "take-profit") return `sell ${order.qty} ${sym} when it hits $${order.priceLevel}`;
-  return `${order.side} ${order.qty} ${sym} at $${order.priceLevel}`;
+  if (order.orderType === "market") return `${order.side} ${amount}${bracket}`;
+  return `${order.side} ${amount} at $${order.priceLevel}${bracket}`;
 }
 
 export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddress?: string): Promise<FlashOrderLegOk | LegErr> {

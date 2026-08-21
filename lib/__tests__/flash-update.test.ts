@@ -905,3 +905,25 @@ describe("extractBracket — keyword collisions", () => {
     expect(out?.bracket.takeProfit.price).toBe("6");
   });
 });
+
+describe("extractBracket — chain suffix after the legs", () => {
+  const parse = (s: string) => extractBracket(s, normalizeFlashPrice);
+
+  it("should keep a chain named after the pair reachable in the remainder", () => {
+    // #given the chain stated last, which is how people write it
+    const out = parse("buy $20 of ETH at $2300, stop $2100, target $2600 on base");
+
+    // #then the entry regexes can still see "on base" — cutting the legs out
+    // of the middle used to leave ", ," between the entry and the suffix, and
+    // the chain was silently lost
+    expect(out?.remainder).toBe("buy $20 of ETH at $2300 on base");
+  });
+
+  it("should not leave orphaned separators anywhere in the remainder", () => {
+    // #given legs cut from the middle of a comma list
+    const out = parse("buy $500 of ETH at $2800, stop $2500, target $3500 on arbitrum");
+
+    // #then no doubled or dangling separators survive
+    expect(out?.remainder).toBe("buy $500 of ETH at $2800 on arbitrum");
+  });
+});
