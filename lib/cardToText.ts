@@ -412,7 +412,10 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
           : `${str(o.qty)} ${clean(targetAsset.ticker, 16)} → ${clean(contraAsset.ticker, 16)}`;
         return `${str(o.side)} ${str(o.orderType)} · ${qtyLine} · ${status} · id ${str(o.orderId).slice(0, 8)}`;
       });
-      return `Flash orders for ${short(str(c.address))}:\n\n${lines.join("\n")}`;
+      // Repricing and cancelling both need a wallet signature, which a
+      // headless client cannot produce — say so rather than listing orders
+      // that look actionable from here.
+      return `Flash orders for ${short(str(c.address))}:\n\n${lines.join("\n")}\n\nTo reprice or cancel one, open ${APP}.`;
     }
 
     default:

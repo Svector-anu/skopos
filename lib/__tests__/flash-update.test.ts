@@ -10,6 +10,7 @@ import {
   triggerPriceOf,
   FLASH_CANCELLABLE_STATUSES,
   FLASH_UPDATABLE_STATUSES,
+  FLASH_UPDATE_INTENT_RE,
   type FlashOrderStatus,
   type FlashOrderType,
 } from "../flashUpdate";
@@ -445,5 +446,70 @@ describe("limitPriceOf", () => {
 
     // #then nothing is reported
     expect(out).toBeNull();
+  });
+});
+
+describe("FLASH_UPDATE_INTENT_RE", () => {
+  it("should recognize a request to modify a standing order", () => {
+    // #given phrasings that name an existing order and a modification verb
+    const asks = [
+      "move my stop to $3200",
+      "move my stop on ETH to $3200",
+      "change my limit order to $4000",
+      "update my stop loss to 3200",
+      "reprice my limit to 4000",
+      "raise my take profit to $6000",
+      "lower my stop loss to 2000",
+      "adjust my take profit to 7000",
+      "edit my order",
+      "bump my limit to 4500",
+      "modify my stop loss",
+      "change the stop loss to 2900",
+    ];
+
+    // #when each is tested
+    const out = asks.map(a => FLASH_UPDATE_INTENT_RE.test(a));
+
+    // #then all route to the orders card rather than the placement path
+    expect(out).toEqual(asks.map(() => true));
+  });
+
+  it("should not swallow a request to place a new order", () => {
+    // #given real placements. this block sits directly above the
+    // order-PLACEMENT block in the chat route, so a false positive here
+    // turns an order into a listing.
+    const placements = [
+      "sell 2 ETH if it drops below $2000",
+      "buy $2000 of ETH at $1800",
+      "sell 2 ETH when it hits $5000",
+      "buy $500 of ETH over 7 days",
+      "set a stop loss at $3000",
+      "limit buy ETH at 2800",
+      "dca into ETH over a week",
+      "buy 0.05 ETH when it drops to $2800",
+      "purchase $50 of TSLA on robinhood",
+      "sell my NVDA",
+    ];
+
+    // #when each is tested
+    const out = placements.map(p => FLASH_UPDATE_INTENT_RE.test(p));
+
+    // #then none are intercepted
+    expect(out).toEqual(placements.map(() => false));
+  });
+
+  it("should not swallow unrelated commands that share its vocabulary", () => {
+    // #given other traffic through the same waterfall
+    const unrelated = [
+      "my orders", "order status", "what is a stop loss", "stop loss explained",
+      "eth price", "should i buy eth", "swap 1 eth to usdc on base",
+      "bridge 0.1 eth from base to arbitrum", "show my portfolio",
+    ];
+
+    // #when each is tested
+    const out = unrelated.map(u => FLASH_UPDATE_INTENT_RE.test(u));
+
+    // #then none are intercepted
+    expect(out).toEqual(unrelated.map(() => false));
   });
 });

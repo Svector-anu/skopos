@@ -203,3 +203,15 @@ export function buildFlashUpdate(params: {
   }
   return { updateMessage: body.updateMessage, body };
 }
+
+// Recognizes a request to MODIFY a standing order, as opposed to place a new
+// one. Lives here rather than inline in the chat route so the boundary can be
+// held by tests: it sits directly above the order-PLACEMENT block, and any
+// drift that lets it swallow a placement turns "sell 2 ETH if it drops below
+// $2000" into an orders listing instead of an order.
+//
+// Needs both halves to fire — a modification verb AND a possessive reference
+// to an existing order. "set a stop loss at $3000" has the noun but no verb;
+// "sell my NVDA" has the possessive but no modification verb.
+export const FLASH_UPDATE_INTENT_RE =
+  /\b(?:move|change|update|reprice|re-price|edit|adjust|raise|lower|bump|modify)\b[^.!?]{0,40}?\b(?:my|the|that|this)\s+(?:existing\s+|standing\s+|open\s+)?(?:flash\s+)?(?:orders?|stop[\s-]?loss(?:es)?|stop|take[\s-]?profits?|limit(?:\s+order)?|trigger)\b/i;
