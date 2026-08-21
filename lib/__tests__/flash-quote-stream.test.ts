@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   toProxyEvent, isStreamOver, isTerminalError, streamableQuoteRequest, sseFrame,
+  pushSseChunk, toQuoteRevision,
   type FlashStreamFrame,
 } from "@/lib/flashQuoteStream";
 
@@ -169,5 +170,128 @@ describe("sseFrame", () => {
 
     // #then it carries the data: prefix and the blank-line terminator
     expect(out).toBe('data: {"event":"expired","reason":"ttl"}\n\n');
+  });
+});
+
+describe("pushSseChunk", () => {
+  it("should return a complete event from one chunk", () => {
+    // #given a whole frame in a single chunk
+    const state = { buffer: "" };
+
+    // #when it is pushed
+    const out = pushSseChunk(state, 'data: {"event":"quote","quote":{"quoteId":"q1"}}\n\n');
+
+    // #then the event is emitted
+    expect(out).toEqual([{ event: "quote", quote: { quoteId: "q1" } }]);
+  });
+
+  it("should hold a partial frame until its terminator arrives", () => {
+    // #given a revision split across a TCP boundary
+    const state = { buffer: "" };
+
+    // #when the first half arrives
+    const first = pushSseChunk(state, 'data: {"event":"quote","quo');
+
+    // #then nothing is emitted yet — a dropped half is a lost revision
+    expect(first).toEqual([]);
+  });
+
+  it("should emit the frame once the rest of it lands", () => {
+    // #given a stream resumed after a split
+    const state = { buffer: "" };
+    pushSseChunk(state, 'data: {"event":"quote","quo');
+
+    // #when the remainder arrives
+    const out = pushSseChunk(state, 'te":{"quoteId":"q2"}}\n\n');
+
+    // #then the whole event is recovered
+    expect(out).toEqual([{ event: "quote", quote: { quoteId: "q2" } }]);
+  });
+
+  it("should emit several events arriving in one chunk", () => {
+    // #given two revisions batched together
+    const state = { buffer: "" };
+
+    // #when both arrive at once
+    const out = pushSseChunk(state,
+      'data: {"event":"quote","quote":{"quoteId":"a"}}\n\ndata: {"event":"expired","reason":"ttl"}\n\n');
+
+    // #then both are returned in order
+    expect(out).toEqual([
+      { event: "quote", quote: { quoteId: "a" } },
+      { event: "expired", reason: "ttl" },
+    ]);
+  });
+
+  it("should drop a malformed frame without ending the session", () => {
+    // #given one unparseable frame followed by a good one
+    const state = { buffer: "" };
+
+    // #when both are pushed
+    const out = pushSseChunk(state, 'data: {not json\n\ndata: {"event":"expired","reason":"ttl"}\n\n');
+
+    // #then only the good one surfaces
+    expect(out).toEqual([{ event: "expired", reason: "ttl" }]);
+  });
+});
+
+describe("toQuoteRevision", () => {
+  const raw = {
+    quoteId: "q-new",
+    evm: { orderTypedData: "{\"domain\":{}}", permitTypedData: "", approveTx: { to: "0xa", data: "0xb" } },
+    to: { amount: "0.0421" },
+    fees: { estimatedFeeNotional: "0.11" },
+  };
+
+  it("should extract the fields that change between revisions", () => {
+    // #given a raw Flash quote frame
+    // #when the revision is extracted
+    const out = toQuoteRevision(raw);
+
+    // #then the signing payload travels with its own quoteId
+    expect({ quoteId: out?.quoteId, orderTypedData: out?.orderTypedData })
+      .toEqual({ quoteId: "q-new", orderTypedData: "{\"domain\":{}}" });
+  });
+
+  it("should carry the repriced output and fee", () => {
+    // #given the same frame
+    const out = toQuoteRevision(raw);
+
+    // #then the numbers shown on the card come from this revision
+    expect({ outputAmount: out?.outputAmount, feesUSD: out?.feesUSD })
+      .toEqual({ outputAmount: "0.0421", feesUSD: "0.11" });
+  });
+
+  it("should reject a quote with no signable payload", () => {
+    // #given a frame missing orderTypedData
+    const out = toQuoteRevision({ quoteId: "q1", evm: { orderTypedData: null } });
+
+    // #then it is refused — an unsignable quote must never replace a signable
+    // one on screen
+    expect(out).toBeNull();
+  });
+
+  it("should reject a frame with no quoteId", () => {
+    // #given a payload with no id to submit against
+    const out = toQuoteRevision({ evm: { orderTypedData: "{}" } });
+
+    // #then it is refused
+    expect(out).toBeNull();
+  });
+
+  it("should treat a missing approveTx as no approval needed", () => {
+    // #given a revision where the allowance is already sufficient
+    const out = toQuoteRevision({ quoteId: "q", evm: { orderTypedData: "{}" } });
+
+    // #then approveTx is explicitly null rather than undefined
+    expect(out?.approveTx).toBeNull();
+  });
+
+  it("should refuse a non-object frame", () => {
+    // #given junk on the wire
+    const out = [null, "quote", 42].map(toQuoteRevision);
+
+    // #then none produce a revision
+    expect(out).toEqual([null, null, null]);
   });
 });

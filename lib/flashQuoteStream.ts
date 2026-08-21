@@ -90,3 +90,85 @@ export function streamableQuoteRequest(body: {
 export function sseFrame(event: ProxyEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
+
+// ── client side ──────────────────────────────────────────────────────────────
+// EventSource cannot POST, and the quote request is a body rather than a query
+// string, so the browser reads the SSE stream off fetch() instead. That means
+// framing it by hand: SSE frames are separated by a blank line and can arrive
+// split across chunks.
+
+export interface SseParseState {
+  /** Bytes seen but not yet terminated by a blank line. */
+  buffer: string;
+}
+
+/**
+ * Feeds one chunk in, returns whatever complete events it completed. The
+ * leftover partial frame stays in `state.buffer` for the next chunk — a
+ * revision split across a TCP boundary must not be dropped or double-read.
+ */
+export function pushSseChunk(state: SseParseState, chunk: string): ProxyEvent[] {
+  state.buffer += chunk;
+  const events: ProxyEvent[] = [];
+  let boundary = state.buffer.indexOf("\n\n");
+  while (boundary !== -1) {
+    const frame = state.buffer.slice(0, boundary);
+    state.buffer = state.buffer.slice(boundary + 2);
+    for (const line of frame.split("\n")) {
+      if (!line.startsWith("data:")) continue;
+      try {
+        events.push(JSON.parse(line.slice(5).trim()) as ProxyEvent);
+      } catch {
+        // A malformed frame is dropped rather than ending a live session.
+      }
+    }
+    boundary = state.buffer.indexOf("\n\n");
+  }
+  return events;
+}
+
+// Only these fields differ between revisions of one quote session — the
+// request is fixed, so chains, assets, side and qty never move. Patching just
+// these keeps the card's identity stable while guaranteeing the signing
+// payload always belongs to the quote currently on screen.
+export interface QuoteRevisionPatch {
+  quoteId: string;
+  orderTypedData: string;
+  permitTypedData: string;
+  approveTx: { to: string; data: string } | null;
+  outputAmount: string | null;
+  feesUSD: string | null;
+}
+
+type RawQuote = {
+  quoteId?: unknown;
+  evm?: { orderTypedData?: unknown; permitTypedData?: unknown; approveTx?: unknown } | null;
+  to?: { amount?: unknown } | null;
+  fees?: { estimatedFeeNotional?: unknown } | null;
+};
+
+/**
+ * Extracts the revision patch from a raw Flash quote, or null if the frame is
+ * missing a signable payload — a quote we cannot sign must never replace one
+ * we can.
+ */
+export function toQuoteRevision(raw: unknown): QuoteRevisionPatch | null {
+  if (!raw || typeof raw !== "object") return null;
+  const q = raw as RawQuote;
+  const quoteId = typeof q.quoteId === "string" ? q.quoteId : null;
+  const orderTypedData = typeof q.evm?.orderTypedData === "string" ? q.evm.orderTypedData : null;
+  if (!quoteId || !orderTypedData) return null;
+
+  const approve = q.evm?.approveTx as { to?: unknown; data?: unknown } | null | undefined;
+  return {
+    quoteId,
+    orderTypedData,
+    permitTypedData: typeof q.evm?.permitTypedData === "string" ? q.evm.permitTypedData : "",
+    approveTx:
+      approve && typeof approve.to === "string" && typeof approve.data === "string"
+        ? { to: approve.to, data: approve.data }
+        : null,
+    outputAmount: typeof q.to?.amount === "string" ? q.to.amount : null,
+    feesUSD: typeof q.fees?.estimatedFeeNotional === "string" ? q.fees.estimatedFeeNotional : null,
+  };
+}

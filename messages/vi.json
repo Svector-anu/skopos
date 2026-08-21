@@ -264,7 +264,8 @@
       "recheckingRoute": "đang kiểm tra lại đường đi…",
       "confirmInWallet": "Xác nhận trong ví…",
       "quoteExpiredRefresh": "Báo giá hết hạn — làm mới",
-      "executeArrow": "Thực thi →"
+      "executeArrow": "Thực thi →",
+      "streamingLive": "trực tiếp · đang cập nhật giá"
     },
     "solana": {
       "routeFailedRecheck": "Đường đi này vừa không qua được kiểm tra on-chain mới nhất — báo giá đã được làm mới. Hãy xem lại và thử lại.",

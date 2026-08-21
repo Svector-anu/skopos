@@ -264,7 +264,8 @@
       "recheckingRoute": "re-checking route…",
       "confirmInWallet": "Confirm in wallet…",
       "quoteExpiredRefresh": "Quote expired — refresh",
-      "executeArrow": "Execute →"
+      "executeArrow": "Execute →",
+      "streamingLive": "live · repricing"
     },
     "solana": {
       "routeFailedRecheck": "This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.",
