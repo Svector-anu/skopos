@@ -28,6 +28,13 @@ function parseJsonField<T>(value: unknown, fallback: T): T {
   return fallback;
 }
 
+// Neutralizes regex metacharacters in text that came from a user. Kept local
+// rather than pulled from a dependency — one line, and adding a package for it
+// would be a larger supply-chain surface than the bug it fixes.
+export function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function getTopMarkets(keyword?: string, limit = 8): Promise<PolymarketEvent[]> {
   const fetchLimit = keyword ? 200 : Math.max(limit * 3, 30);
   const url = `${BASE}/events?active=true&closed=false&limit=${fetchLimit}&order=volume24hr&ascending=false`;
@@ -85,7 +92,13 @@ export async function getTopMarkets(keyword?: string, limit = 8): Promise<Polyma
     };
     const kw = keyword.trim().toLowerCase();
     const terms = ALIASES[kw] ?? [kw];
-    const pattern = new RegExp(terms.map(t => `\\b${t}\\b`).join("|"), "i");
+    // Escaped: `keyword` is user text straight from the chat message (a
+    // Polymarket topic like "trump 2028"), and it was interpolated into a
+    // RegExp raw. Two consequences, both reachable from a normal message:
+    // an unbalanced "(" or a reversed range like "[z-a]" throws a SyntaxError
+    // at request time, and a crafted pattern turns a topic filter into an
+    // attacker-supplied regex run against every market title we fetched.
+    const pattern = new RegExp(terms.map(t => `\\b${escapeRegExp(t)}\\b`).join("|"), "i");
     events = events.filter(
       e => pattern.test(e.title) || e.markets.some(m => pattern.test(m.question))
     );
