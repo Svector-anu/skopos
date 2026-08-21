@@ -656,9 +656,20 @@ const FLASH_UPDATE_HEADER = "Definitive Flash — Update Order";
 // single canonical string used for BOTH the signed message and the request
 // body. Returns null for anything that isn't a positive decimal, so a bad
 // input is refused before a wallet prompt rather than after a 4xx.
+//
+// Commas are only stripped from well-formed thousands grouping, never
+// blindly. A blanket strip reads "3,2" — how most of continental Europe
+// writes 3.2 — as 32, a silent 10x on a price the user is about to sign.
+// Anything that isn't unambiguous is refused so the UI can ask instead.
+const PLAIN_DECIMAL_RE   = /^\d+(?:\.\d+)?$/;
+const GROUPED_DECIMAL_RE = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+
 export function normalizeFlashPrice(raw: string): string | null {
-  const cleaned = raw.trim().replace(/^\$/, "").replace(/,/g, "");
-  if (!/^\d+(?:\.\d+)?$/.test(cleaned)) return null;
+  const trimmed = raw.trim().replace(/^\$/, "").trim();
+  let cleaned: string;
+  if (PLAIN_DECIMAL_RE.test(trimmed)) cleaned = trimmed;
+  else if (GROUPED_DECIMAL_RE.test(trimmed)) cleaned = trimmed.replace(/,/g, "");
+  else return null;
   if (parseFloat(cleaned) <= 0) return null;
   return cleaned;
 }
