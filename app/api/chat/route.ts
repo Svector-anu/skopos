@@ -1918,26 +1918,11 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── Guided Robinhood Chain bridge — must run BEFORE the single-leg intent
-  // block, same reasoning as guided buy/sell above: "bridge from robinhood to
-  // base" or "get funds onto robinhood chain" has no amount, so
-  // parseIntent()/regexParse() can't build a real quote from it (every one of
-  // the 8 regex patterns requires \d+). Ask conversationally instead of
-  // falling through to a confusing informational-LLM answer or a bare parse
-  // failure. Only fires when there's no amount already — a fully-specified
-  // "bridge 0.1 ETH from base to robinhood" skips this and goes straight to
-  // the single-leg block below, which now routes it to Relay (resolveRelayLeg).
-  const mentionsRobinhoodBridge = /\brobinhood\b/i.test(trimmed) && /\b(bridge|move|get|send|transfer)\b/i.test(trimmed);
-  const hasAmountAlready = /\b\d[\d.,]*\b/.test(trimmed);
-  if (mentionsRobinhoodBridge && !hasAmountAlready) {
-    return json({
-      type: "text",
-      text: `How much would you like to bridge, and which token? Type an amount and both chains — e.g. "bridge 0.1 ETH from base to robinhood" (onto Robinhood Chain) or "bridge 0.1 ETH from robinhood to base" (off it).`,
-    });
-  }
-
-  // ── Reprice an existing Flash order — must run BEFORE the order-placement
-  // block below. Confirmed by tracing the live regexes: "update my stop loss
+  // ── Reprice an existing Flash order — must run BEFORE both the guided
+  // Robinhood-bridge block just below and the order-placement block after it.
+  // The bridge block fires on "robinhood" + a move/bridge/send verb with no
+  // amount present, so "move my stop on robinhood" was being answered with
+  // "how much would you like to bridge?". Confirmed by tracing the live regexes: "update my stop loss
   // to 3200" and "raise my take profit to $6000" both match LOOSE_STOP_LOSS /
   // LOOSE_TAKE_PROFIT and reach the LLM order gate, so a request to MODIFY an
   // order was being answered as a request to CREATE one — the user got asked
@@ -1958,6 +1943,24 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       return json({ type: "text", text: "Connect your wallet first — I'll pull up your Flash orders so you can reprice one." });
     }
     return flashOrdersCard(senderAddress);
+  }
+
+  // ── Guided Robinhood Chain bridge — must run BEFORE the single-leg intent
+  // block, same reasoning as guided buy/sell above: "bridge from robinhood to
+  // base" or "get funds onto robinhood chain" has no amount, so
+  // parseIntent()/regexParse() can't build a real quote from it (every one of
+  // the 8 regex patterns requires \d+). Ask conversationally instead of
+  // falling through to a confusing informational-LLM answer or a bare parse
+  // failure. Only fires when there's no amount already — a fully-specified
+  // "bridge 0.1 ETH from base to robinhood" skips this and goes straight to
+  // the single-leg block below, which now routes it to Relay (resolveRelayLeg).
+  const mentionsRobinhoodBridge = /\brobinhood\b/i.test(trimmed) && /\b(bridge|move|get|send|transfer)\b/i.test(trimmed);
+  const hasAmountAlready = /\b\d[\d.,]*\b/.test(trimmed);
+  if (mentionsRobinhoodBridge && !hasAmountAlready) {
+    return json({
+      type: "text",
+      text: `How much would you like to bridge, and which token? Type an amount and both chains — e.g. "bridge 0.1 ETH from base to robinhood" (onto Robinhood Chain) or "bridge 0.1 ETH from robinhood to base" (off it).`,
+    });
   }
 
   // ── Flash advanced order types — limit / stop-loss / take-profit / TWAP.

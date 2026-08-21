@@ -465,6 +465,9 @@ describe("FLASH_UPDATE_INTENT_RE", () => {
       "bump my limit to 4500",
       "modify my stop loss",
       "change the stop loss to 2900",
+      // names the chain but no amount — the guided-bridge block above fires
+      // on exactly that shape, so this one must reach the reprice block
+      "move my stop on robinhood",
     ];
 
     // #when each is tested
