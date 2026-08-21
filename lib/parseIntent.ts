@@ -345,10 +345,6 @@ function getGroq(tier: LlmTier = "fast"): Groq | null {
   return fastClient;
 }
 
-function modelFor(tier: LlmTier = "fast"): string {
-  return smartEnabled(tier) ? SMART_MODEL : FAST_MODEL;
-}
-
 type LlmMessage = { role: "system" | "user" | "assistant"; content: string };
 interface ChatResult { content: string | null; finishReason?: string; servedBy: LlmTier }
 
@@ -356,6 +352,13 @@ interface ChatResult { content: string | null; finishReason?: string; servedBy: 
 // (the gateway can degrade to Fast). Used to meter only genuine Smart replies.
 export type LlmMeta = { servedBy?: LlmTier };
 
+// THE single place this module talks to a model. Every caller — informational
+// replies, both JSON parsers, both card summaries — goes through here, so
+// model-level concerns (the gpt-oss reasoning budget below, tier routing,
+// gateway degradation) are fixed once rather than per call site. Four
+// callers used to build their own groq.chat.completions.create() and so
+// silently missed the reasoning fix in #96; do not add a fifth.
+//
 // groq-sdk hard-codes the /openai/v1 path, so it cannot reach the Bankr gateway
 // (which serves /v1/chat/completions). Drive Smart with a direct fetch to the
 // OpenAI-format gateway; keep groq-sdk for Fast. On ANY gateway failure, degrade
@@ -461,12 +464,8 @@ async function groqParseIntent(input: string): Promise<ParsedIntent | null> {
   // A transaction intent requires a numeric amount — skip LLM for purely textual messages
   if (!/\d/.test(input)) return null;
 
-  const groq = getGroq();
-  if (!groq) return null;
-
   try {
-    const completion = await groq.chat.completions.create({
-      model: modelFor("fast"),
+    const completion = await chatComplete("fast", {
       response_format: { type: "json_object" },
       max_tokens: 128,
       temperature: 0,
@@ -476,7 +475,7 @@ async function groqParseIntent(input: string): Promise<ParsedIntent | null> {
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content;
+    const raw = completion?.content;
     if (!raw) return null;
 
     const parsed = JSON.parse(raw);
@@ -726,12 +725,8 @@ export function looksLikeRebalance(input: string): boolean {
 }
 
 export async function parseRebalanceIntent(input: string): Promise<ParsedIntent[] | null> {
-  const groq = getGroq();
-  if (!groq) return null;
-
   try {
-    const completion = await groq.chat.completions.create({
-      model: modelFor("fast"),
+    const completion = await chatComplete("fast", {
       response_format: { type: "json_object" },
       max_tokens: 512,
       temperature: 0,
@@ -741,7 +736,7 @@ export async function parseRebalanceIntent(input: string): Promise<ParsedIntent[
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content;
+    const raw = completion?.content;
     if (!raw) return null;
 
     const parsed = JSON.parse(raw);
@@ -815,8 +810,6 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
   // covered, or the call failed).
   if (tx.aiSummary) return tx.aiSummary;
 
-  const groq = getGroq();
-  if (!groq) return "";
   const prompt = [
     `Chain: ${tx.chainName}`,
     `Status: ${tx.status}`,
@@ -828,8 +821,7 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
     tx.timestamp ? `Time: ${new Date(tx.timestamp * 1000).toUTCString()}` : null,
   ].filter(Boolean).join("\n");
   try {
-    const completion = await groq.chat.completions.create({
-      model: modelFor("fast"),
+    const completion = await chatComplete("fast", {
       max_tokens: 80,
       temperature: 0.1,
       messages: [
@@ -837,7 +829,7 @@ export async function generateTxSummary(tx: import("./alchemy").TxData): Promise
         { role: "user", content: prompt },
       ],
     });
-    return completion.choices[0]?.message?.content?.trim() ?? "";
+    return completion?.content?.trim() ?? "";
   } catch {
     return "";
   }
@@ -852,8 +844,6 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
     ? `Known as: ${data.reputation.tags.map(t => t.name).join(", ")} (Blockscout public tag)\n\n`
     : "";
 
-  const groq = getGroq();
-  if (!groq) return reputationLine.trim();
   const fmtUsd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const totalUsd = data.totalUsdValue ? fmtUsd(data.totalUsdValue) : "unknown";
   // Show a $ value per holding only where one is actually known (tokenBalances is
@@ -871,8 +861,7 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
     .join(", ");
   const prompt = `Address: ${data.address}\nTotal portfolio value: ${totalUsd}\nNative balances: ${nativeBalances}\nToken balances (sorted by value, $ shown only where known): ${tokenBalances}\nRecent: ${recent || "none"}`;
   try {
-    const completion = await groq.chat.completions.create({
-      model: modelFor("fast"),
+    const completion = await chatComplete("fast", {
       max_tokens: 80,
       temperature: 0.1,
       messages: [
@@ -880,7 +869,7 @@ export async function generateAddressSummary(data: import("./alchemy").AddressDa
         { role: "user", content: prompt },
       ],
     });
-    return reputationLine + (completion.choices[0]?.message?.content?.trim() ?? "");
+    return reputationLine + (completion?.content?.trim() ?? "");
   } catch {
     return reputationLine.trim();
   }
