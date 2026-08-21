@@ -2,12 +2,14 @@ import { fetchWithTimeout } from "./http";
 import { getRedis } from "./redis";
 import type { DexPair } from "./dexscreener";
 import type { FlashOrderStatus, FlashOrderType, FlashPriceTrigger, FlashUpdateRequest } from "./flashUpdate";
+import type { AttachedBracket, AttachedBracketRead } from "./flashBracket";
 
 // The pure half lives in ./flashUpdate so the browser can build and sign an
 // update message without pulling this module's server deps into the bundle.
 // Re-exported here so every existing server-side import of lib/flash keeps
 // working unchanged.
 export * from "./flashUpdate";
+export * from "./flashBracket";
 
 const BASE = "https://api.dexscreener.com";
 const ROBINHOOD_CHAIN_ID = "robinhood"; // DexScreener's chainId slug for chain 4663
@@ -270,6 +272,11 @@ export interface FlashQuoteRequest {
   durationSeconds?: number;
   twapBucketCount?: number;
   triggers?: FlashPriceTrigger[];
+  // Attach a take-profit / stop-loss pair to this entry. Same-chain only, and
+  // requires funderAddress — the pair's signing payload is derived for that
+  // wallet. The response then carries a SECOND signing payload under
+  // attachedBracket.
+  attachedBracket?: AttachedBracket;
 }
 
 export interface FlashQuoteLeg {
@@ -329,6 +336,24 @@ export interface FlashQuoteResponse {
     orderTypedData: string; // EIP-712 JSON string
   } | null;
   svm: FlashSvmActions | null;
+  // Present only when the quote request carried an attachedBracket. The pair
+  // signs SEPARATELY from the entry, over its own typed data, and sells the
+  // asset the entry receives — so it can need its own approval on that asset
+  // before submit, exactly as the entry does on the asset it spends.
+  attachedBracket?: {
+    evm: {
+      approveTx: { to: string; data: string } | null;
+      permitTypedData: string | null;
+      orderTypedData: string;
+    } | null;
+    svm: unknown | null;
+    salt: string | null;
+    deadline: string;
+    // The MOST of the received asset the pair's signature authorizes selling.
+    // Protection is capped here: if the entry receives more than this, the
+    // excess is unprotected. Surfaced to the user, not just carried.
+    signedMaxFromAmount: string;
+  } | null;
 }
 
 // Definitive's spec marks evm.permitTypedData/orderTypedData nullable, but
@@ -395,6 +420,17 @@ export interface FlashSubmitRequest {
   svmSponsoredDelegateTx?: string;
   twapBucketCount?: number;
   triggers?: FlashPriceTrigger[];
+  // Echo of the quote's pair, plus its own signature and the three values
+  // baked into the signed typed data. salt is EVM-only.
+  attachedBracket?: AttachedBracket & {
+    userSignature: string;
+    salt?: string;
+    svmNonce?: string;
+    deadline: string;
+    signedMaxFromAmount: string;
+    evmPermitTypedData?: string;
+    evmPermitSignature?: string;
+  };
 }
 
 export interface FlashSubmitResponse {
@@ -457,6 +493,10 @@ export interface FlashOrder {
   limitCrossPrice: string | null;
   trigger: FlashPriceTrigger | null;
   brackets: FlashPriceTrigger[] | null;
+  // The attached pair's state, reported on the ENTRY order. A GET for the
+  // pair itself 404s until it activates on the entry's first fill, so this
+  // is the only way to observe it in that window.
+  attachedBracket: AttachedBracketRead | null;
   maxPriceImpact: string | null;
   twapBucketCount: number | null;
   placedAt: string;
