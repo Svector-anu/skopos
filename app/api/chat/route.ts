@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
 import { FLASH_UPDATE_INTENT_RE } from "@/lib/flashUpdate";
+import { validateBracket, isBracketableOrderType, type AttachedBracket } from "@/lib/flashBracket";
 import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashChain, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
@@ -656,6 +657,10 @@ export type FlashOrderIntent = {
   durationSeconds?: number;        // twap only
   twapBucketCount?: number;        // twap only, optional — omitted lets Flash auto-derive
   chain?: string;                  // optional "on CHAIN" suffix — defaults to robinhood if unset
+  // Take-profit / stop-loss pair attached to this entry. Flash allows one on
+  // market, limit and twap entries only — never on a trigger order, which is
+  // why a stop-loss can't itself be bracketed.
+  bracket?: AttachedBracket;
 };
 
 function stripCommas(raw: string): string {
@@ -907,6 +912,19 @@ export type FlashOrderLegOk = {
     triggerType?: "upper" | "lower";
     durationSeconds?: number;
     twapBucketCount?: number;
+    // Second signing payload plus the three values baked into it. The client
+    // signs this separately from the entry and echoes salt/deadline/
+    // signedMaxFromAmount back verbatim at submit.
+    bracket?: {
+      takeProfit: AttachedBracket["takeProfit"];
+      stopLoss: AttachedBracket["stopLoss"];
+      approveTx: { to: string; data: string } | null;
+      permitTypedData: string | null;
+      orderTypedData: string;
+      salt: string | null;
+      deadline: string;
+      signedMaxFromAmount: string;
+    };
   };
 };
 
@@ -1067,6 +1085,36 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
   if (!targetAsset) return { ok: false, text: `Could not find ${order.token} on ${chainDisplayName}.` };
   if (!contraAsset) return { ok: false, text: `Could not resolve ${stablecoinSymbol} on ${chainDisplayName}.` };
 
+  // ── attached bracket ──────────────────────────────────────────────────
+  // Rejected before quoting so a bad pair costs nothing and gets a plain
+  // answer rather than an opaque upstream error.
+  if (order.bracket) {
+    if (!isBracketableOrderType(order.orderType)) {
+      return {
+        ok: false, ask: true,
+        text: `A ${order.orderType} order can't carry a stop-loss and take-profit — it already IS a trigger. Attach the pair to a limit or TWAP entry instead.`,
+      };
+    }
+    const issue = validateBracket(order.bracket);
+    if (issue) {
+      const text =
+        issue.code === "tp_not_above_sl"
+          ? `Your take-profit ($${order.bracket.takeProfit.price}) has to be above your stop-loss ($${order.bracket.stopLoss.price}) — looks like they're the wrong way round.`
+        : issue.code === "non_positive" ? "Both the stop-loss and take-profit need a price above zero."
+        : issue.code === "mixed_basis" ? "The stop-loss and take-profit have to be priced the same way — both in dollars, or both as a pair rate."
+        : "That entry can't carry a bracket.";
+      return { ok: false, ask: true, text };
+    }
+    // The pair sells what the entry RECEIVES, and Flash cannot bracket an
+    // entry that receives the chain's native coin. Every non-Robinhood chain
+    // is already coerced to the wrapped token above; Robinhood's resolver
+    // returns Flash's native sentinel instead, so it needs the same coercion
+    // here or the quote is rejected with the pair attached but fine without.
+    if (isRobinhood && targetAsset.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") {
+      targetAsset = RH_CHAIN_WETH;
+    }
+  }
+
   const triggers: FlashPriceTrigger[] | undefined = order.triggerType
     ? [{ notionalPrice: order.priceLevel!, triggerType: order.triggerType }]
     : undefined;
@@ -1085,6 +1133,7 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
       ...(order.orderType === "limit" && order.priceLevel ? { limitNotionalPrice: order.priceLevel } : {}),
       ...(triggers ? { triggers } : {}),
+      ...(order.bracket ? { attachedBracket: order.bracket } : {}),
       ...(order.durationSeconds ? { durationSeconds: order.durationSeconds } : {}),
       ...(order.twapBucketCount ? { twapBucketCount: order.twapBucketCount } : {}),
     });
@@ -1137,6 +1186,25 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       ...(order.triggerType ? { triggerType: order.triggerType } : {}),
       ...(order.durationSeconds ? { durationSeconds: order.durationSeconds } : {}),
       ...(order.twapBucketCount ? { twapBucketCount: order.twapBucketCount } : {}),
+      // Only surfaced when Flash actually returned a signable pair. Asking
+      // for a bracket and getting a quote without one is a silent downgrade
+      // to an unprotected entry, so the card must not imply protection that
+      // was never signed — hence the presence check rather than echoing the
+      // request back.
+      ...(order.bracket && quote.attachedBracket?.evm
+        ? {
+            bracket: {
+              takeProfit: order.bracket.takeProfit,
+              stopLoss: order.bracket.stopLoss,
+              approveTx: quote.attachedBracket.evm.approveTx,
+              permitTypedData: quote.attachedBracket.evm.permitTypedData,
+              orderTypedData: quote.attachedBracket.evm.orderTypedData,
+              salt: quote.attachedBracket.salt,
+              deadline: quote.attachedBracket.deadline,
+              signedMaxFromAmount: quote.attachedBracket.signedMaxFromAmount,
+            },
+          }
+        : {}),
     },
   };
 }

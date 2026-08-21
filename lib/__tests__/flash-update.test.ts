@@ -17,6 +17,7 @@ import {
   type FlashOrderStatus,
   type FlashOrderType,
 } from "../flashUpdate";
+import { validateBracket, isBracketableOrderType } from "../flashBracket";
 import type { FlashOrder } from "../flash";
 
 // Flash validates the update message byte-for-byte and answers a mismatch
@@ -630,5 +631,88 @@ describe("flashUpdateErrorMessage", () => {
 
     // #then the user is told to retry rather than shown a bare code
     expect(msg).toContain("try again");
+  });
+});
+
+describe("validateBracket", () => {
+  const notional = (price: string) => ({ price, basis: "notional" as const });
+
+  it("should accept a pair with take-profit above stop-loss", () => {
+    // #given a correctly ordered pair in one basis
+    const bracket = { takeProfit: notional("5000"), stopLoss: notional("3000") };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then nothing is wrong with it
+    expect(issue).toBeNull();
+  });
+
+  it("should reject a transposed pair rather than quoting it", () => {
+    // #given the legs the wrong way round — the common user slip
+    const bracket = { takeProfit: notional("3000"), stopLoss: notional("5000") };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then it is named, not sent upstream for an opaque error
+    expect(issue).toEqual({ code: "tp_not_above_sl" });
+  });
+
+  it("should reject legs that are equal", () => {
+    // #given a pair with no gap between the exits
+    const bracket = { takeProfit: notional("4000"), stopLoss: notional("4000") };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then it is refused — flash requires take-profit strictly above
+    expect(issue).toEqual({ code: "tp_not_above_sl" });
+  });
+
+  it("should reject legs priced in different bases", () => {
+    // #given one leg in USD and the other as a pair rate
+    const bracket = { takeProfit: notional("5000"), stopLoss: { price: "0.002", basis: "cross" as const } };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then the mismatch is caught — flash requires one basis for both
+    expect(issue).toEqual({ code: "mixed_basis" });
+  });
+
+  it("should reject a non-positive price", () => {
+    // #given a zero-priced leg
+    const bracket = { takeProfit: notional("5000"), stopLoss: notional("0") };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then it is refused before a wallet ever sees it
+    expect(issue).toEqual({ code: "non_positive" });
+  });
+});
+
+describe("isBracketableOrderType", () => {
+  it("should allow the three entry types Flash brackets", () => {
+    // #given market, limit and twap entries
+    const entries = ["market", "limit", "twap"] as FlashOrderType[];
+
+    // #when each is checked
+    const out = entries.map(isBracketableOrderType);
+
+    // #then all can carry a pair
+    expect(out).toEqual([true, true, true]);
+  });
+
+  it("should refuse to bracket a trigger order, which already is one", () => {
+    // #given the trigger types
+    const triggers = ["stop", "stop-loss", "take-profit", "bracket"] as FlashOrderType[];
+
+    // #when each is checked
+    const out = triggers.map(isBracketableOrderType);
+
+    // #then none can carry a pair
+    expect(out).toEqual(triggers.map(() => false));
   });
 });
