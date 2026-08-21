@@ -69,6 +69,27 @@ type FlashLegInfo = {
   triggerType?: "upper" | "lower";
   durationSeconds?: number;
   twapBucketCount?: number;
+  // Attached take-profit / stop-loss pair. Unlike the display-only fields
+  // above, this DOES change the sign/submit ladder: the pair signs its own
+  // typed data and sells the asset the entry receives, so it can need its
+  // own approval on that asset before submit — a second approve and a second
+  // signature, both required before the entry is placed.
+  //
+  // Present only when Flash returned a signable payload for it, never merely
+  // because one was requested (route.ts gates on quote.attachedBracket.evm).
+  bracket?: {
+    takeProfit: { price: string; basis: "notional" | "cross"; limitPrice?: string };
+    stopLoss: { price: string; basis: "notional" | "cross"; limitPrice?: string };
+    approveTx: { to: string; data: string } | null;
+    permitTypedData: string | null;
+    orderTypedData: string;
+    salt: string | null;
+    deadline: string;
+    // The most of the received asset the pair's signature authorizes selling.
+    // Protection is capped here — an entry that fills above it leaves the
+    // excess unprotected — so the card states it rather than just carrying it.
+    signedMaxFromAmount: string;
+  };
 };
 
 // Relay leg — populated instead of approval/calldata when the intent moves
@@ -2216,6 +2237,20 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       ? t(result.flash.twapBucketCount ? "triggerBanner.twapWithCount" : "triggerBanner.twap", { amount: intent.from.amount, token: intent.from.token, duration: formatDuration(result.flash.durationSeconds), count: result.flash.twapBucketCount ?? 0 })
       : null;
 
+  // Attached bracket: the pair the entry carries. Stated on the card BEFORE
+  // signing, cap included — protection stops at signedMaxFromAmount, so an
+  // entry that fills beyond it leaves the excess unprotected. A user who
+  // believes they are covered and is not is the worst outcome this card can
+  // produce, so the limit is shown rather than merely carried in the payload.
+  const bracket = result.flash?.bracket ?? null;
+  const bracketBanner: string | null = bracket
+    ? t("bracketBanner.pair", {
+        token: intent.to.token,
+        stop: Number(bracket.stopLoss.price).toLocaleString(),
+        target: Number(bracket.takeProfit.price).toLocaleString(),
+      })
+    : null;
+
   // Trigger orders (stop-loss / take-profit) market-sell when the trigger
   // fires, so Flash's quoted output reflects the CURRENT price — misleading
   // next to a banner promising execution at the trigger. Show what the trigger
@@ -2280,6 +2315,18 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
               {t("triggerBanner.estAtTrigger", { amount: estAtTrigger, token: intent.to.token })}
             </span>
           )}
+        </div>
+      )}
+
+      {!executionMode && bracketBanner && bracket && (
+        <div style={{ margin: "10px 14px 0", padding: "8px 12px", background: "rgba(76,194,106,0.06)", border: "1px solid rgba(76,194,106,0.22)", borderRadius: 8, textAlign: "center" }}>
+          <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(76,194,106,0.9)" }}>{bracketBanner}</span>
+          <span style={{ ...MONO, display: "block", marginTop: 4, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+            {t("bracketBanner.cap", { amount: Number(bracket.signedMaxFromAmount).toLocaleString(undefined, { maximumFractionDigits: 8 }), token: intent.to.token })}
+          </span>
+          <span style={{ ...MONO, display: "block", marginTop: 2, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+            {t("bracketBanner.keepFunds")}
+          </span>
         </div>
       )}
 
@@ -2609,6 +2656,10 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
   const { isSuccess: wrapConfirmed } = useWaitForTransactionReceipt({ hash: wrapHash, chainId: originChainId });
   const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>();
   const { isSuccess: approvalConfirmed } = useWaitForTransactionReceipt({ hash: approvalHash, chainId: originChainId });
+  // Allowance on the asset the entry RECEIVES, needed only when a bracket is
+  // attached — that is the asset the exits sell.
+  const [bracketApprovalHash, setBracketApprovalHash] = useState<`0x${string}` | undefined>();
+  const { isSuccess: bracketApprovalConfirmed } = useWaitForTransactionReceipt({ hash: bracketApprovalHash, chainId: originChainId });
   const [err, setErr]               = useState<string | null>(null);
   // Initialized from the persisted message, not just fresh local state — a
   // reload after a completed order should show "submitted ✓" immediately,
@@ -2663,27 +2714,61 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
     }
   }
 
+  // Flash's raw typed-data JSON needs two fixes before viem will take it, and
+  // an attached bracket means signing TWO of them — so the quirks live here
+  // once instead of being copied for the second payload.
+  async function signFlashTypedData(rawJson: string): Promise<`0x${string}`> {
+    const parsed = JSON.parse(rawJson) as {
+      domain: Record<string, unknown>; types: Record<string, unknown>; primaryType: string; message: Record<string, unknown>;
+    };
+    // viem/wagmi derive EIP712Domain internally from `domain` — passing it
+    // inside `types` too (as Flash's raw JSON does) throws. Domain's chainId
+    // also arrives as a string ("4663") but viem's typed-data domain wants a
+    // number.
+    const { EIP712Domain, ...types } = parsed.types;
+    void EIP712Domain;
+    const chainIdRaw = parsed.domain.chainId;
+    return signTypedDataAsync({
+      domain: { ...parsed.domain, chainId: typeof chainIdRaw === "string" ? Number(chainIdRaw) : chainIdRaw },
+      types,
+      primaryType: parsed.primaryType,
+      message: parsed.message,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+  }
+
+  // The pair sells the asset the entry RECEIVES, so that asset needs its own
+  // allowance before submit — exactly as the spent asset does for the entry.
+  // Separate transaction, separate confirmation, and it must land before the
+  // order is placed or the exits cannot pull the funds when a leg fires.
+  async function approveBracket() {
+    if (!flash?.bracket?.approveTx) return;
+    setErr(null);
+    try {
+      const hash = await sendTransaction({
+        to: flash.bracket.approveTx.to as `0x${string}`, data: flash.bracket.approveTx.data as `0x${string}`,
+        value: BigInt(0), chainId: originChainId,
+      });
+      setBracketApprovalHash(hash);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWallet") : t("errorPrefix", { msg: msg.slice(0, 120) }));
+    }
+  }
+
   async function signAndSubmit() {
     if (!flash) return;
     setErr(null);
     try {
-      const parsed = JSON.parse(flash.orderTypedData) as {
-        domain: Record<string, unknown>; types: Record<string, unknown>; primaryType: string; message: Record<string, unknown>;
-      };
-      // viem/wagmi derive EIP712Domain internally from `domain` — passing it
-      // inside `types` too (as Flash's raw JSON does) throws. Domain's
-      // chainId also arrives as a string ("4663") but viem's typed-data
-      // domain wants a number.
-      const { EIP712Domain, ...types } = parsed.types;
-      void EIP712Domain;
-      const chainIdRaw = parsed.domain.chainId;
-      const signature = await signTypedDataAsync({
-        domain: { ...parsed.domain, chainId: typeof chainIdRaw === "string" ? Number(chainIdRaw) : chainIdRaw },
-        types,
-        primaryType: parsed.primaryType,
-        message: parsed.message,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
+      const signature = await signFlashTypedData(flash.orderTypedData);
+
+      // Second signature, over the pair's own payload. Deliberately after the
+      // entry's: if the user rejects this one we have not yet submitted an
+      // unprotected entry, which is the failure that matters here.
+      let bracketSignature: `0x${string}` | undefined;
+      if (flash.bracket) {
+        bracketSignature = await signFlashTypedData(flash.bracket.orderTypedData);
+      }
 
       setIsSubmitting(true);
       const res = await fetch("/api/flash/submit", {
@@ -2704,6 +2789,22 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
           ...(flash.orderType === "limit" && flash.triggerPrice ? { limitNotionalPrice: flash.triggerPrice } : {}),
           ...(flash.triggerType && flash.triggerPrice ? { triggers: [{ notionalPrice: flash.triggerPrice, triggerType: flash.triggerType }] } : {}),
           ...(flash.twapBucketCount ? { twapBucketCount: flash.twapBucketCount } : {}),
+          // The pair's legs plus the three values baked into its signed typed
+          // data, echoed verbatim. signedMaxFromAmount in particular is part
+          // of what was signed — recomputing it here would invalidate the
+          // signature.
+          ...(flash.bracket && bracketSignature
+            ? {
+                attachedBracket: {
+                  takeProfit: flash.bracket.takeProfit,
+                  stopLoss: flash.bracket.stopLoss,
+                  userSignature: bracketSignature,
+                  deadline: flash.bracket.deadline,
+                  signedMaxFromAmount: flash.bracket.signedMaxFromAmount,
+                  ...(flash.bracket.salt ? { salt: flash.bracket.salt } : {}),
+                },
+              }
+            : {}),
         }),
       });
       const data = await res.json();
@@ -2734,6 +2835,11 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
 
   const needsWrap     = !!flash?.wrapTx && !wrapConfirmed;
   const needsApproval = !needsWrap && !!flash?.approveTx && !approvalConfirmed;
+  // Third gate, bracket only: the received asset's allowance. Ordered after
+  // the entry's own approval so the ladder reads spend-side then receive-side
+  // rather than interleaving two different assets.
+  const needsBracketApproval =
+    !needsWrap && !needsApproval && !!flash?.bracket?.approveTx && !bracketApprovalConfirmed;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2768,10 +2874,15 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isApproving ? "wait" : "pointer", opacity: (isApproving || (!!approvalHash && !approvalConfirmed)) ? 0.65 : 1 }}>
           {isApproving ? t("approving") : approvalHash && !approvalConfirmed ? t("confirming") : t("approveToken", { token: result.intent.from.token })}
         </button>
+      ) : needsBracketApproval ? (
+        <button onClick={approveBracket} disabled={isApproving || (!!bracketApprovalHash && !bracketApprovalConfirmed)}
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isApproving ? "wait" : "pointer", opacity: (isApproving || (!!bracketApprovalHash && !bracketApprovalConfirmed)) ? 0.65 : 1 }}>
+          {isApproving ? t("approving") : bracketApprovalHash && !bracketApprovalConfirmed ? t("confirming") : t("approveProtection", { token: result.intent.to.token })}
+        </button>
       ) : (
         <button onClick={signAndSubmit} disabled={isSigning || isSubmitting || !flash}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: (isSigning || isSubmitting) ? "wait" : "pointer", opacity: (isSigning || isSubmitting) ? 0.65 : 1 }}>
-          {isSigning ? t("confirmInWallet") : isSubmitting ? t("submittingOrder") : t("signAndExecute")}
+          {isSigning ? t("confirmInWallet") : isSubmitting ? t("submittingOrder") : flash?.bracket ? t("signBothAndExecute") : t("signAndExecute")}
         </button>
       )}
     </div>

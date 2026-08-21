@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { submitFlashOrder, type FlashChain, type FlashOrderSide, type FlashOrderType, type FlashPriceTrigger } from "@/lib/flash";
+import { submitFlashOrder, type FlashChain, type FlashOrderSide, type FlashOrderType, type FlashPriceTrigger, type FlashSubmitRequest } from "@/lib/flash";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,11 @@ interface SubmitBody {
   // Flash's own spec, not be recomputed here.
   limitNotionalPrice?: string;
   triggers?: FlashPriceTrigger[];
+  // Attached take-profit / stop-loss pair, signed client-side over its own
+  // typed data. Passed through verbatim — every field here is either part of
+  // what was signed or an echo Flash requires, so touching any of it
+  // invalidates the signature.
+  attachedBracket?: FlashSubmitRequest["attachedBracket"];
   twapBucketCount?: number;
 }
 
@@ -65,6 +70,7 @@ export async function POST(req: NextRequest) {
       funderAddress, userSignature,
       quoteId: body.quoteId,
       flashIntegratorFeeBps: body.flashIntegratorFeeBps,
+      ...(body.attachedBracket ? { attachedBracket: body.attachedBracket } : {}),
       evmOrderTypedData: body.evmOrderTypedData,
       limitNotionalPrice: body.limitNotionalPrice,
       triggers: body.triggers,

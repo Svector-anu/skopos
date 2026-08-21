@@ -264,7 +264,14 @@
       "recheckingRoute": "re-checking route…",
       "confirmInWallet": "Confirm in wallet…",
       "quoteExpiredRefresh": "Quote expired — refresh",
-      "executeArrow": "Execute →"
+      "executeArrow": "Execute →",
+      "approveProtection": "approve {token} for protection",
+      "signBothAndExecute": "sign both & execute →",
+      "bracketBanner": {
+        "pair": "Protected: sells {token} at ${stop} (stop-loss) or ${target} (take-profit) — whichever comes first.",
+        "cap": "Protection covers up to {amount} {token}. Anything the order fills beyond that is not covered.",
+        "keepFunds": "Keep the {token} in this wallet while the protection is live — the exits sell from here."
+      }
     },
     "solana": {
       "routeFailedRecheck": "This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.",

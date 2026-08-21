@@ -264,7 +264,14 @@
       "recheckingRoute": "đang kiểm tra lại đường đi…",
       "confirmInWallet": "Xác nhận trong ví…",
       "quoteExpiredRefresh": "Báo giá hết hạn — làm mới",
-      "executeArrow": "Thực thi →"
+      "executeArrow": "Thực thi →",
+      "approveProtection": "phê duyệt {token} để bảo vệ",
+      "signBothAndExecute": "ký cả hai & thực hiện →",
+      "bracketBanner": {
+        "pair": "Đã bảo vệ: bán {token} ở ${stop} (cắt lỗ) hoặc ${target} (chốt lời) — tùy điều kiện nào đến trước.",
+        "cap": "Bảo vệ áp dụng tối đa {amount} {token}. Phần khớp vượt quá mức đó không được bảo vệ.",
+        "keepFunds": "Giữ {token} trong ví này khi bảo vệ còn hiệu lực — lệnh thoát sẽ bán từ đây."
+      }
     },
     "solana": {
       "routeFailedRecheck": "Đường đi này vừa không qua được kiểm tra on-chain mới nhất — báo giá đã được làm mới. Hãy xem lại và thử lại.",
