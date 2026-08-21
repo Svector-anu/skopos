@@ -265,6 +265,11 @@
       "confirmInWallet": "Confirm in wallet…",
       "quoteExpiredRefresh": "Quote expired — refresh",
       "executeArrow": "Execute →",
+      "bracketBanner": {
+        "pair": "Protected: sells {token} at ${stop} (stop-loss) or ${target} (take-profit) — whichever comes first.",
+        "cap": "Protection covers up to {amount} {token}. Anything the order fills beyond that is not covered.",
+        "keepFunds": "Keep the {token} in this wallet while the protection is live — the exits sell from here."
+      },
       "streamingLive": "live · repricing"
     },
     "solana": {
@@ -300,7 +305,10 @@
       "approveToken": "Approve {token}",
       "confirmInWallet": "Confirm in wallet…",
       "submittingOrder": "Submitting order…",
-      "signAndExecute": "Sign & Execute →"
+      "signAndExecute": "Sign & Execute →",
+      "approveProtection": "approve {token} for protection",
+      "signBothAndExecute": "sign both & execute →",
+      "permitFlowUnsupported": "This wallet needs Flash's Permit2 flow, which Skopos doesn't support yet. Try a different wallet, or place the order without the attached protection."
     },
     "relay": {
       "rejectedInWalletShort": "Rejected in wallet.",
@@ -492,7 +500,13 @@
       "badPrice": "Enter a plain number, e.g. 3200.",
       "funderNotConnected": "Connect {address} — the wallet that placed this order is the only one that can sign the update.",
       "updateFailed": "Update failed.",
-      "updateRejectedInWallet": "Update rejected in wallet."
+      "updateRejectedInWallet": "Update rejected in wallet.",
+      "bracket": {
+        "pending_activation": "Protection armed on first fill: stop ${stop} / target ${target}",
+        "active": "Protected: stop ${stop} / target ${target}",
+        "never_activated": "Protection never activated — the entry closed unfilled"
+      },
+      "protectionRow": "Protection for order {entry}"
     },
     "polymarket": {
       "volumeM": "${n}M vol",

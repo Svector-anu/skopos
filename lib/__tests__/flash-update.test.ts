@@ -17,6 +17,7 @@ import {
   type FlashOrderStatus,
   type FlashOrderType,
 } from "../flashUpdate";
+import { validateBracket, isBracketableOrderType, extractBracket, toFlashBracketWire } from "../flashBracket";
 import type { FlashOrder } from "../flash";
 
 // Flash validates the update message byte-for-byte and answers a mismatch
@@ -630,5 +631,277 @@ describe("flashUpdateErrorMessage", () => {
 
     // #then the user is told to retry rather than shown a bare code
     expect(msg).toContain("try again");
+  });
+});
+
+describe("validateBracket", () => {
+  const notional = (price: string) => ({ price, basis: "notional" as const });
+
+  it("should accept a pair with take-profit above stop-loss", () => {
+    // #given a correctly ordered pair in one basis
+    const bracket = { takeProfit: notional("5000"), stopLoss: notional("3000") };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then nothing is wrong with it
+    expect(issue).toBeNull();
+  });
+
+  it("should reject a transposed pair rather than quoting it", () => {
+    // #given the legs the wrong way round — the common user slip
+    const bracket = { takeProfit: notional("3000"), stopLoss: notional("5000") };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then it is named, not sent upstream for an opaque error
+    expect(issue).toEqual({ code: "tp_not_above_sl" });
+  });
+
+  it("should reject legs that are equal", () => {
+    // #given a pair with no gap between the exits
+    const bracket = { takeProfit: notional("4000"), stopLoss: notional("4000") };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then it is refused — flash requires take-profit strictly above
+    expect(issue).toEqual({ code: "tp_not_above_sl" });
+  });
+
+  it("should reject legs priced in different bases", () => {
+    // #given one leg in USD and the other as a pair rate
+    const bracket = { takeProfit: notional("5000"), stopLoss: { price: "0.002", basis: "cross" as const } };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then the mismatch is caught — flash requires one basis for both
+    expect(issue).toEqual({ code: "mixed_basis" });
+  });
+
+  it("should reject a non-positive price", () => {
+    // #given a zero-priced leg
+    const bracket = { takeProfit: notional("5000"), stopLoss: notional("0") };
+
+    // #when it is validated
+    const issue = validateBracket(bracket);
+
+    // #then it is refused before a wallet ever sees it
+    expect(issue).toEqual({ code: "non_positive" });
+  });
+});
+
+describe("isBracketableOrderType", () => {
+  it("should allow the three entry types Flash brackets", () => {
+    // #given market, limit and twap entries
+    const entries = ["market", "limit", "twap"] as FlashOrderType[];
+
+    // #when each is checked
+    const out = entries.map(isBracketableOrderType);
+
+    // #then all can carry a pair
+    expect(out).toEqual([true, true, true]);
+  });
+
+  it("should refuse to bracket a trigger order, which already is one", () => {
+    // #given the trigger types
+    const triggers = ["stop", "stop-loss", "take-profit", "bracket"] as FlashOrderType[];
+
+    // #when each is checked
+    const out = triggers.map(isBracketableOrderType);
+
+    // #then none can carry a pair
+    expect(out).toEqual(triggers.map(() => false));
+  });
+});
+
+describe("extractBracket", () => {
+  const parse = (s: string) => extractBracket(s, normalizeFlashPrice);
+
+  it("should lift the pair out and leave a clean entry behind", () => {
+    // #given a limit entry with a trailing pair
+    const input = "buy $500 of ETH at $2800, stop $2500, target $3500";
+
+    // #when the bracket is extracted
+    const out = parse(input);
+
+    // #then the remainder is exactly the entry the existing parser handles
+    expect(out?.remainder).toBe("buy $500 of ETH at $2800");
+  });
+
+  it("should read both leg prices regardless of which is stated first", () => {
+    // #given the same pair with the legs swapped in the sentence
+    const out = parse("buy $500 of ETH at $2800, tp 3500, sl 2500");
+
+    // #then take-profit and stop-loss are assigned by name, not by position
+    expect([out?.bracket.takeProfit.price, out?.bracket.stopLoss.price]).toEqual(["3500", "2500"]);
+  });
+
+  it("should accept the phrasings people actually type", () => {
+    // #given prose, abbreviations, hyphens and grouped numbers
+    const inputs = [
+      "buy $2000 of ETH at $1800 with a stop at $1500 and take profit at $2500",
+      "limit buy ETH at 2800, sl 2500, tp 3500",
+      "buy $500 of ETH at $2800 stop loss 2500 take profit 3500",
+      "buy 0.5 ETH at 2800 on base, stop-loss $2,500, take-profit $3,500",
+    ];
+
+    // #when each is parsed
+    const out = inputs.map(i => parse(i) !== null);
+
+    // #then all are recognized
+    expect(out).toEqual(inputs.map(() => true));
+  });
+
+  it("should keep a grouped number whole while dropping a trailing comma", () => {
+    // #given a list where a separator immediately follows the price
+    const out = parse("buy 0.5 ETH at 2800 on base, stop-loss $2,500, take-profit $3,500");
+
+    // #then the comma inside the number survives and the list comma does not
+    expect([out?.bracket.stopLoss.price, out?.bracket.takeProfit.price]).toEqual(["2500", "3500"]);
+  });
+
+  it("should preserve a trailing chain suffix in the remainder", () => {
+    // #given an entry naming its chain before the pair
+    const out = parse("buy 0.5 ETH at 2800 on base, stop-loss $2,500, take-profit $3,500");
+
+    // #then "on base" still reaches the entry parser
+    expect(out?.remainder).toBe("buy 0.5 ETH at 2800 on base");
+  });
+
+  it("should leave a TWAP entry intact", () => {
+    // #given a schedule rather than a price condition
+    const out = parse("buy $500 of ETH over 7 days, stop $2500, target $3500");
+
+    // #then the duration survives for the entry parser
+    expect(out?.remainder).toBe("buy $500 of ETH over 7 days");
+  });
+
+  it("should require both legs — one alone is an ordinary trigger order", () => {
+    // #given messages carrying only a stop or only a take-profit
+    const singles = [
+      "sell 2 ETH if it drops below $2000",
+      "sell 2 ETH when it hits $5000",
+      "set a stop loss at $3000",
+      "buy $500 of ETH at $2800",
+    ];
+
+    // #when each is parsed
+    const out = singles.map(s => parse(s));
+
+    // #then none are treated as a bracket; they fall through unchanged
+    expect(out).toEqual(singles.map(() => null));
+  });
+
+  it("should not fire on unrelated traffic that shares its vocabulary", () => {
+    // #given questions and swaps
+    const unrelated = ["what is a stop loss", "swap 1 eth to usdc on base", "buy $500 of ETH over 7 days"];
+
+    // #when each is parsed
+    const out = unrelated.map(u => parse(u));
+
+    // #then none are intercepted
+    expect(out).toEqual(unrelated.map(() => null));
+  });
+
+  it("should price both legs in notional basis, matching what users type", () => {
+    // #given dollar-denominated legs
+    const out = parse("buy $500 of ETH at $2800, stop $2500, target $3500");
+
+    // #then both carry the same basis, which validateBracket requires
+    expect([out?.bracket.takeProfit.basis, out?.bracket.stopLoss.basis]).toEqual(["notional", "notional"]);
+  });
+});
+
+describe("toFlashBracketWire", () => {
+  it("should convert a notional leg to the field Flash requires", () => {
+    // #given legs in our internal {price, basis} shape
+    const bracket = {
+      takeProfit: { price: "5000", basis: "notional" as const },
+      stopLoss: { price: "3000", basis: "notional" as const },
+    };
+
+    // #when converted for the wire
+    const wire = toFlashBracketWire(bracket);
+
+    // #then each leg carries notionalPrice — Flash drops a leg it cannot read,
+    // returning an UNPROTECTED quote rather than an error
+    expect(wire).toEqual({
+      takeProfit: { notionalPrice: "5000" },
+      stopLoss: { notionalPrice: "3000" },
+    });
+  });
+
+  it("should convert a cross leg to crossPrice, never notionalPrice", () => {
+    // #given pair-rate legs
+    const bracket = {
+      takeProfit: { price: "0.004", basis: "cross" as const },
+      stopLoss: { price: "0.002", basis: "cross" as const },
+    };
+
+    // #when converted
+    const wire = toFlashBracketWire(bracket);
+
+    // #then the basis picks the field, and the other stays absent
+    expect(wire).toEqual({
+      takeProfit: { crossPrice: "0.004" },
+      stopLoss: { crossPrice: "0.002" },
+    });
+  });
+
+  it("should never emit our internal field names", () => {
+    // #given any bracket
+    const wire = toFlashBracketWire({
+      takeProfit: { price: "5000", basis: "notional" },
+      stopLoss: { price: "3000", basis: "notional" },
+    });
+
+    // #when the serialized keys are inspected
+    const keys = Object.values(wire).flatMap(leg => Object.keys(leg));
+
+    // #then "price" and "basis" never reach Flash
+    expect(keys.filter(k => k === "price" || k === "basis")).toEqual([]);
+  });
+
+  it("should carry an optional exit limit price through", () => {
+    // #given a stop leg that exits as a limit rather than at market
+    const wire = toFlashBracketWire({
+      takeProfit: { price: "5000", basis: "notional" },
+      stopLoss: { price: "3000", basis: "notional", limitPrice: "2990" },
+    });
+
+    // #then limitPrice survives alongside the trigger
+    expect(wire.stopLoss).toEqual({ notionalPrice: "3000", limitPrice: "2990" });
+  });
+});
+
+describe("extractBracket — keyword collisions", () => {
+  const parse = (s: string) => extractBracket(s, normalizeFlashPrice);
+
+  it("should not read an entry price as the stop when the token is named SL", () => {
+    // #given a token literally called SL sitting in entry position, ahead of
+    // the real legs
+    const out = parse("buy 100 of SL at $5, stop $4, target $6");
+
+    // #then the real stop leg wins, not the entry price
+    expect(out?.bracket.stopLoss.price).toBe("4");
+  });
+
+  it("should leave the entry intact when its token collides with a keyword", () => {
+    // #given the same message
+    const out = parse("buy 100 of SL at $5, stop $4, target $6");
+
+    // #then the entry remainder still carries its own token and price
+    expect(out?.remainder).toBe("buy 100 of SL at $5");
+  });
+
+  it("should not read a TARGET-named token as the take-profit", () => {
+    // #given a token named TARGET in entry position
+    const out = parse("buy 100 of TARGET at $5, stop $4, target $6");
+
+    // #then the trailing leg wins
+    expect(out?.bracket.takeProfit.price).toBe("6");
   });
 });

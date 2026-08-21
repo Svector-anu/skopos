@@ -265,6 +265,11 @@
       "confirmInWallet": "Xác nhận trong ví…",
       "quoteExpiredRefresh": "Báo giá hết hạn — làm mới",
       "executeArrow": "Thực thi →",
+      "bracketBanner": {
+        "pair": "Đã bảo vệ: bán {token} ở ${stop} (cắt lỗ) hoặc ${target} (chốt lời) — tùy điều kiện nào đến trước.",
+        "cap": "Bảo vệ áp dụng tối đa {amount} {token}. Phần khớp vượt quá mức đó không được bảo vệ.",
+        "keepFunds": "Giữ {token} trong ví này khi bảo vệ còn hiệu lực — lệnh thoát sẽ bán từ đây."
+      },
       "streamingLive": "trực tiếp · đang cập nhật giá"
     },
     "solana": {
@@ -300,7 +305,10 @@
       "approveToken": "Approve {token}",
       "confirmInWallet": "Xác nhận trong ví…",
       "submittingOrder": "Đang gửi lệnh…",
-      "signAndExecute": "Ký & Thực thi →"
+      "signAndExecute": "Ký & Thực thi →",
+      "approveProtection": "phê duyệt {token} để bảo vệ",
+      "signBothAndExecute": "ký cả hai & thực hiện →",
+      "permitFlowUnsupported": "Ví này cần luồng Permit2 của Flash, Skopos chưa hỗ trợ. Hãy thử ví khác, hoặc đặt lệnh mà không kèm bảo vệ."
     },
     "relay": {
       "rejectedInWalletShort": "Đã từ chối trong ví.",
@@ -492,7 +500,13 @@
       "badPrice": "Nhập một số thuần, ví dụ 3200.",
       "funderNotConnected": "Hãy kết nối {address} — chỉ ví đã đặt lệnh mới có thể ký cập nhật này.",
       "updateFailed": "Cập nhật thất bại.",
-      "updateRejectedInWallet": "Cập nhật bị từ chối trong ví."
+      "updateRejectedInWallet": "Cập nhật bị từ chối trong ví.",
+      "bracket": {
+        "pending_activation": "Bảo vệ kích hoạt khi khớp lần đầu: cắt lỗ ${stop} / chốt lời ${target}",
+        "active": "Đang được bảo vệ: cắt lỗ ${stop} / chốt lời ${target}",
+        "never_activated": "Bảo vệ chưa từng kích hoạt — lệnh đóng mà không khớp"
+      },
+      "protectionRow": "Bảo vệ cho lệnh {entry}"
     },
     "polymarket": {
       "volumeM": "${n}M KL",

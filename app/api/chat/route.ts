@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
 import { FLASH_UPDATE_INTENT_RE } from "@/lib/flashUpdate";
+import { validateBracket, isBracketableOrderType, extractBracket, toFlashBracketWire, type AttachedBracket } from "@/lib/flashBracket";
+import { normalizeFlashPrice } from "@/lib/flashUpdate";
 import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashChain, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
@@ -648,7 +650,11 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
 // variant, which isn't what any of the supported phrasings ask for.
 export type FlashOrderIntent = {
   side: FlashOrderSide;
-  orderType: Extract<FlashOrderType, "limit" | "stop-loss" | "take-profit" | "twap">;
+  // "market" is only ever set alongside a bracket. an unprotected market buy
+  // still belongs to delora's swap path — flash is used here because delora
+  // has no bracket concept at all, so a PROTECTED market entry has nowhere
+  // else to go. no duplication with the swap pipeline.
+  orderType: Extract<FlashOrderType, "market" | "limit" | "stop-loss" | "take-profit" | "twap">;
   token: string;
   qty: string;
   priceLevel?: string;             // limit price, or stop-loss/take-profit trigger price
@@ -656,6 +662,10 @@ export type FlashOrderIntent = {
   durationSeconds?: number;        // twap only
   twapBucketCount?: number;        // twap only, optional — omitted lets Flash auto-derive
   chain?: string;                  // optional "on CHAIN" suffix — defaults to robinhood if unset
+  // Take-profit / stop-loss pair attached to this entry. Flash allows one on
+  // market, limit and twap entries only — never on a trigger order, which is
+  // why a stop-loss can't itself be bracketed.
+  bracket?: AttachedBracket;
 };
 
 function stripCommas(raw: string): string {
@@ -699,6 +709,34 @@ const TAKE_PROFIT_RE_B = new RegExp(`\\bsell\\s+(?:(\\d+(?:\\.\\d+)?)\\s+)?when\
 const TAKE_PROFIT_RE_C = new RegExp(`\\b(?:set\\s+)?take[\\s-]?profit(?:\\s+(?:on|for)\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(?:(\\d+(?:\\.\\d+)?)\\s+)?([a-z][a-z0-9]*))?\\s+at\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
 const TWAP_RE_A = new RegExp(`\\bbuy\\s+\\$(\\d[\\d,]*(?:\\.\\d+)?)\\s+of\\s+([a-z][a-z0-9]*)\\s+over\\s+(a|an|\\d+(?:\\.\\d+)?)\\s*(hour|hours|day|days|week|weeks)\\b(?:\\s+(?:in|into)\\s+(\\d+)\\s+(?:buckets|chunks|parts))?${CHAIN_SUFFIX_RE}`, "i");
 const TWAP_RE_B = new RegExp(`\\bdca\\s+into\\s+([a-z][a-z0-9]*)\\s+over\\s+(a|an|\\d+(?:\\.\\d+)?)\\s*(hour|hours|day|days|week|weeks)\\b${CHAIN_SUFFIX_RE}`, "i");
+
+// Bare market entry — no price condition, no schedule. Only consulted when a
+// bracket was extracted from the same message: an unprotected "buy $500 of
+// ETH" still belongs to the swap pipeline, but a PROTECTED one has to reach
+// Flash, since Delora cannot attach a pair at all. Flash's own bracket docs
+// lead with exactly this shape (a market entry carrying take-profit and
+// stop-loss), which is the phrasing users reach for first.
+const MARKET_BUY_RE  = new RegExp(`\\bbuy\\s+(?:\\$(\\d[\\d,]*(?:\\.\\d+)?)\\s+(?:of\\s+)?|(\\d+(?:\\.\\d+)?)\\s+)([a-z][a-z0-9]*)\\b${CHAIN_SUFFIX_RE}\\s*$`, "i");
+const MARKET_SELL_RE = new RegExp(`\\bsell\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(\\d+(?:\\.\\d+)?)\\s+([a-z][a-z0-9]*)\\b${CHAIN_SUFFIX_RE}\\s*$`, "i");
+
+// Parses the leftover entry when a bracket is present and no priced/scheduled
+// pattern matched. Returns null for anything else so the normal ladder is
+// untouched.
+export function parseMarketEntry(trimmed: string): FlashOrderIntent | null {
+  const buy = MARKET_BUY_RE.exec(trimmed);
+  if (buy) {
+    const [, usd, tokens, token, chain] = buy;
+    const qty = stripCommas(usd ?? tokens ?? "");
+    if (!qty) return null;
+    return { side: "buy", orderType: "market", token, qty, ...(chain ? { chain: chain.trim() } : {}) };
+  }
+  const sell = MARKET_SELL_RE.exec(trimmed);
+  if (sell) {
+    const [, qtyRaw, token, chain] = sell;
+    return { side: "sell", orderType: "market", token, qty: stripCommas(qtyRaw), ...(chain ? { chain: chain.trim() } : {}) };
+  }
+  return null;
+}
 
 const LOOSE_LIMIT_RE       = /\blimit\s+(?:buy|sell|order)\b|\bwhen\s+(?:the\s+)?price\s+hits\b/i;
 const LOOSE_STOP_LOSS_RE   = /\bstop[\s-]?loss\b/i;
@@ -907,6 +945,19 @@ export type FlashOrderLegOk = {
     triggerType?: "upper" | "lower";
     durationSeconds?: number;
     twapBucketCount?: number;
+    // Second signing payload plus the three values baked into it. The client
+    // signs this separately from the entry and echoes salt/deadline/
+    // signedMaxFromAmount back verbatim at submit.
+    bracket?: {
+      takeProfit: AttachedBracket["takeProfit"];
+      stopLoss: AttachedBracket["stopLoss"];
+      approveTx: { to: string; data: string } | null;
+      permitTypedData: string | null;
+      orderTypedData: string;
+      salt: string | null;
+      deadline: string;
+      signedMaxFromAmount: string;
+    };
   };
 };
 
@@ -1067,6 +1118,36 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
   if (!targetAsset) return { ok: false, text: `Could not find ${order.token} on ${chainDisplayName}.` };
   if (!contraAsset) return { ok: false, text: `Could not resolve ${stablecoinSymbol} on ${chainDisplayName}.` };
 
+  // ── attached bracket ──────────────────────────────────────────────────
+  // Rejected before quoting so a bad pair costs nothing and gets a plain
+  // answer rather than an opaque upstream error.
+  if (order.bracket) {
+    if (!isBracketableOrderType(order.orderType)) {
+      return {
+        ok: false, ask: true,
+        text: `A ${order.orderType} order can't carry a stop-loss and take-profit — it already IS a trigger. Attach the pair to a market, limit or TWAP entry instead.`,
+      };
+    }
+    const issue = validateBracket(order.bracket);
+    if (issue) {
+      const text =
+        issue.code === "tp_not_above_sl"
+          ? `Your take-profit ($${order.bracket.takeProfit.price}) has to be above your stop-loss ($${order.bracket.stopLoss.price}) — looks like they're the wrong way round.`
+        : issue.code === "non_positive" ? "Both the stop-loss and take-profit need a price above zero."
+        : issue.code === "mixed_basis" ? "The stop-loss and take-profit have to be priced the same way — both in dollars, or both as a pair rate."
+        : "That entry can't carry a bracket.";
+      return { ok: false, ask: true, text };
+    }
+    // The pair sells what the entry RECEIVES, and Flash cannot bracket an
+    // entry that receives the chain's native coin. Every non-Robinhood chain
+    // is already coerced to the wrapped token above; Robinhood's resolver
+    // returns Flash's native sentinel instead, so it needs the same coercion
+    // here or the quote is rejected with the pair attached but fine without.
+    if (isRobinhood && targetAsset.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") {
+      targetAsset = RH_CHAIN_WETH;
+    }
+  }
+
   const triggers: FlashPriceTrigger[] | undefined = order.triggerType
     ? [{ notionalPrice: order.priceLevel!, triggerType: order.triggerType }]
     : undefined;
@@ -1085,6 +1166,9 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
       ...(order.orderType === "limit" && order.priceLevel ? { limitNotionalPrice: order.priceLevel } : {}),
       ...(triggers ? { triggers } : {}),
+      // Converted to Flash's wire shape — sending our internal {price, basis}
+      // legs makes Flash drop the pair and return an UNPROTECTED quote.
+      ...(order.bracket ? { attachedBracket: toFlashBracketWire(order.bracket) } : {}),
       ...(order.durationSeconds ? { durationSeconds: order.durationSeconds } : {}),
       ...(order.twapBucketCount ? { twapBucketCount: order.twapBucketCount } : {}),
     });
@@ -1137,6 +1221,25 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       ...(order.triggerType ? { triggerType: order.triggerType } : {}),
       ...(order.durationSeconds ? { durationSeconds: order.durationSeconds } : {}),
       ...(order.twapBucketCount ? { twapBucketCount: order.twapBucketCount } : {}),
+      // Only surfaced when Flash actually returned a signable pair. Asking
+      // for a bracket and getting a quote without one is a silent downgrade
+      // to an unprotected entry, so the card must not imply protection that
+      // was never signed — hence the presence check rather than echoing the
+      // request back.
+      ...(order.bracket && quote.attachedBracket?.evm
+        ? {
+            bracket: {
+              takeProfit: order.bracket.takeProfit,
+              stopLoss: order.bracket.stopLoss,
+              approveTx: quote.attachedBracket.evm.approveTx,
+              permitTypedData: quote.attachedBracket.evm.permitTypedData,
+              orderTypedData: quote.attachedBracket.evm.orderTypedData,
+              salt: quote.attachedBracket.salt,
+              deadline: quote.attachedBracket.deadline,
+              signedMaxFromAmount: quote.attachedBracket.signedMaxFromAmount,
+            },
+          }
+        : {}),
     },
   };
 }
@@ -1971,10 +2074,19 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // of strict necessity). Robinhood Chain / Flash is the only execution path
   // in Skopos that supports non-market order types at all, so none of the
   // supported phrasings need to say "on robinhood" explicitly.
+  // One-message brackets: "buy $500 of ETH at $2800, stop $2500, target
+  // $3500". The pair is lifted out first and the REMAINDER goes through the
+  // existing parse pipeline untouched, so entry phrasings and bracket
+  // phrasings stay independent and a message with no pair takes the old path
+  // byte for byte. Requires both legs — one alone is an ordinary trigger
+  // order and must keep falling through to those regexes.
+  const bracketParse = extractBracket(trimmed, normalizeFlashPrice);
+  const orderText = bracketParse?.remainder ?? trimmed;
+
   if (textMode) {
     // Headless clients have no wallet — same handoff shape as the single-leg
     // intent block below, just without a resolved quote to hand off.
-    const parsed = parseFlashOrderIntent(trimmed);
+    const parsed = parseFlashOrderIntent(orderText);
     if (parsed && "order" in parsed) {
       return json({
         type: "text",
@@ -1985,7 +2097,16 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     // miss used to fall through to the swap pipeline, which read "buy 0.05 ETH
     // at $2800 on arbitrum" as a same-token swap and handed back "ETH on
     // arbitrum → ETH on arbitrum". Say what's actually true instead.
-    if (looksLikeAdvancedOrder(trimmed)) {
+    if (bracketParse) {
+      // Four wallet interactions and two signatures — nothing a headless
+      // client can complete. Say what it is rather than reusing the generic
+      // advanced-order line, so the caller knows the pair was understood.
+      return json({
+        type: "text",
+        text: `That's an order with a stop-loss ($${bracketParse.bracket.stopLoss.price}) and take-profit ($${bracketParse.bracket.takeProfit.price}) attached. Protected orders need two signatures, so they're app-only for now — open the Skopos app to place it.`,
+      });
+    }
+    if (looksLikeAdvancedOrder(orderText)) {
       return json({
         type: "text",
         text: `That looks like an advanced order (a price condition or a schedule). Those aren't available in headless mode yet — open the Skopos app to place it.`,
@@ -1997,9 +2118,9 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     // provenance-checked in lib/parseIntent.ts) only fires when regex missed
     // AND the message passes the cheap order-ish gate; the generic loose
     // asks remain the floor when the LLM is unavailable or declines.
-    let orderParse = parseFlashOrderStrict(trimmed);
-    if (!orderParse && flashOrderLlmGate(trimmed)) {
-      const llm = await llmParseFlashOrder(trimmed, tier, meterMeta);
+    let orderParse = parseFlashOrderStrict(orderText);
+    if (!orderParse && flashOrderLlmGate(orderText)) {
+      const llm = await llmParseFlashOrder(orderText, tier, meterMeta);
       if (llm && llm.orderType === "market") {
         // Stock-buy shape only — stock tokens exist solely on Robinhood
         // Chain here, so an explicitly different chain means this isn't
@@ -2008,6 +2129,23 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         const stockSym = llm.token.toUpperCase();
         if (RH_STOCK_TOKENS[stockSym] && (!llm.chain || /robinhood/i.test(llm.chain))) {
           await recordSmart();
+          // A bracketed stock buy must NOT take this branch: resolveFlashLeg
+          // below is a swap resolver with no bracket support, so the pair
+          // would be silently dropped. Fall through to the order path, which
+          // now handles market entries with a bracket attached.
+          if (bracketParse) {
+            const marketEntry = parseMarketEntry(orderText);
+            if (marketEntry) {
+              marketEntry.bracket = bracketParse.bracket;
+              const bracketed = await resolveFlashOrderLeg(marketEntry, senderAddress);
+              if (!bracketed.ok) return json({ type: bracketed.ask ? "text" : "error", text: bracketed.text });
+              return json({
+                type: "quote", mode: "preview", quotedAt: Date.now(),
+                intent: bracketed.intent, route: bracketed.route, approval: null, calldata: null, flash: bracketed.flash,
+                raw: null,
+              });
+            }
+          }
           if (llm.qty === null) {
             return json({
               type: "text",
@@ -2031,11 +2169,30 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         if (orderParse) await recordSmart();
       }
     }
-    if (!orderParse) orderParse = parseFlashOrderLoose(trimmed);
+    // Market entry, bracket only. Runs before the loose keyword ask so
+    // "buy $500 of ETH, stop $2500, target $3500" resolves instead of being
+    // asked for a price it deliberately did not give.
+    if (!orderParse && bracketParse) {
+      const marketEntry = parseMarketEntry(orderText);
+      if (marketEntry) orderParse = { order: marketEntry };
+    }
+    if (!orderParse) orderParse = parseFlashOrderLoose(orderText);
+    // A pair with nothing to attach it to — "stop $2500, target $3500" on its
+    // own, or an entry the parsers can't read. Protecting a position you
+    // already hold is a standalone bracket, which Flash treats as a different
+    // order type and Skopos doesn't place yet, so say that rather than
+    // dropping the legs and quoting an unprotected entry.
+    if (bracketParse && !orderParse) {
+      return json({
+        type: "text",
+        text: `I can read the stop-loss ($${bracketParse.bracket.stopLoss.price}) and take-profit ($${bracketParse.bracket.takeProfit.price}), but not the order they attach to. Give me the entry in the same message — e.g. "buy $500 of ETH at $2800, stop $${bracketParse.bracket.stopLoss.price}, target $${bracketParse.bracket.takeProfit.price}".`,
+      });
+    }
     if (orderParse) {
       if ("ask" in orderParse) {
         return json({ type: "text", text: orderParse.ask });
       }
+      if (bracketParse) orderParse.order.bracket = bracketParse.bracket;
       const result = await resolveFlashOrderLeg(orderParse.order, senderAddress);
       if (!result.ok) return json({ type: result.ask ? "text" : "error", text: result.text });
       return json({
