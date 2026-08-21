@@ -16,8 +16,8 @@ import { subscribe } from "@/lib/subscribeClient";
 // Pure module deliberately, never @/lib/flash — that one imports @upstash/redis
 // and would land the server module graph in the client bundle.
 import {
-  buildFlashUpdate, normalizeFlashPrice, flashUpdateAxis, isFlashOrderUpdatable,
-  limitPriceOf, triggerPriceOf,
+  buildFlashUpdate, buildFlashCancelMessage, normalizeFlashPrice, flashUpdateAxis,
+  isFlashOrderUpdatable, limitPriceOf, triggerPriceOf, FLASH_CANCELLABLE_STATUSES,
 } from "@/lib/flashUpdate";
 import {
   useWallet as useSolanaWallet,
@@ -2948,7 +2948,6 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
 
 // ─── FlashOrdersDisplay ───────────────────────────────────────────────────────
 
-const FLASH_ORDER_CANCELLABLE = new Set(["ORDER_STATUS_PENDING", "ORDER_STATUS_ACCEPTED", "ORDER_STATUS_PARTIALLY_FILLED"]);
 const FLASH_ORDER_STATUS_COLOR: Record<string, string> = {
   ORDER_STATUS_PENDING: "#F5B800", ORDER_STATUS_ACCEPTED: "#F5B800",
   ORDER_STATUS_PARTIALLY_FILLED: "#F5B800", ORDER_STATUS_FILLED: "#4ade80",
@@ -2970,17 +2969,24 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
   const [updateSubmitted, setUpdateSubmitted] = useState(false);
 
   const status = cancelled ? "ORDER_STATUS_CANCELLED" : order.status;
-  const cancellable = !cancelled && FLASH_ORDER_CANCELLABLE.has(order.status);
+  const cancellable = !cancelled && FLASH_CANCELLABLE_STATUSES.has(order.status);
   const statusLabel = t(`status.${status}`);
 
   async function cancel() {
     setErr(null);
     setIsCancelling(true);
     try {
-      const evmWallet = wallets.find(w => w.address?.startsWith("0x"));
-      if (!evmWallet) throw new Error("No EVM wallet connected.");
-      const cancelMessage = `Definitive Flash v1 — Cancel Order\nOrder: ${order.orderId}`;
-      const { signature: userSignature } = await signMessageWithWallet({ message: cancelMessage }, { address: evmWallet.address });
+      // Same funder-wallet rule as submitUpdate below: Flash only accepts a
+      // cancel signature from the wallet that placed the order, and answers a
+      // wrong signer with a bare 404 that reads as "the order is gone". With
+      // an embedded wallet plus an external one linked, "the first EVM wallet
+      // Privy lists" is regularly not the funder — so the user would be told
+      // a live order had vanished while it kept working toward its trigger.
+      const funder = order.funderAddress.toLowerCase();
+      const funderWallet = wallets.find(w => w.address?.toLowerCase() === funder);
+      if (!funderWallet) throw new Error(t("funderNotConnected", { address: shortAddr(order.funderAddress) }));
+      const cancelMessage = buildFlashCancelMessage(order.orderId);
+      const { signature: userSignature } = await signMessageWithWallet({ message: cancelMessage }, { address: funderWallet.address });
       const res = await fetch("/api/flash/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

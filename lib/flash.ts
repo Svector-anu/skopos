@@ -519,10 +519,6 @@ export async function getFlashOrder(orderId: string, funderAddress: string): Pro
 // Exact bytes the funder wallet must sign (EIP-191 personal_sign on EVM) to
 // authorize a cancel — identical across EVM/SVM per Flash's spec. Exported so
 // the client signs precisely this string, never a reconstruction of it.
-export function buildFlashCancelMessage(orderId: string): string {
-  return `Definitive Flash v1 — Cancel Order\nOrder: ${orderId}`;
-}
-
 // Idempotent server-side: cancelling an already-cancelled order returns 200,
 // not 422, per Flash's own spec — no need to check status before calling.
 export async function cancelFlashOrder(orderId: string, cancelMessage: string, userSignature: string): Promise<{ ok: true }> {

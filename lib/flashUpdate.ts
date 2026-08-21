@@ -215,3 +215,16 @@ export function buildFlashUpdate(params: {
 // "sell my NVDA" has the possessive but no modification verb.
 export const FLASH_UPDATE_INTENT_RE =
   /\b(?:move|change|update|reprice|re-price|edit|adjust|raise|lower|bump|modify)\b[^.!?]{0,40}?\b(?:my|the|that|this)\s+(?:existing\s+|standing\s+|open\s+)?(?:flash\s+)?(?:orders?|stop[\s-]?loss(?:es)?|stop|take[\s-]?profits?|limit(?:\s+order)?|trigger)\b/i;
+
+// Cancel's message, alongside the update builder for the same reason the
+// update builder exists at all: these bytes are validated exactly, and a
+// second hand-rolled copy is free to drift. It lived in lib/flash.ts, which
+// the browser cannot import — so app/app/page.tsx had rebuilt the identical
+// string inline and the "shared" helper was reachable by nobody.
+//
+// Note the v1 the update header does NOT carry. That asymmetry is the whole
+// reason both live here, side by side, rather than being derived from one
+// template.
+export function buildFlashCancelMessage(orderId: string): string {
+  return `Definitive Flash v1 — Cancel Order\nOrder: ${orderId}`;
+}

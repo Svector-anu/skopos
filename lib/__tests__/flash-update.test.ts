@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 // @upstash/redis and mirrors how app/app/page.tsx has to import it.
 import {
   buildFlashUpdate,
+  buildFlashCancelMessage,
   normalizeFlashPrice,
   flashUpdateAxis,
   isFlashOrderUpdatable,
@@ -514,5 +515,32 @@ describe("FLASH_UPDATE_INTENT_RE", () => {
 
     // #then none are intercepted
     expect(out).toEqual(unrelated.map(() => false));
+  });
+});
+
+describe("buildFlashCancelMessage", () => {
+  it("should keep the v1 that the update header omits", () => {
+    // #given an order id
+    // #when the cancel message is built
+    const msg = buildFlashCancelMessage(ORDER_ID);
+
+    // #then it matches Flash's cancel format exactly — the two headers differ
+    // by that "v1", and each endpoint validates its own bytes
+    expect(msg).toBe(`Definitive Flash v1 — Cancel Order\nOrder: ${ORDER_ID}`);
+  });
+
+  it("should not share a header with the update message", () => {
+    // #given both messages for the same order
+    const cancel = buildFlashCancelMessage(ORDER_ID);
+    const update = buildFlashUpdate({ orderId: ORDER_ID, limit: { price: "1", basis: "notional" } })!.updateMessage;
+
+    // #when their headers are compared
+    const headers = [cancel.split("\n")[0], update.split("\n")[0]];
+
+    // #then they are distinct — copying one to the other yields a 404
+    expect(headers).toEqual([
+      "Definitive Flash v1 — Cancel Order",
+      "Definitive Flash — Update Order",
+    ]);
   });
 });
