@@ -24,7 +24,7 @@ No test suite — verification is manual against the chat UI.
 
 ### LLM stack
 
-All LLM calls use **Groq** (`groq-sdk`, model `llama-3.1-8b-instant`). The `@anthropic-ai/sdk` package is installed but not imported or used anywhere — it is a leftover dependency. Do not add Claude/Anthropic API calls.
+The Fast tier uses **Groq** (`groq-sdk`, model `openai/gpt-oss-20b` — `llama-3.1-8b-instant` was decommissioned 2026-08-16; override with `FAST_LLM_MODEL`). The Smart tier uses `claude-haiku-4.5` via the Bankr LLM Gateway (`SMART_LLM_MODEL`), not Groq. The `@anthropic-ai/sdk` package is installed but not imported or used anywhere — it is a leftover dependency. Do not add Claude/Anthropic API calls.
 
 ### Request handler — 3 layers (`app/api/chat/route.ts`)
 

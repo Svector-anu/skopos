@@ -172,7 +172,7 @@ Ghost session (authenticated=true, connectedAddress=null):
 
 ## 7. LLM Usage Rules
 
-Model: Groq `llama-3.1-8b-instant` (all LLM calls)
+Model: Groq `openai/gpt-oss-20b` (Fast tier; env-overridable via `FAST_LLM_MODEL`). Was `llama-3.1-8b-instant` until Groq decommissioned it on 2026-08-16.
 
 | Function | Purpose | Guard |
 |---|---|---|
