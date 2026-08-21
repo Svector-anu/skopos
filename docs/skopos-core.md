@@ -214,7 +214,7 @@ getPolymarketBalance(senderAddress) → Alchemy Polygon eth_call → returns bal
 
 ### 4D. Analysis / Explanation — Groq LLM
 
-**Model:** `llama-3.1-8b-instant`  
+**Model:** `openai/gpt-oss-20b` (was `llama-3.1-8b-instant`, decommissioned by Groq 2026-08-16)  
 **System prompt:** `GROQ_INFORMATIONAL_SYSTEM` (constrained)
 
 **Strict rules enforced in system prompt:**

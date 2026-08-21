@@ -302,7 +302,13 @@ let smartClient: Groq | null = null;
 // Fast = Groq free tier. Smart = Bankr LLM Gateway (OpenAI-compatible, so the same
 // groq-sdk client drives it — only base URL + key + model differ). Models are
 // env-overridable. Default tier is "fast" everywhere → behaviour unchanged.
-const FAST_MODEL  = process.env.FAST_LLM_MODEL  ?? "llama-3.1-8b-instant";
+// Groq shut llama-3.1-8b-instant down on 2026-08-16 (announced 2026-06-17,
+// https://console.groq.com/docs/deprecations) and every Fast-tier call has
+// failed since — chat replies, tx/address summaries, the groqParseIntent
+// fallback and llmParseFlashOrder alike. openai/gpt-oss-20b is Groq's own
+// named replacement for it. Still env-overridable; the override is also the
+// no-deploy escape hatch next time a model is retired under us.
+const FAST_MODEL  = process.env.FAST_LLM_MODEL  ?? "openai/gpt-oss-20b";
 // NOT a reasoning model: gemini-3-flash (and other "thinking" models) spend the
 // max_tokens budget on hidden reasoning and return empty content with
 // finish_reason "length" under our tight 200-token cap. claude-haiku-4.5 emits
@@ -1045,7 +1051,11 @@ export async function getInformationalReply(
     // Grounded replies cite the real fetched numbers — redaction would gut them.
     // Rule 1 of the grounded prompt forbids inventing any figure instead.
     return grounded ? raw : redactLiveNumbers(raw);
-  } catch {
+  } catch (err) {
+    // Logged, not swallowed. This catch returning FALLBACK silently is why a
+    // decommissioned model degraded every LLM reply to "I don't have reliable
+    // information" for five days while looking like normal operation.
+    console.error("[llm] informational reply failed:", err instanceof Error ? `${err.name}: ${err.message}` : err);
     return FALLBACK;
   }
 }
