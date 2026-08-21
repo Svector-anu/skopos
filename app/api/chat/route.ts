@@ -650,7 +650,11 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
 // variant, which isn't what any of the supported phrasings ask for.
 export type FlashOrderIntent = {
   side: FlashOrderSide;
-  orderType: Extract<FlashOrderType, "limit" | "stop-loss" | "take-profit" | "twap">;
+  // "market" is only ever set alongside a bracket. an unprotected market buy
+  // still belongs to delora's swap path — flash is used here because delora
+  // has no bracket concept at all, so a PROTECTED market entry has nowhere
+  // else to go. no duplication with the swap pipeline.
+  orderType: Extract<FlashOrderType, "market" | "limit" | "stop-loss" | "take-profit" | "twap">;
   token: string;
   qty: string;
   priceLevel?: string;             // limit price, or stop-loss/take-profit trigger price
@@ -705,6 +709,34 @@ const TAKE_PROFIT_RE_B = new RegExp(`\\bsell\\s+(?:(\\d+(?:\\.\\d+)?)\\s+)?when\
 const TAKE_PROFIT_RE_C = new RegExp(`\\b(?:set\\s+)?take[\\s-]?profit(?:\\s+(?:on|for)\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(?:(\\d+(?:\\.\\d+)?)\\s+)?([a-z][a-z0-9]*))?\\s+at\\s+\\$?(\\d[\\d,]*(?:\\.\\d+)?)\\b${CHAIN_SUFFIX_RE}`, "i");
 const TWAP_RE_A = new RegExp(`\\bbuy\\s+\\$(\\d[\\d,]*(?:\\.\\d+)?)\\s+of\\s+([a-z][a-z0-9]*)\\s+over\\s+(a|an|\\d+(?:\\.\\d+)?)\\s*(hour|hours|day|days|week|weeks)\\b(?:\\s+(?:in|into)\\s+(\\d+)\\s+(?:buckets|chunks|parts))?${CHAIN_SUFFIX_RE}`, "i");
 const TWAP_RE_B = new RegExp(`\\bdca\\s+into\\s+([a-z][a-z0-9]*)\\s+over\\s+(a|an|\\d+(?:\\.\\d+)?)\\s*(hour|hours|day|days|week|weeks)\\b${CHAIN_SUFFIX_RE}`, "i");
+
+// Bare market entry — no price condition, no schedule. Only consulted when a
+// bracket was extracted from the same message: an unprotected "buy $500 of
+// ETH" still belongs to the swap pipeline, but a PROTECTED one has to reach
+// Flash, since Delora cannot attach a pair at all. Flash's own bracket docs
+// lead with exactly this shape (a market entry carrying take-profit and
+// stop-loss), which is the phrasing users reach for first.
+const MARKET_BUY_RE  = new RegExp(`\\bbuy\\s+(?:\\$(\\d[\\d,]*(?:\\.\\d+)?)\\s+(?:of\\s+)?|(\\d+(?:\\.\\d+)?)\\s+)([a-z][a-z0-9]*)\\b${CHAIN_SUFFIX_RE}\\s*$`, "i");
+const MARKET_SELL_RE = new RegExp(`\\bsell\\s+(?:my\\s+|your\\s+|the\\s+|our\\s+)?(\\d+(?:\\.\\d+)?)\\s+([a-z][a-z0-9]*)\\b${CHAIN_SUFFIX_RE}\\s*$`, "i");
+
+// Parses the leftover entry when a bracket is present and no priced/scheduled
+// pattern matched. Returns null for anything else so the normal ladder is
+// untouched.
+export function parseMarketEntry(trimmed: string): FlashOrderIntent | null {
+  const buy = MARKET_BUY_RE.exec(trimmed);
+  if (buy) {
+    const [, usd, tokens, token, chain] = buy;
+    const qty = stripCommas(usd ?? tokens ?? "");
+    if (!qty) return null;
+    return { side: "buy", orderType: "market", token, qty, ...(chain ? { chain: chain.trim() } : {}) };
+  }
+  const sell = MARKET_SELL_RE.exec(trimmed);
+  if (sell) {
+    const [, qtyRaw, token, chain] = sell;
+    return { side: "sell", orderType: "market", token, qty: stripCommas(qtyRaw), ...(chain ? { chain: chain.trim() } : {}) };
+  }
+  return null;
+}
 
 const LOOSE_LIMIT_RE       = /\blimit\s+(?:buy|sell|order)\b|\bwhen\s+(?:the\s+)?price\s+hits\b/i;
 const LOOSE_STOP_LOSS_RE   = /\bstop[\s-]?loss\b/i;
@@ -1093,7 +1125,7 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
     if (!isBracketableOrderType(order.orderType)) {
       return {
         ok: false, ask: true,
-        text: `A ${order.orderType} order can't carry a stop-loss and take-profit — it already IS a trigger. Attach the pair to a limit or TWAP entry instead.`,
+        text: `A ${order.orderType} order can't carry a stop-loss and take-profit — it already IS a trigger. Attach the pair to a market, limit or TWAP entry instead.`,
       };
     }
     const issue = validateBracket(order.bracket);
@@ -2097,16 +2129,22 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         const stockSym = llm.token.toUpperCase();
         if (RH_STOCK_TOKENS[stockSym] && (!llm.chain || /robinhood/i.test(llm.chain))) {
           await recordSmart();
-          // Market entries route through resolveFlashLeg, which is a swap
-          // resolver with no bracket support — so a pair asked for here would
-          // be dropped and the user handed a completely unprotected order
-          // while believing their stop was set. Refuse instead. Market
-          // brackets are a scope decision, not an oversight: see the PR.
+          // A bracketed stock buy must NOT take this branch: resolveFlashLeg
+          // below is a swap resolver with no bracket support, so the pair
+          // would be silently dropped. Fall through to the order path, which
+          // now handles market entries with a bracket attached.
           if (bracketParse) {
-            return json({
-              type: "text",
-              text: `I can attach a stop-loss and take-profit to a limit or scheduled order, but not to a market buy yet. Give me an entry price — e.g. "buy $${llm.qty ?? 500} of ${stockSym} at $<price>, stop $${bracketParse.bracket.stopLoss.price}, target $${bracketParse.bracket.takeProfit.price}".`,
-            });
+            const marketEntry = parseMarketEntry(orderText);
+            if (marketEntry) {
+              marketEntry.bracket = bracketParse.bracket;
+              const bracketed = await resolveFlashOrderLeg(marketEntry, senderAddress);
+              if (!bracketed.ok) return json({ type: bracketed.ask ? "text" : "error", text: bracketed.text });
+              return json({
+                type: "quote", mode: "preview", quotedAt: Date.now(),
+                intent: bracketed.intent, route: bracketed.route, approval: null, calldata: null, flash: bracketed.flash,
+                raw: null,
+              });
+            }
           }
           if (llm.qty === null) {
             return json({
@@ -2130,6 +2168,13 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         orderParse = mapLlmFlashOrder(llm);
         if (orderParse) await recordSmart();
       }
+    }
+    // Market entry, bracket only. Runs before the loose keyword ask so
+    // "buy $500 of ETH, stop $2500, target $3500" resolves instead of being
+    // asked for a price it deliberately did not give.
+    if (!orderParse && bracketParse) {
+      const marketEntry = parseMarketEntry(orderText);
+      if (marketEntry) orderParse = { order: marketEntry };
     }
     if (!orderParse) orderParse = parseFlashOrderLoose(orderText);
     // A pair with nothing to attach it to — "stop $2500, target $3500" on its
