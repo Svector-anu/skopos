@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
 import { FLASH_UPDATE_INTENT_RE } from "@/lib/flashUpdate";
-import { validateBracket, isBracketableOrderType, extractBracket, type AttachedBracket } from "@/lib/flashBracket";
+import { validateBracket, isBracketableOrderType, extractBracket, toFlashBracketWire, type AttachedBracket } from "@/lib/flashBracket";
 import { normalizeFlashPrice } from "@/lib/flashUpdate";
 import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashChain, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
@@ -1134,7 +1134,9 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
       ...(order.orderType === "limit" && order.priceLevel ? { limitNotionalPrice: order.priceLevel } : {}),
       ...(triggers ? { triggers } : {}),
-      ...(order.bracket ? { attachedBracket: order.bracket } : {}),
+      // Converted to Flash's wire shape — sending our internal {price, basis}
+      // legs makes Flash drop the pair and return an UNPROTECTED quote.
+      ...(order.bracket ? { attachedBracket: toFlashBracketWire(order.bracket) } : {}),
       ...(order.durationSeconds ? { durationSeconds: order.durationSeconds } : {}),
       ...(order.twapBucketCount ? { twapBucketCount: order.twapBucketCount } : {}),
     });
@@ -2095,6 +2097,17 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         const stockSym = llm.token.toUpperCase();
         if (RH_STOCK_TOKENS[stockSym] && (!llm.chain || /robinhood/i.test(llm.chain))) {
           await recordSmart();
+          // Market entries route through resolveFlashLeg, which is a swap
+          // resolver with no bracket support — so a pair asked for here would
+          // be dropped and the user handed a completely unprotected order
+          // while believing their stop was set. Refuse instead. Market
+          // brackets are a scope decision, not an oversight: see the PR.
+          if (bracketParse) {
+            return json({
+              type: "text",
+              text: `I can attach a stop-loss and take-profit to a limit or scheduled order, but not to a market buy yet. Give me an entry price — e.g. "buy $${llm.qty ?? 500} of ${stockSym} at $<price>, stop $${bracketParse.bracket.stopLoss.price}, target $${bracketParse.bracket.takeProfit.price}".`,
+            });
+          }
           if (llm.qty === null) {
             return json({
               type: "text",

@@ -2,7 +2,7 @@ import { fetchWithTimeout } from "./http";
 import { getRedis } from "./redis";
 import type { DexPair } from "./dexscreener";
 import type { FlashOrderStatus, FlashOrderType, FlashPriceTrigger, FlashUpdateRequest } from "./flashUpdate";
-import type { AttachedBracket, AttachedBracketRead } from "./flashBracket";
+import type { FlashBracketWire, AttachedBracketRead } from "./flashBracket";
 
 // The pure half lives in ./flashUpdate so the browser can build and sign an
 // update message without pulling this module's server deps into the bundle.
@@ -276,7 +276,7 @@ export interface FlashQuoteRequest {
   // requires funderAddress — the pair's signing payload is derived for that
   // wallet. The response then carries a SECOND signing payload under
   // attachedBracket.
-  attachedBracket?: AttachedBracket;
+  attachedBracket?: FlashBracketWire;
 }
 
 export interface FlashQuoteLeg {
@@ -422,7 +422,7 @@ export interface FlashSubmitRequest {
   triggers?: FlashPriceTrigger[];
   // Echo of the quote's pair, plus its own signature and the three values
   // baked into the signed typed data. salt is EVM-only.
-  attachedBracket?: AttachedBracket & {
+  attachedBracket?: FlashBracketWire & {
     userSignature: string;
     salt?: string;
     svmNonce?: string;

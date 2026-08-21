@@ -265,14 +265,11 @@
       "confirmInWallet": "Confirm in wallet…",
       "quoteExpiredRefresh": "Quote expired — refresh",
       "executeArrow": "Execute →",
-      "approveProtection": "approve {token} for protection",
-      "signBothAndExecute": "sign both & execute →",
       "bracketBanner": {
         "pair": "Protected: sells {token} at ${stop} (stop-loss) or ${target} (take-profit) — whichever comes first.",
         "cap": "Protection covers up to {amount} {token}. Anything the order fills beyond that is not covered.",
         "keepFunds": "Keep the {token} in this wallet while the protection is live — the exits sell from here."
-      },
-      "permitFlowUnsupported": "This wallet needs Flash's Permit2 flow, which Skopos doesn't support yet. Try a different wallet, or place the order without the attached protection."
+      }
     },
     "solana": {
       "routeFailedRecheck": "This route just failed a fresh on-chain check — refreshed the quote. Review it and try again.",
@@ -307,7 +304,10 @@
       "approveToken": "Approve {token}",
       "confirmInWallet": "Confirm in wallet…",
       "submittingOrder": "Submitting order…",
-      "signAndExecute": "Sign & Execute →"
+      "signAndExecute": "Sign & Execute →",
+      "approveProtection": "approve {token} for protection",
+      "signBothAndExecute": "sign both & execute →",
+      "permitFlowUnsupported": "This wallet needs Flash's Permit2 flow, which Skopos doesn't support yet. Try a different wallet, or place the order without the attached protection."
     },
     "relay": {
       "rejectedInWalletShort": "Rejected in wallet.",

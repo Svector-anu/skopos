@@ -27,6 +27,38 @@ export interface AttachedBracket {
   stopLoss: BracketLeg;
 }
 
+// What Flash actually accepts on the wire: exactly one of notionalPrice or
+// crossPrice per leg, never a {price, basis} pair. BracketLeg above is our
+// internal shape because carrying the basis alongside the number is what the
+// card and the validator need; this is the boundary conversion, exactly as
+// buildFlashUpdate() does for the update path's identical problem.
+//
+// Skipping this conversion is not a loud failure: Flash drops an
+// unrecognized leg and returns a quote with no attachedBracket, so the app
+// would place a completely unprotected entry while the user believes their
+// stop-loss is set.
+export interface FlashBracketWireLeg {
+  notionalPrice?: string;
+  crossPrice?: string;
+  limitPrice?: string;
+}
+
+export interface FlashBracketWire {
+  takeProfit: FlashBracketWireLeg;
+  stopLoss: FlashBracketWireLeg;
+}
+
+function legToWire(leg: BracketLeg): FlashBracketWireLeg {
+  return {
+    ...(leg.basis === "notional" ? { notionalPrice: leg.price } : { crossPrice: leg.price }),
+    ...(leg.limitPrice ? { limitPrice: leg.limitPrice } : {}),
+  };
+}
+
+export function toFlashBracketWire(bracket: AttachedBracket): FlashBracketWire {
+  return { takeProfit: legToWire(bracket.takeProfit), stopLoss: legToWire(bracket.stopLoss) };
+}
+
 // Only these entry types can carry a bracket. Notably absent: the trigger
 // types — a stop-loss cannot itself be bracketed — and Flash rejects the
 // rest outright.
@@ -57,15 +89,6 @@ export function validateBracket(bracket: AttachedBracket): BracketIssue | null {
   if (!(tp > 0) || !(sl > 0)) return { code: "non_positive" };
   if (tp <= sl) return { code: "tp_not_above_sl" };
   return null;
-}
-
-// The entry must receive an ERC-20. Flash cannot bracket an entry that buys
-// the chain's native gas asset, so the caller quotes to the wrapped token
-// (WETH rather than ETH) instead — Skopos already does this coercion for
-// TWAP via FLASH_NATIVE_WRAP_SYMBOL, and brackets reuse it.
-export function bracketNeedsWrappedEntry(receivedSymbol: string, nativeSymbol: string | undefined): boolean {
-  if (!nativeSymbol) return false;
-  return receivedSymbol.toUpperCase() === nativeSymbol.toUpperCase();
 }
 
 // Pre-activation lifecycle of the pair, reported on the ENTRY order until it
@@ -110,6 +133,18 @@ const TP_LEG_RE = new RegExp(String.raw`\b(?:take[\s-]?profit|takeprofit|target|
 // anchor on word boundaries, and a trailing "with a" changes what they match.
 const BRACKET_LEFTOVERS_RE = /\s*(?:,|;|and|with(?:\s+an?)?|plus|\+)\s*$/i;
 
+function lastMatch(re: RegExp, input: string): RegExpExecArray | null {
+  const global = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+  let found: RegExpExecArray | null = null;
+  for (let m = global.exec(input); m !== null; m = global.exec(input)) {
+    found = m;
+    // Zero-length matches would spin forever; these patterns always consume,
+    // but the guard costs nothing and the alternative is a hung request.
+    if (m.index === global.lastIndex) global.lastIndex++;
+  }
+  return found;
+}
+
 export interface BracketParse {
   bracket: AttachedBracket;
   /** The message with both legs removed, for the existing entry parser. */
@@ -123,8 +158,13 @@ export function extractBracket(
   input: string,
   normalize: (raw: string) => string | null,
 ): BracketParse | null {
-  const stop = STOP_LEG_RE.exec(input);
-  const tp = TP_LEG_RE.exec(input);
+  // LAST match, not first. The legs are stated as a suffix, while a token
+  // literally named SL / TP / STOP / TARGET sits in entry position ahead of
+  // them — "buy 100 of SL at $5, stop $4, target $6". Taking the first match
+  // reads the ENTRY price as the stop-loss and corrupts the remainder; the
+  // last match is the real leg in every phrasing this accepts.
+  const stop = lastMatch(STOP_LEG_RE, input);
+  const tp = lastMatch(TP_LEG_RE, input);
   // One leg on its own is a plain trigger order, not a bracket.
   if (!stop || !tp) return null;
 

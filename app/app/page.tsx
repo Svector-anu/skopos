@@ -19,6 +19,7 @@ import {
   buildFlashUpdate, buildFlashCancelMessage, normalizeFlashPrice, flashUpdateAxis,
   isFlashOrderUpdatable, limitPriceOf, triggerPriceOf, FLASH_CANCELLABLE_STATUSES,
 } from "@/lib/flashUpdate";
+import { toFlashBracketWire } from "@/lib/flashBracket";
 import {
   useWallet as useSolanaWallet,
   useConnection as useSolanaConnection,
@@ -2820,8 +2821,10 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
           ...(flash.bracket && bracketSignature
             ? {
                 attachedBracket: {
-                  takeProfit: flash.bracket.takeProfit,
-                  stopLoss: flash.bracket.stopLoss,
+                  // Same wire conversion the quote used — the legs are stored
+                  // internally as {price, basis} for the card, and Flash only
+                  // accepts notionalPrice/crossPrice.
+                  ...toFlashBracketWire({ takeProfit: flash.bracket.takeProfit, stopLoss: flash.bracket.stopLoss }),
                   userSignature: bracketSignature,
                   deadline: flash.bracket.deadline,
                   signedMaxFromAmount: flash.bracket.signedMaxFromAmount,
