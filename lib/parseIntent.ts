@@ -315,6 +315,13 @@ const FAST_MODEL  = process.env.FAST_LLM_MODEL  ?? "openai/gpt-oss-20b";
 // visible content directly, is cheap (~$0.0025/msg), and clearly beats the Fast
 // llama-3.1-8b. Override per-deployment with SMART_LLM_MODEL.
 const SMART_MODEL = process.env.SMART_LLM_MODEL ?? "claude-haiku-4.5";
+// Every max_tokens at the call sites below was tuned against llama-3.1-8b, a
+// non-reasoning model, so the number meant "tokens of answer". Under gpt-oss
+// it also has to cover hidden reasoning. Added centrally rather than editing
+// each call site, so the callers keep expressing the answer length they
+// actually want.
+const REASONING_HEADROOM_TOKENS = 512;
+
 
 // Smart silently falls back to the Fast client when no gateway key is set, so a
 // disabled/misconfigured Smart never breaks a reply — it just isn't premium.
@@ -385,10 +392,27 @@ async function chatComplete(
     console.log("[llm] path=fast model=none (no GROQ_API_KEY) — returning null");
     return null;
   }
-  const completion = await groq.chat.completions.create({ model: FAST_MODEL, ...params });
+  // gpt-oss is a REASONING model, unlike the llama-3.1-8b it replaced, and
+  // hidden reasoning tokens are drawn from the SAME max_tokens budget as the
+  // visible answer. Left at default effort our tight caps get spent thinking
+  // and the call returns empty content with finish_reason "length" — which
+  // getInformationalReply reads as "no reply" and turns into the fallback
+  // string. Observed live on 2026-08-21 at ~25% of short informational
+  // prompts. "low" is the minimum effort gpt-oss accepts (unlike qwen, it has
+  // no "none"), and the reasoning headroom below covers the rest.
+  const completion = await groq.chat.completions.create({
+    model: FAST_MODEL,
+    reasoning_effort: "low",
+    ...params,
+    max_tokens: params.max_tokens + REASONING_HEADROOM_TOKENS,
+  });
   const choice = completion.choices[0];
+  const content = choice?.message?.content ?? null;
   console.log(`[llm] path=fast model=${FAST_MODEL} finish=${choice?.finish_reason}`);
-  return { content: choice?.message?.content ?? null, finishReason: choice?.finish_reason, servedBy: "fast" };
+  if (!content && choice?.finish_reason === "length") {
+    console.error(`[llm] fast returned EMPTY content with finish=length — reasoning consumed the ${params.max_tokens}+${REASONING_HEADROOM_TOKENS} token budget`);
+  }
+  return { content, finishReason: choice?.finish_reason, servedBy: "fast" };
 }
 
 const GROQ_INTENT_SYSTEM = `You are a DeFi intent parser. Extract swap/bridge intent from user messages into JSON.
