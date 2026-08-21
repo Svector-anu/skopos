@@ -264,7 +264,8 @@
       "recheckingRoute": "重新核查路径中…",
       "confirmInWallet": "请在钱包中确认…",
       "quoteExpiredRefresh": "报价已过期 — 请刷新",
-      "executeArrow": "执行 →"
+      "executeArrow": "执行 →",
+      "streamingLive": "实时 · 持续更新报价"
     },
     "solana": {
       "routeFailedRecheck": "该路径刚刚未通过链上复核 — 报价已刷新。请检查后重试。",

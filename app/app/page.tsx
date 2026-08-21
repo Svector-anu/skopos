@@ -19,6 +19,7 @@ import {
   buildFlashUpdate, buildFlashCancelMessage, normalizeFlashPrice, flashUpdateAxis,
   isFlashOrderUpdatable, limitPriceOf, triggerPriceOf, FLASH_CANCELLABLE_STATUSES,
 } from "@/lib/flashUpdate";
+import { pushSseChunk, toQuoteRevision } from "@/lib/flashQuoteStream";
 import {
   useWallet as useSolanaWallet,
   useConnection as useSolanaConnection,
@@ -2116,6 +2117,99 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     if (onCorrectChain) setSwitchErr(null);
   }, [onCorrectChain]);
 
+  // ── live quote stream ──────────────────────────────────────────────────
+  // Flash revises a market quote as deeper routing completes. Subscribing
+  // once beats re-polling: the first quote arrives sooner and the better one
+  // follows on the same session, so the price on screen while the user reads
+  // the card is one they can actually sign.
+  //
+  // Scope is Flash's: market orders, same chain. Skopos's own re-quote before
+  // signing (onRevalidate) still runs — that keeps us CORRECT; this keeps the
+  // displayed number TRUE, so the re-quote is no longer a surprise.
+  const flashLeg = result.flash;
+  const streamable =
+    !!flashLeg && flashLeg.orderType === "market" &&
+    flashLeg.targetChain === flashLeg.contraChain && !txHash;
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  // Identity of the session, not the revision — a new quoteId arriving on the
+  // stream must not tear down and reopen the very stream that produced it.
+  const streamKey = streamable
+    ? `${flashLeg.targetChain}:${flashLeg.targetAsset}:${flashLeg.contraAsset}:${flashLeg.side}:${flashLeg.qty}`
+    : null;
+
+  const onResultUpdateRef = useRef(onResultUpdate);
+  onResultUpdateRef.current = onResultUpdate;
+
+  useEffect(() => {
+    if (!streamKey || !flashLeg) return;
+    const controller = new AbortController();
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/flash/quote-stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            targetChain: flashLeg.targetChain, contraChain: flashLeg.contraChain,
+            targetAsset: flashLeg.targetAsset, contraAsset: flashLeg.contraAsset,
+            side: flashLeg.side, qty: flashLeg.qty, orderType: "market",
+            funderAddress: flashLeg.funderAddress,
+            flashIntegratorFeeBps: flashLeg.flashIntegratorFeeBps,
+          }),
+        });
+        if (!res.ok || !res.body) return;
+        if (!cancelled) setIsStreaming(true);
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        const state = { buffer: "" };
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done || cancelled) break;
+          for (const ev of pushSseChunk(state, decoder.decode(value, { stream: true }))) {
+            if (ev.event === "quote") {
+              const revision = toQuoteRevision(ev.quote);
+              // A revision with no signable payload is dropped rather than
+              // replacing a quote the user could have signed.
+              if (!revision) continue;
+              onResultUpdateRef.current?.({
+                quotedAt: Date.now(),
+                route: {
+                  ...result.route,
+                  ...(revision.outputAmount ? { outputAmount: revision.outputAmount } : {}),
+                  ...(revision.feesUSD ? { feesUSD: revision.feesUSD } : {}),
+                },
+                flash: {
+                  ...flashLeg,
+                  quoteId: revision.quoteId,
+                  orderTypedData: revision.orderTypedData,
+                  permitTypedData: revision.permitTypedData,
+                  approveTx: revision.approveTx,
+                },
+              });
+            } else {
+              // expired or error — the session is over either way; the card
+              // falls back to its countdown and manual refresh.
+              cancelled = true;
+              break;
+            }
+          }
+        }
+      } catch {
+        // Abort or network failure — polling and the countdown still apply.
+      } finally {
+        if (!cancelled) setIsStreaming(false);
+      }
+    })();
+
+    return () => { cancelled = true; setIsStreaming(false); controller.abort(); };
+    // Keyed on the session, deliberately not on `result` — see streamKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamKey]);
+
   const isExpired = secondsLeft <= 0 && !txHash;
 
   async function handleRefresh(slippageOverride?: number) {
@@ -2261,7 +2355,18 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             "EXPIRED" here would be actively misleading, not just cosmetic:
             confirmed live, the sign+submit flow still completes fine after
             this badge says EXPIRED. */}
-        {!executionMode && !result.flash && !result.relay && (
+        {/* A streamed quote is not going stale — revisions keep arriving — so
+            it reports as live rather than counting down to an expiry that no
+            longer applies. */}
+        {!executionMode && isStreaming && (
+          <span style={{
+            ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4,
+            background: "rgba(76,194,106,0.08)", color: "rgba(76,194,106,0.9)",
+          }}>
+            {t("streamingLive")}
+          </span>
+        )}
+        {!executionMode && !isStreaming && !result.flash && !result.relay && (
           <span style={{
             ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4,
             background: "var(--card-border-faint, rgba(255,255,255,0.05))",
