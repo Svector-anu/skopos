@@ -80,3 +80,77 @@ export interface AttachedBracketRead {
   stopLoss: { notionalPrice?: string; crossPrice?: string; limitPrice?: string };
   signedMaxFromAmount: string;
 }
+
+// ── one-message parsing ──────────────────────────────────────────────────────
+// "buy $500 of ETH at $2800, stop $2500, target $3500" arrives as ONE message.
+// Rather than teach every entry regex about brackets, the pair is extracted as
+// a suffix and stripped, and the remainder goes to the existing entry parser
+// completely unchanged. Compositional: entry phrasings and bracket phrasings
+// evolve independently, and a message with no pair takes the old path byte for
+// byte.
+//
+// BOTH legs are required. One leg alone is an ordinary stop-loss or
+// take-profit order and must keep falling through to the existing trigger
+// regexes — "sell 2 ETH if it drops below $2000" is not half a bracket.
+
+// Must not end on a separator. A greedy [\d,]* swallows the comma in
+// "stop $2500, target $3500" and yields "2500,", which normalizeFlashPrice
+// then correctly refuses — turning a list into a total parse failure rather
+// than a partial one. Anchoring the last character as a digit keeps grouped
+// numbers ("2,500") whole while leaving a trailing separator behind.
+const BRACKET_NUM = String.raw`(\d(?:[\d,]*\d)?(?:\.\d+)?)`;
+// "stop at 2500", "stop 2500", "stop: 2500", "sl @ 2500", "stop of 2500"
+const BRACKET_JOIN = String.raw`(?:\s*(?:at|@|of|to|:|=)\s*|\s+)`;
+// Longest alternative first so "stop loss 2500" doesn't match the bare "stop".
+const STOP_LEG_RE = new RegExp(String.raw`\b(?:stop[\s-]?loss|stoploss|stop|sl)\b${BRACKET_JOIN}\$?${BRACKET_NUM}`, "i");
+const TP_LEG_RE = new RegExp(String.raw`\b(?:take[\s-]?profit|takeprofit|target|tp)\b${BRACKET_JOIN}\$?${BRACKET_NUM}`, "i");
+
+// Connectives left behind once the legs are cut out ("… ETH at $2800 , with a
+// and ."). Cleaning these up matters: the remainder is fed to regexes that
+// anchor on word boundaries, and a trailing "with a" changes what they match.
+const BRACKET_LEFTOVERS_RE = /\s*(?:,|;|and|with(?:\s+an?)?|plus|\+)\s*$/i;
+
+export interface BracketParse {
+  bracket: AttachedBracket;
+  /** The message with both legs removed, for the existing entry parser. */
+  remainder: string;
+}
+
+// `normalize` is injected rather than imported so this module stays free of
+// any dependency — it is the same normalizeFlashPrice the update path uses,
+// which refuses ambiguous comma placement instead of guessing a decimal.
+export function extractBracket(
+  input: string,
+  normalize: (raw: string) => string | null,
+): BracketParse | null {
+  const stop = STOP_LEG_RE.exec(input);
+  const tp = TP_LEG_RE.exec(input);
+  // One leg on its own is a plain trigger order, not a bracket.
+  if (!stop || !tp) return null;
+
+  const stopPrice = normalize(stop[1]);
+  const tpPrice = normalize(tp[1]);
+  if (!stopPrice || !tpPrice) return null;
+
+  // Cut the later span first so the earlier one's indices stay valid.
+  const spans = [stop, tp].sort((a, b) => b.index - a.index);
+  let remainder = input;
+  for (const m of spans) {
+    remainder = remainder.slice(0, m.index) + " " + remainder.slice(m.index + m[0].length);
+  }
+  remainder = remainder.replace(/\s+/g, " ").trim();
+  // Strip trailing connectives repeatedly — "…, with a" leaves two.
+  let previous: string;
+  do {
+    previous = remainder;
+    remainder = remainder.replace(BRACKET_LEFTOVERS_RE, "").trim();
+  } while (remainder !== previous);
+
+  return {
+    bracket: {
+      takeProfit: { price: tpPrice, basis: "notional" },
+      stopLoss: { price: stopPrice, basis: "notional" },
+    },
+    remainder,
+  };
+}

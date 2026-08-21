@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
 import { FLASH_UPDATE_INTENT_RE } from "@/lib/flashUpdate";
-import { validateBracket, isBracketableOrderType, type AttachedBracket } from "@/lib/flashBracket";
+import { validateBracket, isBracketableOrderType, extractBracket, type AttachedBracket } from "@/lib/flashBracket";
+import { normalizeFlashPrice } from "@/lib/flashUpdate";
 import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashChain, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
@@ -2039,10 +2040,19 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // of strict necessity). Robinhood Chain / Flash is the only execution path
   // in Skopos that supports non-market order types at all, so none of the
   // supported phrasings need to say "on robinhood" explicitly.
+  // One-message brackets: "buy $500 of ETH at $2800, stop $2500, target
+  // $3500". The pair is lifted out first and the REMAINDER goes through the
+  // existing parse pipeline untouched, so entry phrasings and bracket
+  // phrasings stay independent and a message with no pair takes the old path
+  // byte for byte. Requires both legs — one alone is an ordinary trigger
+  // order and must keep falling through to those regexes.
+  const bracketParse = extractBracket(trimmed, normalizeFlashPrice);
+  const orderText = bracketParse?.remainder ?? trimmed;
+
   if (textMode) {
     // Headless clients have no wallet — same handoff shape as the single-leg
     // intent block below, just without a resolved quote to hand off.
-    const parsed = parseFlashOrderIntent(trimmed);
+    const parsed = parseFlashOrderIntent(orderText);
     if (parsed && "order" in parsed) {
       return json({
         type: "text",
@@ -2053,7 +2063,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     // miss used to fall through to the swap pipeline, which read "buy 0.05 ETH
     // at $2800 on arbitrum" as a same-token swap and handed back "ETH on
     // arbitrum → ETH on arbitrum". Say what's actually true instead.
-    if (looksLikeAdvancedOrder(trimmed)) {
+    if (looksLikeAdvancedOrder(orderText) || bracketParse) {
       return json({
         type: "text",
         text: `That looks like an advanced order (a price condition or a schedule). Those aren't available in headless mode yet — open the Skopos app to place it.`,
@@ -2065,9 +2075,9 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     // provenance-checked in lib/parseIntent.ts) only fires when regex missed
     // AND the message passes the cheap order-ish gate; the generic loose
     // asks remain the floor when the LLM is unavailable or declines.
-    let orderParse = parseFlashOrderStrict(trimmed);
-    if (!orderParse && flashOrderLlmGate(trimmed)) {
-      const llm = await llmParseFlashOrder(trimmed, tier, meterMeta);
+    let orderParse = parseFlashOrderStrict(orderText);
+    if (!orderParse && flashOrderLlmGate(orderText)) {
+      const llm = await llmParseFlashOrder(orderText, tier, meterMeta);
       if (llm && llm.orderType === "market") {
         // Stock-buy shape only — stock tokens exist solely on Robinhood
         // Chain here, so an explicitly different chain means this isn't
@@ -2099,11 +2109,23 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         if (orderParse) await recordSmart();
       }
     }
-    if (!orderParse) orderParse = parseFlashOrderLoose(trimmed);
+    if (!orderParse) orderParse = parseFlashOrderLoose(orderText);
+    // A pair with nothing to attach it to — "stop $2500, target $3500" on its
+    // own, or an entry the parsers can't read. Protecting a position you
+    // already hold is a standalone bracket, which Flash treats as a different
+    // order type and Skopos doesn't place yet, so say that rather than
+    // dropping the legs and quoting an unprotected entry.
+    if (bracketParse && !orderParse) {
+      return json({
+        type: "text",
+        text: `I can read the stop-loss ($${bracketParse.bracket.stopLoss.price}) and take-profit ($${bracketParse.bracket.takeProfit.price}), but not the order they attach to. Give me the entry in the same message — e.g. "buy $500 of ETH at $2800, stop $${bracketParse.bracket.stopLoss.price}, target $${bracketParse.bracket.takeProfit.price}".`,
+      });
+    }
     if (orderParse) {
       if ("ask" in orderParse) {
         return json({ type: "text", text: orderParse.ask });
       }
+      if (bracketParse) orderParse.order.bracket = bracketParse.bracket;
       const result = await resolveFlashOrderLeg(orderParse.order, senderAddress);
       if (!result.ok) return json({ type: result.ask ? "text" : "error", text: result.text });
       return json({
