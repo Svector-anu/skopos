@@ -179,6 +179,15 @@ export function extractBracket(
     remainder = remainder.slice(0, m.index) + " " + remainder.slice(m.index + m[0].length);
   }
   remainder = remainder.replace(/\s+/g, " ").trim();
+  // Cutting the legs out of the middle of a list leaves orphaned separators
+  // behind: "buy $20 of ETH at $2300, stop $2100, target $2600 on base"
+  // becomes "buy $20 of ETH at $2300, , on base". The entry regexes match
+  // their chain suffix as "\s+on\s+", so those stray commas silently cost
+  // the user their chain — the order then asks which chain to use for a
+  // message that named one.
+  remainder = remainder.replace(/[,;]\s*(?=[,;])/g, "");
+  remainder = remainder.replace(/[,;]\s*(?=\bon\b)/gi, " ");
+  remainder = remainder.replace(/\s+/g, " ").trim();
   // Strip trailing connectives repeatedly — "…, with a" leaves two.
   let previous: string;
   do {
