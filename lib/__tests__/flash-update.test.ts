@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+// Imported from the pure module, not lib/flash — keeps the suite off
+// @upstash/redis and mirrors how app/app/page.tsx has to import it.
 import {
   buildFlashUpdate,
   normalizeFlashPrice,
@@ -8,10 +10,10 @@ import {
   triggerPriceOf,
   FLASH_CANCELLABLE_STATUSES,
   FLASH_UPDATABLE_STATUSES,
-  type FlashOrder,
   type FlashOrderStatus,
   type FlashOrderType,
-} from "../flash";
+} from "../flashUpdate";
+import type { FlashOrder } from "../flash";
 
 // Flash validates the update message byte-for-byte and returns a bare 404 on
 // a mismatch — indistinguishable from an order that never existed. That makes
