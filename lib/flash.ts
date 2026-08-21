@@ -268,6 +268,11 @@ export interface FlashQuoteRequest {
   maxSlippage?: string;
   maxPriceImpact?: string;
   limitNotionalPrice?: string;
+  // Pair-rate limit price — target priced in contra units. Mutually exclusive
+  // with limitNotionalPrice. Required (not optional) when an attachedBracket
+  // rides along on a limit entry: Flash rejects the notional field in that
+  // combination — see resolveFlashOrderLeg.
+  limitCrossPrice?: string;
   funderAddress?: string;
   svmUseNativeSOL?: boolean;
   flashIntegratorFeeBps?: string;
@@ -412,6 +417,10 @@ export interface FlashSubmitRequest {
   maxSlippage?: string;
   maxPriceImpact?: string;
   limitNotionalPrice?: string;
+  // Cross-basis variant. Required in place of limitNotionalPrice when the
+  // order carries an attachedBracket — /order enforces this independently of
+  // /quote, so the basis chosen at quote time has to be repeated here.
+  limitCrossPrice?: string;
   quoteId?: string;
   flashIntegratorFeeBps?: string;
   erc8021AttributionCode?: string;

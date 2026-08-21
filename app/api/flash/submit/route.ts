@@ -33,6 +33,8 @@ interface SubmitBody {
   // twapBucketCount must echo the exact values used at quote time per
   // Flash's own spec, not be recomputed here.
   limitNotionalPrice?: string;
+  // Cross-basis variant, used when a bracket rides along — see page.tsx.
+  limitCrossPrice?: string;
   triggers?: FlashPriceTrigger[];
   // Attached take-profit / stop-loss pair, signed client-side over its own
   // typed data. Passed through verbatim — every field here is either part of
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest) {
       ...(body.attachedBracket ? { attachedBracket: body.attachedBracket } : {}),
       evmOrderTypedData: body.evmOrderTypedData,
       limitNotionalPrice: body.limitNotionalPrice,
+      limitCrossPrice: body.limitCrossPrice,
       triggers: body.triggers,
       twapBucketCount: body.twapBucketCount,
     });

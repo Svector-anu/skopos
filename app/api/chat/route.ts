@@ -1187,7 +1187,22 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       orderType: order.orderType,
       funderAddress: senderAddress,
       flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
-      ...(order.orderType === "limit" && order.priceLevel ? { limitNotionalPrice: order.priceLevel } : {}),
+      // A limit entry carrying a bracket must be priced in CROSS basis. Flash
+      // rejects the notional field outright with "attached_bracket limit
+      // entries require limit_cross_price in v1" — confirmed live 2026-08-21
+      // against their own API, and contradicting their bracket doc, which says
+      // the pair attaches to a limit request "unchanged".
+      //
+      // Safe to convert rather than refuse: the contra asset on every path
+      // here is a dollar stablecoin (USDC, or USDG on Robinhood Chain), so the
+      // pair rate — target priced in contra units — is the same number as the
+      // USD price to within the peg. A non-stable contra would need a real
+      // conversion, which no supported phrasing can currently produce.
+      ...(order.orderType === "limit" && order.priceLevel
+        ? order.bracket
+          ? { limitCrossPrice: order.priceLevel }
+          : { limitNotionalPrice: order.priceLevel }
+        : {}),
       ...(triggers ? { triggers } : {}),
       // Converted to Flash's wire shape — sending our internal {price, basis}
       // legs makes Flash drop the pair and return an UNPROTECTED quote.
