@@ -504,7 +504,8 @@
         "pending_activation": "首次成交后启动保护：止损 ${stop} / 止盈 ${target}",
         "active": "保护中：止损 ${stop} / 止盈 ${target}",
         "never_activated": "保护未启动 — 该委托未成交即结束"
-      }
+      },
+      "protectionRow": "为订单 {entry} 提供的保护单"
     },
     "polymarket": {
       "volumeM": "${n}M 交易量",

@@ -504,7 +504,8 @@
         "pending_activation": "Bảo vệ kích hoạt khi khớp lần đầu: cắt lỗ ${stop} / chốt lời ${target}",
         "active": "Đang được bảo vệ: cắt lỗ ${stop} / chốt lời ${target}",
         "never_activated": "Bảo vệ chưa từng kích hoạt — lệnh đóng mà không khớp"
-      }
+      },
+      "protectionRow": "Bảo vệ cho lệnh {entry}"
     },
     "polymarket": {
       "volumeM": "${n}M KL",

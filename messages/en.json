@@ -504,7 +504,8 @@
         "pending_activation": "Protection armed on first fill: stop ${stop} / target ${target}",
         "active": "Protected: stop ${stop} / target ${target}",
         "never_activated": "Protection never activated — the entry closed unfilled"
-      }
+      },
+      "protectionRow": "Protection for order {entry}"
     },
     "polymarket": {
       "volumeM": "${n}M vol",

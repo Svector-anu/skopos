@@ -413,6 +413,9 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
         // An attached pair is reported on its ENTRY until it activates, and
         // "pending" is the state most worth spelling out — an entry that never
         // fills means protection that never existed.
+        const protection = o.orderType === "bracket" || o.sourceEntryOrderId
+          ? ` · protection for order ${str(o.sourceEntryOrderId).slice(0, 8)}`
+          : "";
         const ab = o.attachedBracket as Card | null;
         const legPrice = (leg: unknown) => {
           const l = (leg ?? {}) as Card;
@@ -423,7 +426,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
           : str(ab.status) === "pending_activation" ? ` · protection arms on first fill: stop ${legPrice(ab.stopLoss)} / target ${legPrice(ab.takeProfit)}`
           : " · protection never activated"
           : "";
-        return `${str(o.side)} ${str(o.orderType)} · ${qtyLine} · ${status} · id ${str(o.orderId).slice(0, 8)}${bracket}`;
+        return `${str(o.side)} ${str(o.orderType)} · ${qtyLine} · ${status} · id ${str(o.orderId).slice(0, 8)}${protection}${bracket}`;
       });
       // Repricing and cancelling both need a wallet signature, which a
       // headless client cannot produce — say so rather than listing orders

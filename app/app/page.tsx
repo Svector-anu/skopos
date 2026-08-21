@@ -287,6 +287,9 @@ type FlashOrder = {
     stopLoss: { notionalPrice?: string; crossPrice?: string; limitPrice?: string };
     signedMaxFromAmount: string;
   } | null;
+  // Set on the PAIR itself once active — the entry it protects. Its row is a
+  // plain "sell bracket" otherwise, which reads as a mystery order.
+  sourceEntryOrderId: string | null;
   placedAt: string;
 };
 type FlashOrdersResult = { type: "flash_orders"; address: string; orders: FlashOrder[] };
@@ -3163,6 +3166,12 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
   // state lives on the entry until then. Worth showing plainly: an entry that
   // never fills means protection that never existed, and "pending" reads as
   // "armed" to most people unless it says otherwise.
+  // This row IS a protective pair, not an ordinary sell. Cancelling it leaves
+  // the entry working with nothing protecting it — the doc is explicit that
+  // the independence runs both ways — so it gets said before the click, not
+  // after.
+  const isProtection = order.orderType === "bracket" || !!order.sourceEntryOrderId;
+
   const ab = order.attachedBracket;
   const abPrice = (leg: { notionalPrice?: string; crossPrice?: string }) => leg.notionalPrice ?? leg.crossPrice ?? "?";
   const bracketLine = ab
@@ -3244,6 +3253,7 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))" }}>
           {[
+            isProtection ? t("protectionRow", { entry: (order.sourceEntryOrderId ?? "").slice(0, 8) }) : null,
             currentTrigger ? t("triggerLine", { price: priceLabel(currentTrigger) }) : null,
             currentLimit ? t("limitLine", { price: priceLabel(currentLimit) }) : null,
             bracketLine,

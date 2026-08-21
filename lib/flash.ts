@@ -497,6 +497,11 @@ export interface FlashOrder {
   // pair itself 404s until it activates on the entry's first fill, so this
   // is the only way to observe it in that window.
   attachedBracket: AttachedBracketRead | null;
+  // Set on the PAIR once it activates, pointing back at the entry it
+  // protects. Its own row reads orderType "bracket", side "sell" — without
+  // this the user sees an unexplained sell order sitting in their list and
+  // may cancel their own protection.
+  sourceEntryOrderId: string | null;
   maxPriceImpact: string | null;
   twapBucketCount: number | null;
   placedAt: string;
