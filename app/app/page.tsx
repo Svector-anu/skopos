@@ -2919,7 +2919,16 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
           // limitNotionalPrice 400s even though the quote already required
           // one. triggers/twapBucketCount must echo the exact quote-time
           // values, not be recomputed here.
-          ...(flash.orderType === "limit" && flash.triggerPrice ? { limitNotionalPrice: flash.triggerPrice } : {}),
+          // Must mirror the basis the QUOTE used. A bracketed limit entry is
+          // quoted in cross basis (Flash rejects notional with a bracket), and
+          // /order validates independently of /quote — sending the wrong field
+          // here fails AFTER the user has signed twice, which is the most
+          // expensive place to discover it.
+          ...(flash.orderType === "limit" && flash.triggerPrice
+            ? flash.bracket
+              ? { limitCrossPrice: flash.triggerPrice }
+              : { limitNotionalPrice: flash.triggerPrice }
+            : {}),
           ...(flash.triggerType && flash.triggerPrice ? { triggers: [{ notionalPrice: flash.triggerPrice, triggerType: flash.triggerType }] } : {}),
           ...(flash.twapBucketCount ? { twapBucketCount: flash.twapBucketCount } : {}),
           // The pair's legs plus the three values baked into its signed typed
