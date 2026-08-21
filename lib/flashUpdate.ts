@@ -228,3 +228,51 @@ export const FLASH_UPDATE_INTENT_RE =
 export function buildFlashCancelMessage(orderId: string): string {
   return `Definitive Flash v1 — Cancel Order\nOrder: ${orderId}`;
 }
+
+// Request-shape validation and status-to-copy mapping for POST
+// /api/flash/update, kept here rather than inline in the route so both are
+// testable without standing up a handler. The route stays the thin part:
+// parse, validate, call, map.
+export type FlashUpdateBodyIssue =
+  | { code: "missing_fields"; fields: string[] }
+  | { code: "no_price" }
+  | { code: "both_limit_bases" }
+  | { code: "both_trigger_bases" };
+
+export function validateFlashUpdateBody(body: {
+  orderId?: unknown;
+  updateMessage?: unknown;
+  userSignature?: unknown;
+  limitNotionalPrice?: unknown;
+  limitCrossPrice?: unknown;
+  trigger?: { notionalPrice?: unknown; crossPrice?: unknown } | null;
+}): FlashUpdateBodyIssue | null {
+  const required = { orderId: body.orderId, updateMessage: body.updateMessage, userSignature: body.userSignature };
+  const missing = Object.entries(required).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) return { code: "missing_fields", fields: missing };
+
+  // At least one price, or there is nothing to change and Flash 422s.
+  if (!body.limitNotionalPrice && !body.limitCrossPrice && !body.trigger) return { code: "no_price" };
+  // Both bases are mutually exclusive in Flash's schema; catching it here
+  // keeps the failure legible instead of arriving as a generic upstream 400.
+  if (body.limitNotionalPrice && body.limitCrossPrice) return { code: "both_limit_bases" };
+  if (body.trigger?.notionalPrice && body.trigger?.crossPrice) return { code: "both_trigger_bases" };
+  return null;
+}
+
+// Flash overloads both of its rejection codes, so map them to something a
+// user can act on. A 404 in particular does NOT mean "no such order" — a bad
+// signature or a single wrong byte in the message lands there too, which is
+// the failure most likely to bite.
+export function flashUpdateErrorMessage(status: number): string {
+  if (status === 404) {
+    return "Flash rejected the update — the order is gone, or the signature didn't match. Re-check your orders and try again.";
+  }
+  if (status === 422) {
+    return "This order can't be updated anymore — it already filled, was cancelled, or has another update still in flight. Re-check your orders.";
+  }
+  if (status === 429) {
+    return "Too many requests to Flash right now — wait a moment and try again.";
+  }
+  return "Couldn't update the order right now — try again in a moment.";
+}

@@ -12,6 +12,8 @@ import {
   FLASH_CANCELLABLE_STATUSES,
   FLASH_UPDATABLE_STATUSES,
   FLASH_UPDATE_INTENT_RE,
+  validateFlashUpdateBody,
+  flashUpdateErrorMessage,
   type FlashOrderStatus,
   type FlashOrderType,
 } from "../flashUpdate";
@@ -542,5 +544,91 @@ describe("buildFlashCancelMessage", () => {
       "Definitive Flash v1 — Cancel Order",
       "Definitive Flash — Update Order",
     ]);
+  });
+});
+
+describe("validateFlashUpdateBody", () => {
+  const signed = { orderId: ORDER_ID, updateMessage: "msg", userSignature: "0xsig" };
+
+  it("should accept a well-formed trigger update", () => {
+    // #given a signed body carrying one trigger price
+    const body = { ...signed, trigger: { notionalPrice: "1800", triggerType: "lower" } };
+
+    // #when it is validated
+    const issue = validateFlashUpdateBody(body);
+
+    // #then nothing is wrong with it
+    expect(issue).toBeNull();
+  });
+
+  it("should name every missing required field at once", () => {
+    // #given a body with no signature material at all
+    const body = { limitNotionalPrice: "4000" };
+
+    // #when it is validated
+    const issue = validateFlashUpdateBody(body);
+
+    // #then all three are reported together, not one per round trip
+    expect(issue).toEqual({ code: "missing_fields", fields: ["orderId", "updateMessage", "userSignature"] });
+  });
+
+  it("should refuse a body with no price to change", () => {
+    // #given a signed body carrying neither a limit nor a trigger
+    // #when it is validated
+    const issue = validateFlashUpdateBody(signed);
+
+    // #then it is refused here rather than 422ing upstream
+    expect(issue).toEqual({ code: "no_price" });
+  });
+
+  it("should refuse both limit bases at once", () => {
+    // #given mutually exclusive limit fields
+    const body = { ...signed, limitNotionalPrice: "4000", limitCrossPrice: "0.002" };
+
+    // #when it is validated
+    const issue = validateFlashUpdateBody(body);
+
+    // #then the conflict is named rather than passed upstream
+    expect(issue).toEqual({ code: "both_limit_bases" });
+  });
+
+  it("should refuse both trigger bases at once", () => {
+    // #given mutually exclusive trigger fields
+    const body = { ...signed, trigger: { notionalPrice: "1800", crossPrice: "0.002" } };
+
+    // #when it is validated
+    const issue = validateFlashUpdateBody(body);
+
+    // #then the conflict is named
+    expect(issue).toEqual({ code: "both_trigger_bases" });
+  });
+});
+
+describe("flashUpdateErrorMessage", () => {
+  it("should not tell the user a 404 means the order is missing", () => {
+    // #given Flash's 404, which also covers a bad signature or one wrong byte
+    // #when it is mapped to copy
+    const msg = flashUpdateErrorMessage(404);
+
+    // #then both causes are surfaced, since we cannot tell them apart
+    expect(msg).toContain("signature");
+  });
+
+  it("should explain a 422 as the order having moved on", () => {
+    // #given Flash's 422 — terminal, already filled, or update in flight
+    // #when it is mapped to copy
+    const msg = flashUpdateErrorMessage(422);
+
+    // #then it says the order can no longer be updated
+    expect(msg).toContain("can't be updated anymore");
+  });
+
+  it("should map an unknown status to a retryable message", () => {
+    // #given a status with no specific mapping
+    // #when it is mapped to copy
+    const msg = flashUpdateErrorMessage(500);
+
+    // #then the user is told to retry rather than shown a bare code
+    expect(msg).toContain("try again");
   });
 });
