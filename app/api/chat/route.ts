@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
+import { FLASH_UPDATE_INTENT_RE } from "@/lib/flashUpdate";
 import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashChain, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
@@ -1306,6 +1307,19 @@ async function researchStockPairing(risk: TokenRisk): Promise<StockPairedItem | 
 
 const NO_CACHE = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
+// Shared by the "my orders" command and the reprice-intent block above it —
+// both answer with the same card, and the second sits far earlier in the
+// waterfall, so this avoids a second copy of the fetch drifting from the first.
+async function flashOrdersCard(senderAddress: string): Promise<NextResponse> {
+  try {
+    const orders = await listFlashOrders(senderAddress, { pageSize: 20 });
+    return json({ type: "flash_orders", address: senderAddress, orders });
+  } catch {
+    return json({ type: "error", text: "Couldn't fetch your Flash orders right now — try again in a moment." });
+  }
+}
+
+
 function json(data: unknown, init?: ResponseInit): NextResponse {
   return NextResponse.json(data, { ...init, headers: { ...NO_CACHE, ...(init?.headers ?? {}) } });
 }
@@ -1902,6 +1916,33 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         text: `How much ${symbol} from ${sourceChain} would you like to sell, and for which token? Type it — e.g. "swap 0.5 ${symbol} from ${sourceChain} to USDC" or "swap 0.5 ${symbol} from ${sourceChain} to ETH"`,
       });
     }
+  }
+
+  // ── Reprice an existing Flash order — must run BEFORE both the guided
+  // Robinhood-bridge block just below and the order-placement block after it.
+  // The bridge block fires on "robinhood" + a move/bridge/send verb with no
+  // amount present, so "move my stop on robinhood" was being answered with
+  // "how much would you like to bridge?". Confirmed by tracing the live regexes: "update my stop loss
+  // to 3200" and "raise my take profit to $6000" both match LOOSE_STOP_LOSS /
+  // LOOSE_TAKE_PROFIT and reach the LLM order gate, so a request to MODIFY an
+  // order was being answered as a request to CREATE one — the user got asked
+  // which token and how much for an order they already have.
+  //
+  // Deliberately routes to the orders card rather than repricing from the
+  // sentence. The chat text names an order type but not WHICH order, and with
+  // two ETH stops open there is no safe way to pick one; Flash also fixes each
+  // trigger's direction and basis for the order's life, and both are read off
+  // the order itself. So the card is the disambiguation step, and the row's
+  // edit control carries the update — same shape as cancel.
+  //
+  // Requires a modification verb AND a possessive reference to an existing
+  // order, so genuine placements ("set a stop loss at $3000", "sell 2 ETH if
+  // it drops below $2000") do not match.
+  if (FLASH_UPDATE_INTENT_RE.test(trimmed)) {
+    if (!senderAddress) {
+      return json({ type: "text", text: "Connect your wallet first — I'll pull up your Flash orders so you can reprice one." });
+    }
+    return flashOrdersCard(senderAddress);
   }
 
   // ── Guided Robinhood Chain bridge — must run BEFORE the single-leg intent
@@ -2750,12 +2791,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     if (!senderAddress) {
       return json({ type: "text", text: "Connect your wallet first — I'll check your Flash orders." });
     }
-    try {
-      const orders = await listFlashOrders(senderAddress, { pageSize: 20 });
-      return json({ type: "flash_orders", address: senderAddress, orders });
-    } catch {
-      return json({ type: "error", text: "Couldn't fetch your Flash orders right now — try again in a moment." });
-    }
+    return flashOrdersCard(senderAddress);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

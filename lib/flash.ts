@@ -1,6 +1,13 @@
 import { fetchWithTimeout } from "./http";
 import { getRedis } from "./redis";
 import type { DexPair } from "./dexscreener";
+import type { FlashOrderStatus, FlashOrderType, FlashPriceTrigger, FlashUpdateRequest } from "./flashUpdate";
+
+// The pure half lives in ./flashUpdate so the browser can build and sign an
+// update message without pulling this module's server deps into the bundle.
+// Re-exported here so every existing server-side import of lib/flash keeps
+// working unchanged.
+export * from "./flashUpdate";
 
 const BASE = "https://api.dexscreener.com";
 const ROBINHOOD_CHAIN_ID = "robinhood"; // DexScreener's chainId slug for chain 4663
@@ -244,14 +251,6 @@ export type FlashChain =
 
 export type FlashOrderSide = "buy" | "sell";
 
-export type FlashOrderType =
-  | "market" | "limit" | "twap" | "stop" | "stop-loss" | "take-profit" | "bracket";
-
-export interface FlashPriceTrigger {
-  notionalPrice: string;
-  triggerType: "upper" | "lower";
-}
-
 export interface FlashQuoteRequest {
   targetChain: FlashChain;
   contraChain: FlashChain;
@@ -425,17 +424,6 @@ export async function submitFlashOrder(req: FlashSubmitRequest): Promise<FlashSu
 // against Flash's real OpenAPI spec, same discipline as the quote/submit
 // functions above.
 
-export type FlashOrderStatus =
-  | "ORDER_STATUS_UNSPECIFIED" | "ORDER_STATUS_PENDING" | "ORDER_STATUS_ACCEPTED"
-  | "ORDER_STATUS_PARTIALLY_FILLED" | "ORDER_STATUS_FILLED" | "ORDER_STATUS_CANCELLED"
-  | "ORDER_STATUS_REJECTED" | "ORDER_STATUS_TERMINATED";
-
-// Statuses where a cancel request is still meaningful — anything else has
-// already reached a terminal state (filled, cancelled, rejected, terminated).
-export const FLASH_CANCELLABLE_STATUSES: ReadonlySet<FlashOrderStatus> = new Set([
-  "ORDER_STATUS_PENDING", "ORDER_STATUS_ACCEPTED", "ORDER_STATUS_PARTIALLY_FILLED",
-]);
-
 export interface FlashAssetRef {
   id: string;
   name: string;
@@ -463,6 +451,10 @@ export interface FlashOrder {
   qty: string;
   filled: FlashOrderFilled | null;
   limitNotionalPrice: string | null;
+  // Present when the order was priced in pair-rate rather than USD basis.
+  // Skopos never sends it, but the funder's orders from other Flash clients
+  // can carry it — see the note on FlashPriceTrigger.
+  limitCrossPrice: string | null;
   trigger: FlashPriceTrigger | null;
   brackets: FlashPriceTrigger[] | null;
   maxPriceImpact: string | null;
@@ -527,10 +519,6 @@ export async function getFlashOrder(orderId: string, funderAddress: string): Pro
 // Exact bytes the funder wallet must sign (EIP-191 personal_sign on EVM) to
 // authorize a cancel — identical across EVM/SVM per Flash's spec. Exported so
 // the client signs precisely this string, never a reconstruction of it.
-export function buildFlashCancelMessage(orderId: string): string {
-  return `Definitive Flash v1 — Cancel Order\nOrder: ${orderId}`;
-}
-
 // Idempotent server-side: cancelling an already-cancelled order returns 200,
 // not 422, per Flash's own spec — no need to check status before calling.
 export async function cancelFlashOrder(orderId: string, cancelMessage: string, userSignature: string): Promise<{ ok: true }> {
@@ -546,6 +534,34 @@ export async function cancelFlashOrder(orderId: string, cancelMessage: string, u
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`[flash] cancel ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+export class FlashUpdateError extends Error {
+  constructor(readonly status: number, readonly detail: string) {
+    super(`[flash] update ${status}: ${detail}`);
+    this.name = "FlashUpdateError";
+  }
+}
+
+// A 200 means the update was ACCEPTED, not applied — Flash executes it as an
+// async cancel-and-replace, and order frames carry pendingUpdate:true until it
+// lands. Callers must not tell the user the price has changed on the strength
+// of this resolving.
+export async function updateFlashOrder(orderId: string, body: FlashUpdateRequest): Promise<{ ok: true }> {
+  const res = await fetchWithTimeout(
+    `${FLASH_BASE_URL}/orders/${orderId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", [FLASH_API_KEY_HEADER]: flashApiKey() },
+      body: JSON.stringify(body),
+    },
+    FLASH_SUBMIT_TIMEOUT_MS,
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new FlashUpdateError(res.status, detail);
   }
   return res.json();
 }

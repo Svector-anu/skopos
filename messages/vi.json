@@ -160,19 +160,49 @@
       "chooseResponseTier": "Chọn mức phản hồi"
     },
     "tiers": {
-      "smart": { "label": "✦ Smart", "desc": "mô hình tiên tiến · chuyên sâu" },
-      "fast": { "label": "⚡ Fast", "desc": "nhanh & miễn phí" }
+      "smart": {
+        "label": "✦ Smart",
+        "desc": "mô hình tiên tiến · chuyên sâu"
+      },
+      "fast": {
+        "label": "⚡ Fast",
+        "desc": "nhanh & miễn phí"
+      }
     },
     "aiDisclaimer": "Skopos là AI và có thể mắc sai sót. Vui lòng tự kiểm tra lại các câu trả lời.",
     "featureSlides": {
-      "bridge": { "label": "Bridge", "sub": "Hỗ trợ 25+ chain" },
-      "bestRoute": { "label": "Đường đi tốt nhất", "sub": "AI tìm đường rẻ nhất" },
-      "swap": { "label": "Swap", "sub": "Bất kỳ token, bất kỳ chain" },
-      "plainLanguage": { "label": "Ngôn ngữ tự nhiên", "sub": "Chỉ cần mô tả điều bạn muốn" },
-      "fiveBridges": { "label": "5 Bridge", "sub": "Relay, Across, Mayan & nhiều hơn" },
-      "liveQuotes": { "label": "Báo giá trực tiếp", "sub": "Định giá cross-chain theo thời gian thực" },
-      "txHistory": { "label": "Lịch sử giao dịch", "sub": "Theo dõi mọi giao dịch của bạn" },
-      "portfolio": { "label": "Danh mục", "sub": "Số dư trên các chain" }
+      "bridge": {
+        "label": "Bridge",
+        "sub": "Hỗ trợ 25+ chain"
+      },
+      "bestRoute": {
+        "label": "Đường đi tốt nhất",
+        "sub": "AI tìm đường rẻ nhất"
+      },
+      "swap": {
+        "label": "Swap",
+        "sub": "Bất kỳ token, bất kỳ chain"
+      },
+      "plainLanguage": {
+        "label": "Ngôn ngữ tự nhiên",
+        "sub": "Chỉ cần mô tả điều bạn muốn"
+      },
+      "fiveBridges": {
+        "label": "5 Bridge",
+        "sub": "Relay, Across, Mayan & nhiều hơn"
+      },
+      "liveQuotes": {
+        "label": "Báo giá trực tiếp",
+        "sub": "Định giá cross-chain theo thời gian thực"
+      },
+      "txHistory": {
+        "label": "Lịch sử giao dịch",
+        "sub": "Theo dõi mọi giao dịch của bạn"
+      },
+      "portfolio": {
+        "label": "Danh mục",
+        "sub": "Số dư trên các chain"
+      }
     },
     "quote": {
       "rejectedInWallet": "Giao dịch bị từ chối trong ví.",
@@ -442,13 +472,26 @@
         "ORDER_STATUS_TERMINATED": "đã kết thúc",
         "ORDER_STATUS_UNSPECIFIED": "không rõ"
       },
-      "triggerLine": "Giá kích hoạt: ${price}",
+      "triggerLine": "Giá kích hoạt: {price}",
       "twapLine": "Chia thành {count} đợt",
       "filledLine": "Đã khớp: {amount} {symbol}",
       "cancelling": "đang hủy…",
       "cancelArrow": "hủy →",
       "rejectedInWallet": "Hủy bị từ chối trong ví.",
-      "errorPrefix": "Lỗi: {msg}"
+      "errorPrefix": "Lỗi: {msg}",
+      "limitLine": "Giá giới hạn: {price}",
+      "moveTrigger": "đổi giá kích hoạt →",
+      "movePrice": "đổi giá →",
+      "newPriceUsd": "Giá mới (USD)",
+      "newPriceRate": "Giá mới ({symbol} mỗi đơn vị)",
+      "signUpdate": "ký cập nhật",
+      "updating": "đang cập nhật…",
+      "cancelEdit": "huỷ",
+      "updateSubmitted": "Đã gửi cập nhật — Flash sẽ đặt lại lệnh ở giá mới. Kiểm tra lại lệnh sau giây lát để xác nhận.",
+      "badPrice": "Nhập một số thuần, ví dụ 3200.",
+      "funderNotConnected": "Hãy kết nối {address} — chỉ ví đã đặt lệnh mới có thể ký cập nhật này.",
+      "updateFailed": "Cập nhật thất bại.",
+      "updateRejectedInWallet": "Cập nhật bị từ chối trong ví."
     },
     "polymarket": {
       "volumeM": "${n}M KL",
