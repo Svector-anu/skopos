@@ -271,7 +271,8 @@
         "pair": "Đã bảo vệ: bán {token} ở ${stop} (cắt lỗ) hoặc ${target} (chốt lời) — tùy điều kiện nào đến trước.",
         "cap": "Bảo vệ áp dụng tối đa {amount} {token}. Phần khớp vượt quá mức đó không được bảo vệ.",
         "keepFunds": "Giữ {token} trong ví này khi bảo vệ còn hiệu lực — lệnh thoát sẽ bán từ đây."
-      }
+      },
+      "permitFlowUnsupported": "Ví này cần luồng Permit2 của Flash, Skopos chưa hỗ trợ. Hãy thử ví khác, hoặc đặt lệnh mà không kèm bảo vệ."
     },
     "solana": {
       "routeFailedRecheck": "Đường đi này vừa không qua được kiểm tra on-chain mới nhất — báo giá đã được làm mới. Hãy xem lại và thử lại.",

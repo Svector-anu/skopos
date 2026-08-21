@@ -2770,6 +2770,20 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
     if (!flash) return;
     setErr(null);
     try {
+      // Flash picks between its settlement-contract flow and Permit2 from the
+      // funder's on-chain state (evmUsePermit2 is left unset). Only the
+      // settlement flow is implemented — neither the entry nor the pair
+      // forwards evmPermitTypedData/evmPermitSignature at submit — so a wallet
+      // that lands on the Permit2 flow would sign here and be rejected at
+      // /order with nothing explaining why. Refuse before the wallet prompt
+      // instead. Pre-existing on the entry (permitTypedData has always been
+      // typed and never sent); the bracket inherits the same limit, and
+      // failing loudly is better than one path silently working and the other
+      // not. See issue for real Permit2 support.
+      if (flash.permitTypedData || flash.bracket?.permitTypedData) {
+        setErr(t("permitFlowUnsupported"));
+        return;
+      }
       const signature = await signFlashTypedData(flash.orderTypedData);
 
       // Second signature, over the pair's own payload. Deliberately after the

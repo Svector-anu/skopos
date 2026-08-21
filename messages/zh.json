@@ -271,7 +271,8 @@
         "pair": "已保护：将在 ${stop}（止损）或 ${target}（止盈）卖出 {token}，以先触发者为准。",
         "cap": "保护范围最多 {amount} {token}。超出部分不在保护范围内。",
         "keepFunds": "保护生效期间请将 {token} 保留在此钱包中 — 平仓将从这里卖出。"
-      }
+      },
+      "permitFlowUnsupported": "此钱包需要 Flash 的 Permit2 流程，Skopos 暂不支持。请更换钱包，或在不附加保护单的情况下下单。"
     },
     "solana": {
       "routeFailedRecheck": "该路径刚刚未通过链上复核 — 报价已刷新。请检查后重试。",
