@@ -276,6 +276,16 @@ type FlashOrder = {
   // listed here too — see lib/flash.ts's FlashPriceTrigger.
   trigger: { notionalPrice?: string; crossPrice?: string; triggerType: "upper" | "lower" } | null;
   twapBucketCount: number | null;
+  // The attached pair's state, reported on the ENTRY order. A GET for the
+  // pair itself 404s until it activates on the entry's first fill, so this is
+  // the only way to see it during that window.
+  attachedBracket: {
+    status: "pending_activation" | "active" | "never_activated";
+    bracketOrderId: string | null;
+    takeProfit: { notionalPrice?: string; crossPrice?: string; limitPrice?: string };
+    stopLoss: { notionalPrice?: string; crossPrice?: string; limitPrice?: string };
+    signedMaxFromAmount: string;
+  } | null;
   placedAt: string;
 };
 type FlashOrdersResult = { type: "flash_orders"; address: string; orders: FlashOrder[] };
@@ -3132,6 +3142,16 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
     p.basis === "notional" ? `$${p.price}` : p.price;
   const updatable = !cancelled && !updateSubmitted && isFlashOrderUpdatable(order) && current !== null;
 
+  // An attached pair is not an order until the entry's first fill, so its
+  // state lives on the entry until then. Worth showing plainly: an entry that
+  // never fills means protection that never existed, and "pending" reads as
+  // "armed" to most people unless it says otherwise.
+  const ab = order.attachedBracket;
+  const abPrice = (leg: { notionalPrice?: string; crossPrice?: string }) => leg.notionalPrice ?? leg.crossPrice ?? "?";
+  const bracketLine = ab
+    ? t(`bracket.${ab.status}`, { stop: abPrice(ab.stopLoss), target: abPrice(ab.takeProfit) })
+    : null;
+
   async function submitUpdate() {
     setErr(null);
     const price = normalizeFlashPrice(draftPrice);
@@ -3209,6 +3229,7 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
           {[
             currentTrigger ? t("triggerLine", { price: priceLabel(currentTrigger) }) : null,
             currentLimit ? t("limitLine", { price: priceLabel(currentLimit) }) : null,
+            bracketLine,
             order.twapBucketCount ? t("twapLine", { count: order.twapBucketCount }) : null,
             filledAmount ? t("filledLine", { amount: filledAmount, symbol: order.targetAsset.ticker }) : null,
           ].filter(Boolean).join(" · ")}

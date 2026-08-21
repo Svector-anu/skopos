@@ -498,7 +498,12 @@
       "badPrice": "Nhập một số thuần, ví dụ 3200.",
       "funderNotConnected": "Hãy kết nối {address} — chỉ ví đã đặt lệnh mới có thể ký cập nhật này.",
       "updateFailed": "Cập nhật thất bại.",
-      "updateRejectedInWallet": "Cập nhật bị từ chối trong ví."
+      "updateRejectedInWallet": "Cập nhật bị từ chối trong ví.",
+      "bracket": {
+        "pending_activation": "Bảo vệ kích hoạt khi khớp lần đầu: cắt lỗ ${stop} / chốt lời ${target}",
+        "active": "Đang được bảo vệ: cắt lỗ ${stop} / chốt lời ${target}",
+        "never_activated": "Bảo vệ chưa từng kích hoạt — lệnh đóng mà không khớp"
+      }
     },
     "polymarket": {
       "volumeM": "${n}M KL",

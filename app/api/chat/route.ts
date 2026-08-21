@@ -2063,7 +2063,16 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     // miss used to fall through to the swap pipeline, which read "buy 0.05 ETH
     // at $2800 on arbitrum" as a same-token swap and handed back "ETH on
     // arbitrum → ETH on arbitrum". Say what's actually true instead.
-    if (looksLikeAdvancedOrder(orderText) || bracketParse) {
+    if (bracketParse) {
+      // Four wallet interactions and two signatures — nothing a headless
+      // client can complete. Say what it is rather than reusing the generic
+      // advanced-order line, so the caller knows the pair was understood.
+      return json({
+        type: "text",
+        text: `That's an order with a stop-loss ($${bracketParse.bracket.stopLoss.price}) and take-profit ($${bracketParse.bracket.takeProfit.price}) attached. Protected orders need two signatures, so they're app-only for now — open the Skopos app to place it.`,
+      });
+    }
+    if (looksLikeAdvancedOrder(orderText)) {
       return json({
         type: "text",
         text: `That looks like an advanced order (a price condition or a schedule). Those aren't available in headless mode yet — open the Skopos app to place it.`,

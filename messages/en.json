@@ -498,7 +498,12 @@
       "badPrice": "Enter a plain number, e.g. 3200.",
       "funderNotConnected": "Connect {address} — the wallet that placed this order is the only one that can sign the update.",
       "updateFailed": "Update failed.",
-      "updateRejectedInWallet": "Update rejected in wallet."
+      "updateRejectedInWallet": "Update rejected in wallet.",
+      "bracket": {
+        "pending_activation": "Protection armed on first fill: stop ${stop} / target ${target}",
+        "active": "Protected: stop ${stop} / target ${target}",
+        "never_activated": "Protection never activated — the entry closed unfilled"
+      }
     },
     "polymarket": {
       "volumeM": "${n}M vol",

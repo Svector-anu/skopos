@@ -498,7 +498,12 @@
       "badPrice": "请输入纯数字，例如 3200。",
       "funderNotConnected": "请连接 {address} — 只有下单的钱包才能签署此次更新。",
       "updateFailed": "更新失败。",
-      "updateRejectedInWallet": "更新在钱包中被拒绝。"
+      "updateRejectedInWallet": "更新在钱包中被拒绝。",
+      "bracket": {
+        "pending_activation": "首次成交后启动保护：止损 ${stop} / 止盈 ${target}",
+        "active": "保护中：止损 ${stop} / 止盈 ${target}",
+        "never_activated": "保护未启动 — 该委托未成交即结束"
+      }
     },
     "polymarket": {
       "volumeM": "${n}M 交易量",
