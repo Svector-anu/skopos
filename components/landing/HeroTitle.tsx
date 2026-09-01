@@ -41,15 +41,18 @@ export function HeroTitle() {
     const canvas = canvasRef.current;
     if (!wrap || !canvas) return;
 
-    const ctx     = canvas.getContext("2d")!;
-    const dpr     = window.devicePixelRatio || 1;
-    const mobile  = window.innerWidth < 768;
-    // On mobile: coarser grid → fewer particles → less GPU load
-    const fgStep  = mobile ? 7 : FG.step;
-    const bgStep  = mobile ? 14 : BG.step;
+    const ctx = canvas.getContext("2d")!;
     let alive = true;
+    let buildId = 0;
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function build() {
+      const currentBuild = ++buildId;
+      const dpr = window.devicePixelRatio || 1;
+      const mobile = window.innerWidth < 768;
+      // On mobile: coarser grid → fewer particles → less GPU load
+      const fgStep = mobile ? 7 : FG.step;
+      const bgStep = mobile ? 14 : BG.step;
       const w = wrap!.offsetWidth  || (mobile ? window.innerWidth : 800);
       const h = wrap!.offsetHeight || 160;
 
@@ -68,6 +71,7 @@ export function HeroTitle() {
         document.fonts.load(`700 ${Math.round(fontSize)}px "Source Serif 4"`),
         new Promise(r => setTimeout(r, 1000)),
       ]);
+      if (!alive || currentBuild !== buildId) return;
 
       // ── offscreen pixel sampling ──────────────────────────────────────────
       const off = document.createElement("canvas");
@@ -141,7 +145,7 @@ export function HeroTitle() {
 
       // ── render loop ───────────────────────────────────────────────────────
       function tick() {
-        if (!alive) return;
+        if (!alive || currentBuild !== buildId) return;
         const t = performance.now();
         ctx.clearRect(0, 0, w, h);
 
@@ -220,11 +224,23 @@ export function HeroTitle() {
       mouse.current = { x: e.clientX - r.left, y: e.clientY - r.top };
     }
 
-    if (!mobile) window.addEventListener("mousemove", onMove);
+    function onResize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        cancelAnimationFrame(raf.current);
+        build();
+      }, 150);
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("resize", onResize);
     return () => {
       alive = false;
+      buildId++;
+      clearTimeout(resizeTimer);
       cancelAnimationFrame(raf.current);
-      if (!mobile) window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("resize", onResize);
     };
   }, []);
 
