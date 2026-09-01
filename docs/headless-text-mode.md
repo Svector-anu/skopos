@@ -72,7 +72,7 @@ fields they don't handle.
 | `text`, `error` | passthrough of the existing message |
 | `price` | summary line + a unicode 7d sparkline line (e.g. `ETH (Ethereum): $1.6K · -1.05% 24h · mcap $196.96B` / `▂▂▃▅▆▇█  7d +11.6% · $1.6K–$1.8K`), **plus an `image`** chart-PNG url (`/api/og/chart`) |
 | `intel` (smart-money / holders / screener / flows / flow-intel) | executes the read inline (see **Cost**) → named-wallet summary |
-| `quote` (swap/bridge) | route summary + a **`link`** to sign (never a signable payload) |
+| `quote` (swap/bridge/advanced order) | route or order summary + a **`link`** to sign (never a signable payload). Advanced-order handoffs also return inert `orderType`, `side`, `qty`, and `token`, plus `price`, `duration`, or `chain` when supplied. |
 | `rebalance` | multi-leg summary + a **`link`** to sign |
 | `pay` | intent explanation + a **`link`** to sign — **never a signable payload** |
 | `address`, `tx` | the card's existing `summary` |
@@ -101,6 +101,12 @@ re-produces the card **staged to sign** — reusing the normal chat + wallet flo
 no dedicated `/swap` or `/pay` route. Execution only ever happens on Skopos; the intent
 syncs through the link. A client appends `link` to its reply (imessage-i already does
 this, so it lights up with no client change).
+
+Advanced Flash orders (limit, stop-loss, take-profit, and TWAP) use the same
+handoff. Their text response includes the parsed order details so an agent can
+confirm what it understood, but never includes a Flash quote, approval transaction,
+calldata, or typed data. The app rebuilds the order from the original message and
+the connected wallet before the user signs it.
 
 ---
 
