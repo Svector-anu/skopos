@@ -29,6 +29,30 @@ export interface CardTextCtx {
 // need a signature; headless clients get this link instead of a signable payload.
 const EXECUTE_LINK_TYPES = new Set(["quote", "rebalance", "pay"]);
 
+const ADVANCED_ORDER_HANDOFF_FIELDS = [
+  "mode", "orderType", "side", "qty", "price", "duration", "token", "chain",
+] as const;
+
+// Text-mode responses normally collapse a card to { type, text, link }. Advanced
+// orders are also useful to the calling agent as structured data, so copy only
+// the inert intent fields. Keeping this allowlist here makes it impossible for a
+// Flash quote, approval transaction, or EIP-712 payload to leak into headless
+// mode if the browser card grows new signing fields later.
+export function headlessHandoffFields(card: unknown): Record<string, string | number> {
+  if (!card || typeof card !== "object") return {};
+  const c = card as Record<string, unknown>;
+  if (c.type !== "quote" || c.mode !== "handoff" || typeof c.orderType !== "string") return {};
+
+  const fields: Record<string, string | number> = {};
+  for (const key of ADVANCED_ORDER_HANDOFF_FIELDS) {
+    const value = c[key];
+    if (typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) {
+      fields[key] = value;
+    }
+  }
+  return fields;
+}
+
 export function executeLinkFor(card: unknown, message: string | undefined): string | undefined {
   if (!message || !message.trim()) return undefined;
   if (!card || typeof card !== "object") return undefined;
@@ -251,6 +275,19 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
     }
 
     case "quote": {
+      if (c.mode === "handoff" && typeof c.orderType === "string") {
+        const side = clean(c.side, 8);
+        const qty = clean(c.qty, 32);
+        const token = clean(c.token, 16);
+        const chain = clean(c.chain, 24);
+        const price = clean(c.price, 32);
+        const duration = num(c.duration);
+        const detail = price
+          ? ` at $${price}`
+          : duration !== null ? ` over ${duration} seconds` : "";
+        const where = chain ? ` on ${chain}` : "";
+        return `${clean(c.orderType, 16)} order ready: ${side} ${qty} ${token}${detail}${where}. Tap to review and sign in the Skopos app.`;
+      }
       const qi = c.intent as { from?: { token?: string; amount?: string; chain?: string }; to?: { token?: string; chain?: string } } | undefined;
       const route = c.route as { outputAmount?: string; tool?: string } | undefined;
       const f = qi?.from, to = qi?.to;
