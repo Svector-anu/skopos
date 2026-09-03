@@ -12,19 +12,24 @@ function Probe() {
 
 describe("useTypewriter reduced-motion hydration", () => {
   it("matches the server render", () => {
+    const originalWindow = globalThis.window;
     delete (globalThis as { window?: unknown }).window;
-    const server = renderToString(React.createElement(Probe));
+    try {
+      const server = renderToString(React.createElement(Probe));
 
-    (globalThis as { window?: unknown }).window = {
-      matchMedia: () => ({
-        matches: true,
-        addEventListener() {},
-        removeEventListener() {},
-      }),
-    };
-    const clientInitial = renderToString(React.createElement(Probe));
+      (globalThis as { window?: unknown }).window = {
+        matchMedia: () => ({
+          matches: true,
+          addEventListener() {},
+          removeEventListener() {},
+        }),
+      };
+      const clientInitial = renderToString(React.createElement(Probe));
 
-    console.log({ server, clientInitial });
-    expect(clientInitial).toBe(server);
+      console.log({ server, clientInitial });
+      expect(clientInitial).toBe(server);
+    } finally {
+      (globalThis as { window?: unknown }).window = originalWindow;
+    }
   });
 });
