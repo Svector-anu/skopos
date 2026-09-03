@@ -32,9 +32,9 @@ export function useTypewriter(commands: Command[]): ChatState {
   const [userText, setUserText]   = useState("");
   const [aiText, setAiText]       = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [reduceMotion, setReduceMotion] = useState(() =>
-    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
+  // Keep the first client render identical to SSR. The effect below syncs the
+  // browser preference immediately after hydration.
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   const cmd = commands[cmdIdx];
 
@@ -45,6 +45,7 @@ export function useTypewriter(commands: Command[]): ChatState {
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const sync = () => setReduceMotion(media.matches);
+    sync();
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
