@@ -32,6 +32,9 @@ export function useTypewriter(commands: Command[]): ChatState {
   const [userText, setUserText]   = useState("");
   const [aiText, setAiText]       = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [reduceMotion, setReduceMotion] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
 
   const cmd = commands[cmdIdx];
 
@@ -40,7 +43,18 @@ export function useTypewriter(commands: Command[]): ChatState {
   }, []);
 
   useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduceMotion(media.matches);
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
     clear();
+
+    if (reduceMotion) {
+      return clear;
+    }
 
     switch (phase) {
       case "start-pause":
@@ -95,7 +109,11 @@ export function useTypewriter(commands: Command[]): ChatState {
     }
 
     return clear;
-  }, [phase, cmdIdx, aiCharIdx, cmd, clear, commands]);
+  }, [phase, cmdIdx, aiCharIdx, cmd, clear, commands, reduceMotion]);
+
+  if (reduceMotion) {
+    return { userText: commands[0]?.cmd ?? "", aiText: commands[0]?.response ?? "", phase: "hold" };
+  }
 
   return { userText, aiText, phase };
 }

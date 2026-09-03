@@ -137,6 +137,8 @@
     "greetingSubtitle": "What can I help you with today?",
     "composerPlaceholder": "ask skopos…",
     "composerPlaceholderOffline": "no connection…",
+    "composerLabel": "Message Skopos",
+    "sendMessage": "Send message",
     "examplePrompts": {
       "bridgeEthBase": "bridge 0.1 ETH from ethereum to base",
       "swapUsdcEth": "swap 100 USDC to ETH on arbitrum",
@@ -255,6 +257,7 @@
       "ellipsis": "…",
       "refreshArrow": "Refresh →",
       "refresh": "Refresh",
+      "refreshFailed": "Couldn't refresh this quote. Check your connection and try again.",
       "connectWallet": "Connect Wallet",
       "switching": "Switching…",
       "switchTo": "Switch to {chain}",

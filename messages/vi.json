@@ -137,6 +137,8 @@
     "greetingSubtitle": "Hôm nay tôi có thể giúp gì cho bạn?",
     "composerPlaceholder": "hỏi skopos…",
     "composerPlaceholderOffline": "không có kết nối…",
+    "composerLabel": "Nhắn tin cho Skopos",
+    "sendMessage": "Gửi tin nhắn",
     "examplePrompts": {
       "bridgeEthBase": "bridge 0.1 ETH từ ethereum sang base",
       "swapUsdcEth": "đổi 100 USDC sang ETH trên arbitrum",
@@ -255,6 +257,7 @@
       "ellipsis": "…",
       "refreshArrow": "Làm mới →",
       "refresh": "Làm mới",
+      "refreshFailed": "Không thể làm mới báo giá này. Hãy kiểm tra kết nối và thử lại.",
       "connectWallet": "Kết nối ví",
       "switching": "Đang chuyển mạng…",
       "switchTo": "Chuyển sang {chain}",
