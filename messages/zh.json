@@ -137,6 +137,8 @@
     "greetingSubtitle": "今天需要我帮你做什么？",
     "composerPlaceholder": "向 skopos 提问…",
     "composerPlaceholderOffline": "无网络连接…",
+    "composerLabel": "给 Skopos 发消息",
+    "sendMessage": "发送消息",
     "examplePrompts": {
       "bridgeEthBase": "把 0.1 ETH 从以太坊跨链到 base",
       "swapUsdcEth": "在 arbitrum 上把 100 USDC 换成 ETH",
@@ -255,6 +257,7 @@
       "ellipsis": "…",
       "refreshArrow": "刷新 →",
       "refresh": "刷新",
+      "refreshFailed": "无法刷新此报价。请检查网络连接后重试。",
       "connectWallet": "连接钱包",
       "switching": "切换中…",
       "switchTo": "切换到 {chain}",

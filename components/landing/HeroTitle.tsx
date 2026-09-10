@@ -44,6 +44,7 @@ export function HeroTitle() {
     const ctx     = canvas.getContext("2d")!;
     const dpr     = window.devicePixelRatio || 1;
     const mobile  = window.innerWidth < 768;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // On mobile: coarser grid → fewer particles → less GPU load
     const fgStep  = mobile ? 7 : FG.step;
     const bgStep  = mobile ? 14 : BG.step;
@@ -207,7 +208,7 @@ export function HeroTitle() {
         }
 
         ctx.globalAlpha = 1;
-        raf.current = requestAnimationFrame(tick);
+        if (!reduceMotion) raf.current = requestAnimationFrame(tick);
       }
 
       tick();
@@ -236,11 +237,11 @@ export function HeroTitle() {
     >
       <canvas
         ref={canvasRef}
+        aria-hidden="true"
         style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 2 }}
       />
-      {/* Invisible spacer — gives wrapper its dimensions for canvas sizing */}
-      <div
-        aria-hidden="true"
+      {/* Accessible heading also gives the wrapper its dimensions for canvas sizing. */}
+      <h1
         style={{
           fontFamily: "var(--font-display), serif",
           fontWeight: 700,
@@ -253,7 +254,7 @@ export function HeroTitle() {
         }}
       >
         SKOPOS
-      </div>
+      </h1>
     </div>
   );
 }

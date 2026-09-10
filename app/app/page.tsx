@@ -587,6 +587,16 @@ export default function AppPage() {
       }
     : login;
   const [pushLoading, setPushLoading]          = useState(false);
+
+  useEffect(() => {
+    function closeOverlays(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      setTierMenuOpen(false);
+      if (isMobile) setSidebarExpanded(false);
+    }
+    window.addEventListener("keydown", closeOverlays);
+    return () => window.removeEventListener("keydown", closeOverlays);
+  }, [isMobile]);
   // Privy's own useSignMessage, not wagmi's — Privy's docs are explicit that
   // wagmi's version (and its other hooks in general) can bind to the
   // embedded wallet rather than whichever wallet the user actually has
@@ -1087,6 +1097,8 @@ export default function AppPage() {
           <button
             onClick={() => setSidebarExpanded(v => !v)}
             title={sidebarExpanded ? "Collapse" : "Expand"}
+            aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+            aria-expanded={sidebarExpanded}
             style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: "var(--drawer-action)", cursor: "pointer" }}
           >
             <svg width="15" height="12" viewBox="0 0 15 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -1270,6 +1282,7 @@ export default function AppPage() {
           {/* Theme */}
           <button
             onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+            aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
             style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, background: "none", border: "none", color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}
           >
             {isDark ? (
@@ -1294,7 +1307,7 @@ export default function AppPage() {
         {isMobile && (
           <div style={{ height: 56, flexShrink: 0, display: "flex", alignItems: "center", paddingLeft: 12, paddingRight: 12, gap: 8 }}>
             {/* Circular hamburger */}
-            <button onClick={() => setSidebarExpanded(true)} style={{
+            <button onClick={() => setSidebarExpanded(true)} aria-label="Open sidebar" aria-expanded={sidebarExpanded} style={{
               width: 40, height: 40, borderRadius: 999, flexShrink: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
               background: "none", border: `1.5px solid ${T.borderStrong}`,
@@ -1400,12 +1413,13 @@ export default function AppPage() {
                                   method: "POST",
                                   headers: { "Content-Type": "application/json" },
                                  body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage: slippageOverride ?? slippage, llmTier, anonId }),                                });
+                                if (!res.ok) throw new Error(`Quote refresh failed (${res.status})`);
                                 const data: AssistantResult = await res.json();
                                 if (data.type === "quote") data.originMessage = origin;
                                 setMessages(prev => prev.map((m, j) =>
                                   j === i ? { role: "assistant", result: data } : m
                                 ));
-                              } catch { /* silent — QuoteDisplay will reset isRefreshing */ }
+                              } catch (error) { throw error; }
                             }}
                             onRevalidate={async () => {
                               const origin = (msg.result as QuoteResult).originMessage;
@@ -1460,13 +1474,14 @@ export default function AppPage() {
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage: slippageOverride ?? slippage, llmTier, anonId }),
                         });
+                        if (!res.ok) throw new Error(`Quote refresh failed (${res.status})`);
                         const data: AssistantResult = await res.json();
                         if (data.type === "quote") data.originMessage = origin;
                         setMessages(prev => prev.map((m, j) => {
                           if (j !== i || m.role !== "assistant" || m.result.type !== "rebalance") return m;
                           return { role: "assistant", result: { ...m.result, legs: m.result.legs.map((l, k) => k === legIndex ? (data as QuoteResult) : l) } };
                         }));
-                      } catch { /* silent — QuoteDisplay resets isRefreshing */ }
+                      } catch (error) { throw error; }
                     }}
                     onLegRevalidate={async (legIndex: number) => {
                       const leg = (msg.result as RebalanceResult).legs[legIndex];
@@ -1761,6 +1776,7 @@ export default function AppPage() {
                   onFocus={() => setInputFocused(true)}
                   onBlur={() => setInputFocused(false)}
                   placeholder={isOnline ? t("composerPlaceholder") : t("composerPlaceholderOffline")}
+                  aria-label={t("composerLabel")}
                   disabled={!isOnline}
                   className={isDark ? "placeholder:text-white/15" : "placeholder:text-black/20"}
                   style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: T.textPrimary, caretColor: T.textPrimary, fontSize: "0.95rem", opacity: isOnline ? 1 : 0.4 }}
@@ -1811,6 +1827,10 @@ export default function AppPage() {
                       type="button"
                       onClick={() => setTierMenuOpen(o => !o)}
                       title={t("tier.chooseResponseTier")}
+                      aria-label={t("tier.chooseResponseTier")}
+                      aria-haspopup="listbox"
+                      aria-expanded={tierMenuOpen}
+                      aria-controls="response-tier-listbox"
                       style={{
                         ...MONO, fontSize: "0.6rem", padding: "3px 8px", borderRadius: 4, whiteSpace: "nowrap",
                         display: "flex", alignItems: "center", gap: 4,
@@ -1827,9 +1847,11 @@ export default function AppPage() {
                       <>
                         <div
                           onClick={() => setTierMenuOpen(false)}
+                          aria-hidden="true"
                           style={{ position: "fixed", inset: 0, zIndex: 40 }}
                         />
                         <div
+                          id="response-tier-listbox"
                           role="listbox"
                           style={{
                             position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 41,
@@ -1872,6 +1894,7 @@ export default function AppPage() {
                   </div>
                   <button
                     type="submit"
+                    aria-label={t("sendMessage")}
                     disabled={!value.trim() || loading || !isOnline}
                     style={{
                       width: 34, height: 34, borderRadius: 999, border: "none",
@@ -2250,7 +2273,13 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   async function handleRefresh(slippageOverride?: number) {
     if (!onRefresh) return;
     setIsRefreshing(true);
-    try { await onRefresh(slippageOverride); } catch { setIsRefreshing(false); }
+    setSwitchErr(null);
+    try {
+      await onRefresh(slippageOverride);
+    } catch {
+      setSwitchErr(t("refreshFailed"));
+      setIsRefreshing(false);
+    }
   }
 
   useEffect(() => {
