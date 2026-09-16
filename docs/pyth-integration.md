@@ -1,3 +1,20 @@
+> **SUPERSEDED 2026-09-16 — Pyth no longer serves these feeds.**
+>
+> Hermes moved FX, metals and equities behind commercial entitlements. Every
+> feed below now returns `403 Not entitled: no grant accepts this feed`, with
+> Pyth's status page reporting all systems operational — intended, not an
+> outage. Authentication is not the gate; licensing is. Any bearer token clears
+> auth and the request is then refused for want of a grant.
+>
+> `lib/pyth.ts` keeps its path and public interface but now reads FX from
+> open.er-api.com, metals from gold-api.com, and equities from Yahoo's chart
+> API. See that module's header for the current sources and their risks.
+>
+> Everything below is retained as a record of the Pyth integration — the feed
+> IDs and cross-rate math are accurate history, not current behaviour.
+
+---
+
 # Pyth Network Integration — Source of Truth
 
 All facts in this doc are verified against the live Hermes API. Nothing is assumed from marketing pages.

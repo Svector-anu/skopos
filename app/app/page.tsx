@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { SealPublishPanel, type SealSeed } from "./SealPublishPanel";
 import { useTranslations } from "next-intl";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet, useWallets, useConnectWallet, useSignMessage } from "@privy-io/react-auth";
@@ -132,6 +133,11 @@ type QuoteResult = {
   flash?: FlashLegInfo;
   relay?: RelayLegInfo;
   analysis?: string;
+  // Present when this quote came from a Seal. Its only job is to route the
+  // submit at the bottom of FlashExecuteButton to the bound endpoint — a Seal's
+  // order body is rebuilt server-side from the stored policy, so the browser
+  // sends a quoteId and a signature and never names an order field.
+  seal?: { id: string; title: string; creator: string; size: string };
 };
 
 type TextResult      = { type: "text";      text: string; suggestions?: { label: string; command: string }[] };
@@ -587,6 +593,16 @@ export default function AppPage() {
       }
     : login;
   const [pushLoading, setPushLoading]          = useState(false);
+
+  useEffect(() => {
+    function closeOverlays(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      setTierMenuOpen(false);
+      if (isMobile) setSidebarExpanded(false);
+    }
+    window.addEventListener("keydown", closeOverlays);
+    return () => window.removeEventListener("keydown", closeOverlays);
+  }, [isMobile]);
   // Privy's own useSignMessage, not wagmi's — Privy's docs are explicit that
   // wagmi's version (and its other hooks in general) can bind to the
   // embedded wallet rather than whichever wallet the user actually has
@@ -849,6 +865,47 @@ export default function AppPage() {
     setSidebarExpanded(false);
   }
 
+  // ── Seal instantiation ──────────────────────────────────────────────────────
+  // A Seal opened at /s/<id> hands off here with an id and a size. The policy is
+  // never re-parsed from text: /api/seal/<id>/quote reads the stored record,
+  // compiles it with this wallet's size and returns the same quote card shape
+  // the chat path produces, so QuoteDisplay and FlashExecuteButton render and
+  // sign it with no new component.
+  const [pendingSeal, setPendingSeal] = useState<{ id: string; size: string } | null>(null);
+
+  function openSeal(sealId: string, size: string) {
+    setMessages(prev => [...prev, { role: "user", text: `Use Seal ${sealId} at ${size}` }]);
+    setPendingSeal({ id: sealId, size });
+    // The Seal page has no wallet context — Web3Provider is mounted only under
+    // /app — so connecting is this page's job, and the quote waits for it.
+    if (!authenticated) login();
+  }
+
+  useEffect(() => {
+    if (!pendingSeal || !connectedAddress) return;
+    const seal = pendingSeal;
+    setPendingSeal(null);
+    setLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`/api/seal/${encodeURIComponent(seal.id)}/quote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ size: seal.size, senderAddress: connectedAddress }),
+        });
+        const data = await res.json();
+        setMessages(prev => [...prev, { role: "assistant", result: data }]);
+      } catch {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          result: { type: "error", text: "Couldn't reach Skopos to price this Seal. Check your connection and try again." },
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [pendingSeal, connectedAddress, authenticated, login]);
+
   async function submit(msg?: string) {
     const text = (msg ?? value).trim();
     if (!text) return;
@@ -1011,7 +1068,7 @@ export default function AppPage() {
   return (
     <>
     <Suspense>
-      <AutoSubmit onSubmit={submit} />
+      <AutoSubmit onSubmit={submit} onSeal={openSeal} />
     </Suspense>
     <main style={{ position: "relative", height: "100vh", width: "100vw", background: T.bg, display: "flex", overflow: "hidden" }}>
 
@@ -1087,6 +1144,8 @@ export default function AppPage() {
           <button
             onClick={() => setSidebarExpanded(v => !v)}
             title={sidebarExpanded ? "Collapse" : "Expand"}
+            aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+            aria-expanded={sidebarExpanded}
             style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: "var(--drawer-action)", cursor: "pointer" }}
           >
             <svg width="15" height="12" viewBox="0 0 15 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -1270,6 +1329,7 @@ export default function AppPage() {
           {/* Theme */}
           <button
             onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+            aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
             style={{ width: "100%", height: 36, borderRadius: 8, display: "flex", alignItems: "center", paddingLeft: 10, gap: 10, background: "none", border: "none", color: T.textDim, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}
           >
             {isDark ? (
@@ -1294,7 +1354,7 @@ export default function AppPage() {
         {isMobile && (
           <div style={{ height: 56, flexShrink: 0, display: "flex", alignItems: "center", paddingLeft: 12, paddingRight: 12, gap: 8 }}>
             {/* Circular hamburger */}
-            <button onClick={() => setSidebarExpanded(true)} style={{
+            <button onClick={() => setSidebarExpanded(true)} aria-label="Open sidebar" aria-expanded={sidebarExpanded} style={{
               width: 40, height: 40, borderRadius: 999, flexShrink: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
               background: "none", border: `1.5px solid ${T.borderStrong}`,
@@ -1400,12 +1460,13 @@ export default function AppPage() {
                                   method: "POST",
                                   headers: { "Content-Type": "application/json" },
                                  body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage: slippageOverride ?? slippage, llmTier, anonId }),                                });
+                                if (!res.ok) throw new Error(`Quote refresh failed (${res.status})`);
                                 const data: AssistantResult = await res.json();
                                 if (data.type === "quote") data.originMessage = origin;
                                 setMessages(prev => prev.map((m, j) =>
                                   j === i ? { role: "assistant", result: data } : m
                                 ));
-                              } catch { /* silent — QuoteDisplay will reset isRefreshing */ }
+                              } catch (error) { throw error; }
                             }}
                             onRevalidate={async () => {
                               const origin = (msg.result as QuoteResult).originMessage;
@@ -1460,13 +1521,14 @@ export default function AppPage() {
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ message: origin, senderAddress: connectedAddress, solanaAddress, history: [], slippage: slippageOverride ?? slippage, llmTier, anonId }),
                         });
+                        if (!res.ok) throw new Error(`Quote refresh failed (${res.status})`);
                         const data: AssistantResult = await res.json();
                         if (data.type === "quote") data.originMessage = origin;
                         setMessages(prev => prev.map((m, j) => {
                           if (j !== i || m.role !== "assistant" || m.result.type !== "rebalance") return m;
                           return { role: "assistant", result: { ...m.result, legs: m.result.legs.map((l, k) => k === legIndex ? (data as QuoteResult) : l) } };
                         }));
-                      } catch { /* silent — QuoteDisplay resets isRefreshing */ }
+                      } catch (error) { throw error; }
                     }}
                     onLegRevalidate={async (legIndex: number) => {
                       const leg = (msg.result as RebalanceResult).legs[legIndex];
@@ -1761,6 +1823,7 @@ export default function AppPage() {
                   onFocus={() => setInputFocused(true)}
                   onBlur={() => setInputFocused(false)}
                   placeholder={isOnline ? t("composerPlaceholder") : t("composerPlaceholderOffline")}
+                  aria-label={t("composerLabel")}
                   disabled={!isOnline}
                   className={isDark ? "placeholder:text-white/15" : "placeholder:text-black/20"}
                   style={{ ...MONO, width: "100%", background: "none", border: "none", outline: "none", color: T.textPrimary, caretColor: T.textPrimary, fontSize: "0.95rem", opacity: isOnline ? 1 : 0.4 }}
@@ -1811,6 +1874,10 @@ export default function AppPage() {
                       type="button"
                       onClick={() => setTierMenuOpen(o => !o)}
                       title={t("tier.chooseResponseTier")}
+                      aria-label={t("tier.chooseResponseTier")}
+                      aria-haspopup="listbox"
+                      aria-expanded={tierMenuOpen}
+                      aria-controls="response-tier-listbox"
                       style={{
                         ...MONO, fontSize: "0.6rem", padding: "3px 8px", borderRadius: 4, whiteSpace: "nowrap",
                         display: "flex", alignItems: "center", gap: 4,
@@ -1827,9 +1894,11 @@ export default function AppPage() {
                       <>
                         <div
                           onClick={() => setTierMenuOpen(false)}
+                          aria-hidden="true"
                           style={{ position: "fixed", inset: 0, zIndex: 40 }}
                         />
                         <div
+                          id="response-tier-listbox"
                           role="listbox"
                           style={{
                             position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 41,
@@ -1872,6 +1941,7 @@ export default function AppPage() {
                   </div>
                   <button
                     type="submit"
+                    aria-label={t("sendMessage")}
                     disabled={!value.trim() || loading || !isOnline}
                     style={{
                       width: 34, height: 34, borderRadius: 999, border: "none",
@@ -1923,16 +1993,37 @@ export default function AppPage() {
 
 // ─── AutoSubmit ───────────────────────────────────────────────────────────────
 
-function AutoSubmit({ onSubmit }: { onSubmit: (q: string) => void }) {
+function AutoSubmit({ onSubmit, onSeal }: {
+  onSubmit: (q: string) => void;
+  onSeal: (sealId: string, size: string) => void;
+}) {
   const searchParams = useSearchParams();
   // Hold the latest onSubmit in a ref so it isn't an effect dependency — otherwise
   // the effect re-runs on every render (onSubmit is recreated each render).
   const onSubmitRef = useRef(onSubmit);
   onSubmitRef.current = onSubmit;
+  // Held in an effect rather than assigned during render like the line above:
+  // react-hooks/refs flags the older pattern, and a new occurrence of an
+  // existing lint error is still a new lint error.
+  const onSealRef = useRef(onSeal);
+  useEffect(() => { onSealRef.current = onSeal; });
   const fired = useRef(false);
 
   useEffect(() => {
     if (fired.current) return;
+
+    // A Seal arrives as a structured reference, never as a sentence. Compiling
+    // it to English and reusing ?q= would work today — restate() is round-trip
+    // tested — but it would make every future parser change a silent,
+    // retroactive edit to every Seal ever published.
+    const sealId = searchParams.get("seal");
+    const size = searchParams.get("size");
+    if (sealId && size) {
+      fired.current = true;
+      onSealRef.current(sealId, size);
+      return;
+    }
+
     const q = searchParams.get("q");
     if (!q) return;
     fired.current = true;
@@ -2250,7 +2341,13 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   async function handleRefresh(slippageOverride?: number) {
     if (!onRefresh) return;
     setIsRefreshing(true);
-    try { await onRefresh(slippageOverride); } catch { setIsRefreshing(false); }
+    setSwitchErr(null);
+    try {
+      await onRefresh(slippageOverride);
+    } catch {
+      setSwitchErr(t("refreshFailed"));
+      setIsRefreshing(false);
+    }
   }
 
   useEffect(() => {
@@ -2376,6 +2473,30 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     return parseFloat(net.toFixed(6)).toString();
   })();
 
+  // A Seal is FlashOrderIntent minus qty, and every one of those fields is
+  // already on this card. Market orders are excluded: a Seal's whole value is a
+  // standing instruction, and an unprotected market order is not one.
+  const sealSeed: SealSeed | null = (() => {
+    const f = result.flash;
+    if (!f || f.orderType === "market") return null;
+    if (f.orderType !== "limit" && f.orderType !== "stop-loss"
+        && f.orderType !== "take-profit" && f.orderType !== "twap") return null;
+    return {
+      side: f.side,
+      orderType: f.orderType,
+      // qty is denominated in the asset being SPENT, so the token the policy is
+      // ABOUT is the other side of the pair on a buy.
+      token: f.side === "buy" ? intent.to.token : intent.from.token,
+      chain: intent.from.chain,
+      qty: f.qty,
+      ...(f.triggerPrice     !== undefined ? { priceLevel:      f.triggerPrice } : {}),
+      ...(f.triggerType      !== undefined ? { triggerType:     f.triggerType } : {}),
+      ...(f.durationSeconds  !== undefined ? { durationSeconds: f.durationSeconds } : {}),
+      ...(f.twapBucketCount  !== undefined ? { twapBucketCount: f.twapBucketCount } : {}),
+      ...(f.bracket ? { bracket: { takeProfit: f.bracket.takeProfit, stopLoss: f.bracket.stopLoss } } : {}),
+    };
+  })();
+
   const recipient = intent.to.receiver ?? connectedAddress;
   const summaryRows: { label: string; value: string }[] = [
     { label: t("summary.via"),           value: route.tool },
@@ -2392,9 +2513,22 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       borderRadius: 16, overflow: "hidden", maxWidth: 400,
     }}>
 
+      {/* A Seal's policy was written by someone else, so the card says so and
+          names them. Without it the order looks like one the user composed. */}
+      {result.seal && (
+        <div style={{ padding: "9px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "rgba(245,184,0,0.06)" }}>
+          <p style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.09em", textTransform: "uppercase", color: "rgba(245,184,0,0.9)", margin: 0 }}>
+            Seal — {result.seal.title}
+          </p>
+          <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--card-text-dim)", margin: "3px 0 0" }}>
+            policy by {shortAddr(result.seal.creator)} · your size {result.seal.size} · your order, your wallet
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+        <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint)" }}>
           {executionMode ? t("header.transaction") : orderTypeLabel ?? (isSwap ? t("header.swapPreview") : t("header.bridgePreview"))}
         </span>
         {/* Flash/Relay flows realistically take longer than QUOTE_TTL to click
@@ -2419,7 +2553,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
           <span style={{
             ...MONO, fontSize: "0.6rem", padding: "2px 8px", borderRadius: 4,
             background: "var(--card-border-faint, rgba(255,255,255,0.05))",
-            color: isExpired ? "#F5B800" : secondsLeft <= 10 ? "rgba(245,184,0,0.65)" : "var(--card-text-faint, rgba(255,255,255,0.3))",
+            color: isExpired ? "#F5B800" : secondsLeft <= 10 ? "rgba(245,184,0,0.65)" : "var(--card-text-faint)",
           }}>
             {isExpired ? t("expired") : secondsLeft <= 15 ? t("secondsLeft", { n: secondsLeft }) : t("live")}
           </span>
@@ -2440,10 +2574,10 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       {!executionMode && bracketBanner && bracket && (
         <div style={{ margin: "10px 14px 0", padding: "8px 12px", background: "rgba(76,194,106,0.06)", border: "1px solid rgba(76,194,106,0.22)", borderRadius: 8, textAlign: "center" }}>
           <span style={{ ...MONO, fontSize: "0.68rem", color: "rgba(76,194,106,0.9)" }}>{bracketBanner}</span>
-          <span style={{ ...MONO, display: "block", marginTop: 4, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          <span style={{ ...MONO, display: "block", marginTop: 4, fontSize: "0.62rem", color: "var(--card-text-faint)" }}>
             {t("bracketBanner.cap", { amount: Number(bracket.signedMaxFromAmount).toLocaleString(undefined, { maximumFractionDigits: 8 }), token: intent.to.token })}
           </span>
-          <span style={{ ...MONO, display: "block", marginTop: 2, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          <span style={{ ...MONO, display: "block", marginTop: 2, fontSize: "0.62rem", color: "var(--card-text-faint)" }}>
             {t("bracketBanner.keepFunds")}
           </span>
         </div>
@@ -2457,12 +2591,12 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <span style={{ ...MONO, fontSize: "1.05rem", fontWeight: 700, color: "var(--card-text, rgba(255,255,255,0.9))", textAlign: "center", lineHeight: 1.2 }}>
               {intent.from.amount} {intent.from.token}
             </span>
-            <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.32))", letterSpacing: "0.04em" }}>
+            <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint)", letterSpacing: "0.04em" }}>
               {intent.from.chain}
             </span>
           </div>
 
-          <div style={{ flexShrink: 0, color: "var(--card-text-faint, rgba(255,255,255,0.22))" }}>
+          <div style={{ flexShrink: 0, color: "var(--card-text-faint)" }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 12h14M13 6l6 6-6 6"/>
             </svg>
@@ -2474,11 +2608,11 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
               ~{route.outputAmount} {intent.to.token}
             </span>
             {isTriggerOrder && (
-              <span style={{ ...MONO, marginTop: -4, fontSize: "0.56rem", color: "var(--card-text-faint, rgba(255,255,255,0.32))" }}>
+              <span style={{ ...MONO, marginTop: -4, fontSize: "0.56rem", color: "var(--card-text-faint)" }}>
                 {t("atCurrentPrice")}
               </span>
             )}
-            <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.32))", letterSpacing: "0.04em" }}>
+            <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint)", letterSpacing: "0.04em" }}>
               {intent.to.chain}
             </span>
           </div>
@@ -2487,16 +2621,20 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
 
       {/* Summary card */}
       <div style={{ margin: "0 14px 14px", padding: "12px 14px", background: "var(--card-bg)", border: "1px solid var(--card-border-faint)", borderRadius: 12 }}>
-        <p style={{ ...MONO, fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.25))", margin: "0 0 9px" }}>{t("summaryLabel")}</p>
+        <p style={{ ...MONO, fontSize: "0.56rem", letterSpacing: "0.1em", color: "var(--card-text-faint)", margin: "0 0 9px" }}>{t("summaryLabel")}</p>
         {summaryRows.map(({ label, value }, i) => (
           <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: i > 0 ? "1px solid var(--card-bg)" : undefined }}>
-            <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{label}</span>
+            <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)" }}>{label}</span>
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{value}</span>
           </div>
         ))}
-        {/* Slippage — adjustable before execution (re-quotes on change), read-only after */}
+        {/* Slippage — adjustable before execution (re-quotes on change), read-only after.
+            Hidden on Flash legs: maxSlippage/maxPriceImpact are declared on
+            FlashQuoteRequest but never assigned, so nothing here reaches Flash.
+            The control was offering a protection the order does not carry. */}
+        {!flashLeg && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: "1px solid var(--card-bg)" }}>
-          <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("slippage")}</span>
+          <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)" }}>{t("slippage")}</span>
           {!executionMode && onSlippageChange ? (
             <div style={{ display: "flex", gap: 4 }}>
               {SLIPPAGE_OPTIONS.map(({ value, label }) => {
@@ -2511,7 +2649,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
                       ...MONO, fontSize: "0.62rem", padding: "2px 7px", borderRadius: 4,
                       border: `1px solid ${active ? "rgba(245,184,0,0.45)" : "var(--card-border, rgba(255,255,255,0.12))"}`,
                       background: active ? "rgba(245,184,0,0.1)" : "transparent",
-                      color: active ? "rgba(245,184,0,0.9)" : "var(--card-text-dim, rgba(255,255,255,0.45))",
+                      color: active ? "rgba(245,184,0,0.9)" : "var(--card-text-dim)",
                       cursor: isRefreshing ? "wait" : "pointer",
                     }}
                   >
@@ -2524,6 +2662,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{(slippage * 100).toFixed(1)}%</span>
           )}
         </div>
+        )}
       </div>
 
       {/* Action area */}
@@ -2612,6 +2751,17 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
                 {isRevalidating ? t("recheckingRoute") : isSending ? t("confirmInWallet") : isExpired ? t("quoteExpiredRefresh") : t("executeArrow")}
               </button>
             )}
+          </div>
+        )}
+
+        {/* Offered once the order is priced and before anything is signed: the
+            parsed intent on screen is exactly what a Seal stores, so publishing
+            is a name and a range rather than a form. Never on a card that IS a
+            Seal — re-sharing someone else's policy under your own name is a
+            different feature with different questions. */}
+        {sealSeed && connectedAddress && !executionMode && !result.seal && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
+            <SealPublishPanel seed={sealSeed} creator={connectedAddress} />
           </div>
         )}
       </div>
@@ -2726,11 +2876,11 @@ function SolanaExecuteButton({ result, onTxSubmitted, onRevalidate }: {
         <button
           onClick={execute}
           disabled={sending || !result.calldata}
-          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: result.calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${result.calldata ? "rgba(245,184,0,0.3)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 10, color: result.calldata ? "#F5B800" : "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: sending || !result.calldata ? "not-allowed" : "pointer" }}>
+          style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.72rem", letterSpacing: "0.1em", textTransform: "uppercase", background: result.calldata ? "rgba(245,184,0,0.08)" : "transparent", border: `1px solid ${result.calldata ? "rgba(245,184,0,0.3)" : "var(--card-border, rgba(255,255,255,0.09))"}`, borderRadius: 10, color: result.calldata ? "#F5B800" : "var(--card-text-faint)", cursor: sending || !result.calldata ? "not-allowed" : "pointer" }}>
           {sending ? t("confirmInPhantom") : t("executeViaPhantom")}
         </button>
       )}
-      <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, textAlign: "center" }}>
+      <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)", margin: 0, textAlign: "center" }}>
         {publicKey ? `${publicKey.toBase58().slice(0, 6)}…${publicKey.toBase58().slice(-4)}` : t("phantomSolana")}
       </p>
     </div>
@@ -2904,7 +3054,23 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       }
 
       setIsSubmitting(true);
-      const res = await fetch("/api/flash/submit", {
+
+      // A Seal's order was derived server-side from the stored policy and parked
+      // under this quoteId, so here we send only what this wallet produced. The
+      // browser naming the token, chain, price or size is exactly what must not
+      // be possible when the policy came from a stranger.
+      const seal = result.seal;
+      const res = seal
+        ? await fetch(`/api/seal/${encodeURIComponent(seal.id)}/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              quoteId: flash.quoteId,
+              userSignature: signature,
+              ...(bracketSignature ? { bracketSignature } : {}),
+            }),
+          })
+        : await fetch("/api/flash/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3171,7 +3337,7 @@ function RelayExecuteSteps({ result, onTxSubmitted, onCorrectChain, onResultUpda
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {totalSteps > 1 && (
-        <p style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.06em", color: "var(--card-text-faint, rgba(255,255,255,0.35))", textAlign: "center", margin: 0 }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.06em", color: "var(--card-text-faint)", textAlign: "center", margin: 0 }}>
           {currentStep ? t("stepOfWithDescription", { n: stepIndex + 1, total: totalSteps, description: currentStep.description }) : t("stepOf", { n: stepIndex + 1, total: totalSteps })}
         </p>
       )}
@@ -3352,7 +3518,7 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
           <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text, #fff)", fontWeight: 600, textTransform: "uppercase" }}>
             {order.side} {order.orderType}
           </span>
-          <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{qtyLine}</span>
+          <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)" }}>{qtyLine}</span>
         </div>
         <span style={{
           ...MONO, fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase",
@@ -3365,7 +3531,7 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
         </span>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))" }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)" }}>
           {[
             isProtection ? t("protectionRow", { entry: (order.sourceEntryOrderId ?? "").slice(0, 8) }) : null,
             currentTrigger ? t("triggerLine", { price: priceLabel(currentTrigger) }) : null,
@@ -3392,7 +3558,7 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
       </div>
       {editing && current && (
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", paddingTop: 2 }}>
-          <label htmlFor={`price-${order.orderId}`} style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          <label htmlFor={`price-${order.orderId}`} style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)" }}>
             {current.basis === "notional" ? t("newPriceUsd") : t("newPriceRate", { symbol: order.contraAsset.ticker })}
           </label>
           <input
@@ -3409,7 +3575,7 @@ function FlashOrderRow({ order }: { order: FlashOrder }) {
             {isUpdating ? t("updating") : t("signUpdate")}
           </button>
           <button onClick={() => { setEditing(false); setErr(null); }} disabled={isUpdating}
-            style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.05em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 6, border: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))", background: "transparent", color: "var(--card-text-faint, rgba(255,255,255,0.3))", cursor: "pointer", whiteSpace: "nowrap" }}>
+            style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.05em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 6, border: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))", background: "transparent", color: "var(--card-text-faint)", cursor: "pointer", whiteSpace: "nowrap" }}>
             {t("cancelEdit")}
           </button>
         </div>
@@ -3430,16 +3596,16 @@ function FlashOrdersDisplay({ result }: { result: FlashOrdersResult }) {
   return (
     <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 16, overflow: "hidden" }}>
       <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint)", margin: 0 }}>
           {t("header")}
         </p>
-        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)" }}>
           {t("orderCount", { count: visibleOrders.length })}
         </span>
       </div>
       <div style={{ padding: "2px 20px" }}>
         {visibleOrders.length === 0 ? (
-          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", padding: "16px 0" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)", padding: "16px 0" }}>
             {t("empty")}
           </p>
         ) : (
@@ -3466,7 +3632,7 @@ function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage, o
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Summary header */}
-      <p style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: 0 }}>
+      <p style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-dim)", margin: 0 }}>
         <span style={{ color: "#F5B800" }}>{okLegs}</span>
         {` ${t("routeCount", { count: okLegs })}`}
         {destChain ? t("consolidatingTo", { chain: destChain }) : ""}
@@ -3476,19 +3642,19 @@ function RebalanceDisplay({ result, connectedAddress, onTxSubmitted, slippage, o
       {/* One card per leg */}
       {result.legs.map((leg, i) => (
         <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.1em", color: "var(--card-text-faint)" }}>
             {t("stepOf", { n: i + 1, total })}
           </span>
           {leg.type === "quote" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <p style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: 0 }}>
+              <p style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-dim)", margin: 0 }}>
                 <span style={{ color: "#F5B800" }}>{leg.route.tool}</span>
                 {"  ·  "}
                 <span style={{ color: "var(--card-text, #ffffff)" }}>
                   ~{leg.route.outputAmount} {leg.intent.to.token}
                 </span>
                 {leg.route.feesUSD && (
-                  <span style={{ color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>
+                  <span style={{ color: "var(--card-text-dim)" }}>
                     {"  ·  "}{t("feesAmount", { amount: Number(leg.route.feesUSD).toFixed(2) })}
                   </span>
                 )}
@@ -3533,12 +3699,12 @@ function PaymentsDisplay({ result }: { result: PaymentsResult }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", borderRadius: 12, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-bg, rgba(255,255,255,0.02))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>{t("eyebrow")}</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)" }}>
           {t("tagged", { count: payments.length })}
         </span>
       </div>
       {payments.length === 0 ? (
-        <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: 0 }}>
+        <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim)", margin: 0 }}>
           {t("noneYet", { address: short(result.address) })}
         </p>
       ) : (
@@ -3551,8 +3717,8 @@ function PaymentsDisplay({ result }: { result: PaymentsResult }) {
                 <span style={{ ...MONO, fontSize: "0.78rem", color: "var(--card-text, #fff)" }}>{p.amount} {p.tokenSymbol}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{t("from", { address: short(p.from), chain: p.chainName })}</span>
-                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{timeAgo(p.timestamp)} ↗</span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint)" }}>{t("from", { address: short(p.from), chain: p.chainName })}</span>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint)" }}>{timeAgo(p.timestamp)} ↗</span>
               </div>
             </a>
           ))}
@@ -3568,7 +3734,7 @@ function PayRow({ label, value, mono = true }: { label: string; value: React.Rea
   const M: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-      <span style={{ ...M, fontSize: "0.6rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{label}</span>
+      <span style={{ ...M, fontSize: "0.6rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint)" }}>{label}</span>
       <span style={{ ...(mono ? M : {}), fontSize: "0.74rem", color: "var(--card-text, #fff)", textAlign: "right" }}>{value}</span>
     </div>
   );
@@ -3626,7 +3792,7 @@ function PayDisplay({ result, onTxSubmitted }: { result: PayResult; onTxSubmitte
     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", borderRadius: 12, border: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "var(--card-bg, rgba(255,255,255,0.02))" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.12em", color: "#F5B800" }}>{result.isB20 ? t("b20Payment") : t("payment")}</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{result.chainName}</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)" }}>{result.chainName}</span>
       </div>
       <div style={{ ...MONO, fontSize: "1.1rem", color: "var(--card-text, #fff)" }}>
         {result.amountDisplay} <span style={{ color: "#F5B800" }}>{result.tokenSymbol}</span>
@@ -3686,7 +3852,7 @@ function TxDisplay({ result }: { result: TxResult }) {
   return (
     <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 16, overflow: "hidden" }}>
       <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint)", margin: 0 }}>
           {t("header")}
         </p>
         <span style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.06em", padding: "2px 8px", borderRadius: 4, background: "var(--card-border-faint, rgba(255,255,255,0.05))", color: statusColor }}>
@@ -3697,7 +3863,7 @@ function TxDisplay({ result }: { result: TxResult }) {
       <div style={{ padding: "4px 16px" }}>
         {rows.map(({ label, value }) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
-            <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
+            <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim)", letterSpacing: "0.04em", flexShrink: 0 }}>{label}</span>
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.7))", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{value}</span>
           </div>
         ))}
@@ -3705,7 +3871,7 @@ function TxDisplay({ result }: { result: TxResult }) {
 
       {summary && (
         <div style={{ padding: "12px 16px", borderTop: "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" }}>
-          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", lineHeight: 1.65, margin: 0 }}>{summary}</p>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)", lineHeight: 1.65, margin: 0 }}>{summary}</p>
         </div>
       )}
 
@@ -3769,15 +3935,15 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {/* Header */}
       <div style={{ padding: "14px 20px 12px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
-          <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint)" }}>
             {ensName ? `${ensName} · ` : ""}{t("walletOverview")}
           </span>
           <a href={`https://etherscan.io/address/${data.address}`} target="_blank" rel="noopener noreferrer"
-            style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", textDecoration: "none" }}>
+            style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)", textDecoration: "none" }}>
             {t("etherscan")}
           </a>
         </div>
-        <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.42))", letterSpacing: "0.02em" }}>
+        <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)", letterSpacing: "0.02em" }}>
           {data.address.slice(0, 10)}…{data.address.slice(-8)}
         </span>
       </div>
@@ -3786,12 +3952,12 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {total > 0 && (
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", gap: 28 }}>
           <div>
-            <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 5px" }}>{t("totalValue")}</p>
+            <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint)", margin: "0 0 5px" }}>{t("totalValue")}</p>
             <p style={{ ...MONO, fontSize: "1.45rem", fontWeight: 700, color: "var(--card-text-muted, rgba(255,255,255,0.85))", margin: 0, letterSpacing: "-0.01em" }}>{fmtUsd(total)}</p>
           </div>
           {nativeRows[0] && (
             <div style={{ borderLeft: "1px solid var(--card-border, rgba(255,255,255,0.07))", paddingLeft: 28 }}>
-              <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 5px" }}>{t("symbolBalance", { symbol: nativeRows[0].nativeSymbol })}</p>
+              <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint)", margin: "0 0 5px" }}>{t("symbolBalance", { symbol: nativeRows[0].nativeSymbol })}</p>
               <p style={{ ...MONO, fontSize: "1rem", color: "var(--card-text-muted, rgba(255,255,255,0.65))", margin: 0 }}>{nativeRows[0].native}</p>
             </div>
           )}
@@ -3801,7 +3967,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {/* AI summary */}
       {summary && (
         <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
-          <p style={{ ...MONO, fontSize: "0.76rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", lineHeight: 1.7, margin: 0 }}>{summary}</p>
+          <p style={{ ...MONO, fontSize: "0.76rem", color: "var(--card-text-dim)", lineHeight: 1.7, margin: 0 }}>{summary}</p>
         </div>
       )}
 
@@ -3809,8 +3975,8 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {(nativeRows.length > 0 || tokenRows.length > 0) && (
         <div style={{ borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
           <div style={{ padding: "10px 20px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{t("tokenHoldings")}</span>
-            {total > 0 && <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.38))" }}>{fmtUsd(total)}</span>}
+            <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint)" }}>{t("tokenHoldings")}</span>
+            {total > 0 && <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)" }}>{fmtUsd(total)}</span>}
           </div>
 
           {[
@@ -3840,7 +4006,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
                       <span style={{ ...MONO, fontSize: "0.76rem", color: "var(--card-text-muted, rgba(255,255,255,0.78))", fontWeight: 600 }}>{row.sym}</span>
-                      <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.25))" }}>· {row.chain}</span>
+                      <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)" }}>· {row.chain}</span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {row.priceChange24h != null && (
@@ -3854,7 +4020,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
                           {row.priceChange24h >= 0 ? "+" : ""}{row.priceChange24h.toFixed(1)}%
                         </span>
                       )}
-                      <span style={{ ...MONO, fontSize: "0.78rem", fontWeight: 600, color: row.usdValue != null ? "var(--card-text-muted, rgba(255,255,255,0.82))" : "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+                      <span style={{ ...MONO, fontSize: "0.78rem", fontWeight: 600, color: row.usdValue != null ? "var(--card-text-muted, rgba(255,255,255,0.82))" : "var(--card-text-faint)" }}>
                         {row.usdValue != null ? fmtUsd(row.usdValue) : t("noPriceData")}
                       </span>
                     </div>
@@ -3864,7 +4030,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
                       {pct > 0 && <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: color, borderRadius: 999 }} />}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                      <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))" }}>
+                      <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)" }}>
                         {row.amount}{pct > 0 ? ` · ${pct.toFixed(1)}%` : ""}
                       </span>
                       {row.onSwapStr && onSwap && (
@@ -3884,7 +4050,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
             );
           })}
           {(omittedPricedCount > 0 || dustTokenCount > 0) && (
-            <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0, padding: "8px 20px", borderTop: "1px solid var(--card-header-bg, rgba(255,255,255,0.04))" }}>
+            <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)", margin: 0, padding: "8px 20px", borderTop: "1px solid var(--card-header-bg, rgba(255,255,255,0.04))" }}>
               {[
                 omittedPricedCount > 0 ? t("moreHoldings", { count: omittedPricedCount }) : null,
                 dustTokenCount > 0 ? t("dustHoldings", { count: dustTokenCount }) : null,
@@ -3897,7 +4063,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {/* Recent buys */}
       {recentBuys.length > 0 && (
         <div style={{ padding: "10px 20px 14px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 8 }}>{t("recentBuys")}</p>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint)", marginBottom: 8 }}>{t("recentBuys")}</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {recentBuys.map(r => (
               <a key={r.hash} href={`https://etherscan.io/tx/${r.hash}`} target="_blank" rel="noopener noreferrer"
@@ -3913,7 +4079,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
       {/* Recent activity */}
       {data.recentTransfers.length > 0 && (
         <div style={{ padding: "10px 20px 14px" }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginBottom: 8 }}>{t("recentActivity")}</p>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.08em", color: "var(--card-text-faint)", marginBottom: 8 }}>{t("recentActivity")}</p>
           {data.recentTransfers.slice(0, 6).map((transfer, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: i > 0 ? "1px solid var(--card-header-bg, rgba(255,255,255,0.04))" : undefined, minWidth: 0 }}>
               <span style={{ ...MONO, fontSize: "0.58rem", color: transfer.direction === "in" ? "#4ade80" : "#F5B800", letterSpacing: "0.04em", flexShrink: 0, width: 24 }}>
@@ -3923,7 +4089,7 @@ function AddressDisplay({ result, onSwap }: { result: AddressResult; onSwap?: (p
                 {transfer.value} {transfer.asset}
               </span>
               <a href={`https://etherscan.io/tx/${transfer.hash}`} target="_blank" rel="noopener noreferrer"
-                style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.26))", textDecoration: "none", flexShrink: 0 }}>
+                style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)", textDecoration: "none", flexShrink: 0 }}>
                 {transfer.hash.slice(0, 7)}…
               </a>
             </div>
@@ -4221,7 +4387,7 @@ function SmartMoneyPanel({ data, chain, tf }: { data: unknown; chain: string | n
   if (rows.length === 0) {
     return (
       <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", margin: 0 }}>
           No wallet trades found for this token in the last 30 days.
         </p>
       </div>
@@ -4239,10 +4405,10 @@ function SmartMoneyPanel({ data, chain, tf }: { data: unknown; chain: string | n
   if (parsed.length === 0) {
     return (
       <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 6px" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", margin: "0 0 6px" }}>
           Read complete — {rows.length} record(s), unrecognized shape.
         </p>
-        <pre style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 160, overflow: "auto" }}>
+        <pre style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint)", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 160, overflow: "auto" }}>
           {JSON.stringify(data, null, 2).slice(0, 600)}
         </pre>
       </div>
@@ -4256,7 +4422,7 @@ function SmartMoneyPanel({ data, chain, tf }: { data: unknown; chain: string | n
   return (
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
-        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint)" }}>
           TOP WALLETS · {(tf ?? "30d").toUpperCase()} · {parsed.length} TRADER{parsed.length === 1 ? "" : "S"}
         </span>
         <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: accumulating ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
@@ -4272,7 +4438,7 @@ function SmartMoneyPanel({ data, chain, tf }: { data: unknown; chain: string | n
             {href ? (
               <a href={href} target="_blank" rel="noopener noreferrer"
                 title={p.id ?? undefined}
-                style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", textDecoration: "none", borderBottom: "1px dotted var(--card-text-faint, rgba(255,255,255,0.3))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", textDecoration: "none", borderBottom: "1px dotted var(--card-text-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {display}
               </a>
             ) : (
@@ -4342,7 +4508,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
   const noteColor =
     subState === "error" ? "#ef4444"
     : subState === "done" ? ACCENT
-    : "var(--card-text-dim, rgba(255,255,255,0.55))";
+    : "var(--card-text-dim)";
 
   const btnBase: React.CSSProperties = {
     ...MONO, fontSize: "0.7rem", fontWeight: 600, padding: "9px 14px", borderRadius: 10,
@@ -4386,7 +4552,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
           <button
             type="button"
             onClick={onSwitchToFast}
-            style={{ ...btnBase, borderColor: "var(--card-border, rgba(255,255,255,0.12))", background: "transparent", color: "var(--card-text-dim, rgba(255,255,255,0.6))" }}
+            style={{ ...btnBase, borderColor: "var(--card-border, rgba(255,255,255,0.12))", background: "transparent", color: "var(--card-text-dim)" }}
           >
             {t("switchToFast")}
           </button>
@@ -4408,7 +4574,7 @@ function PaywallDisplay({ result, onConnect, onSwitchToFast }: {
 const AEON_CALLS: Record<string, string> = {
   RIDE: "#22c55e",
   FADE: "#ef4444",
-  SKIP: "var(--card-text-faint, rgba(255,255,255,0.45))",
+  SKIP: "var(--card-text-faint)",
   "FRONT-RUN": "#F5B800",
   "FRONT RUN": "#F5B800",
 };
@@ -4487,7 +4653,7 @@ function AeonMarkdown({ text, accent = AEON_VIOLET }: { text: string; accent?: s
         if (lab && lab[2]) {
           return (
             <p key={i} style={BODY}>
-              <span style={{ color: "var(--card-text-dim, rgba(255,255,255,0.55))", fontWeight: 600 }}>{lab[1]}:</span> {inlineNodes(lab[2], `l${i}`)}
+              <span style={{ color: "var(--card-text-dim)", fontWeight: 600 }}>{lab[1]}:</span> {inlineNodes(lab[2], `l${i}`)}
             </p>
           );
         }
@@ -4538,19 +4704,19 @@ function AeonDisplay({ result }: { result: AeonResult }) {
           <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /><circle cx="12" cy="12" r="3.2" />
         </svg>
         <span style={{ ...MONO, fontSize: "0.56rem", fontWeight: 700, letterSpacing: "0.13em", color: ACCENT }}>{({ defi: "DEFI READ", narrative: "NARRATIVE", trending: "TRENDING", protocols: "TOP TVL", onchain: "ONCHAIN", fear: "FEAR DIVERGENCE", x402: "X402 PULSE", tokenpick: "TOKEN PICK", pickstracker: "PICKS TRACKER" } as Record<string, string>)[kind] ?? "READ"}</span>
-        <span style={{ ...MONO, fontSize: "0.54rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>daily · skopos</span>
+        <span style={{ ...MONO, fontSize: "0.54rem", color: "var(--card-text-faint)", marginLeft: "auto" }}>daily · skopos</span>
       </div>
 
       <div style={{ padding: "0 13px 10px" }}>
         <p style={{ ...MONO, fontSize: "0.98rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 3px", lineHeight: 1.2 }}>{title}</p>
-        <p style={{ ...MONO, fontSize: "0.68rem", lineHeight: 1.5, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>{subtitle}</p>
+        <p style={{ ...MONO, fontSize: "0.68rem", lineHeight: 1.5, color: "var(--card-text-dim)", margin: 0 }}>{subtitle}</p>
       </div>
 
       {premium && (
         <div style={{ padding: "9px 13px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "var(--card-surface)" }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
-            <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint)", margin: 0 }}>
               {message ?? (state === "loading" ? "Fetching the read…" : premium.note)}
             </p>
           </div>
@@ -4559,7 +4725,7 @@ function AeonDisplay({ result }: { result: AeonResult }) {
             disabled={!premium.available || state === "loading"}
             style={{
               ...MONO, fontSize: "0.66rem", fontWeight: 700,
-              color: premium.available ? ACCENT : "var(--card-text-faint, rgba(255,255,255,0.28))",
+              color: premium.available ? ACCENT : "var(--card-text-faint)",
               background: premium.available ? `${ACCENT}18` : "transparent",
               border: `1px solid ${premium.available ? `${ACCENT}40` : "var(--card-border)"}`,
               borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
@@ -4710,7 +4876,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
         <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>
           {isWeb ? "WEB INTEL" : (EYEBROW[read ?? "smart-money"] ?? "TOKEN INTEL")}
         </span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)", marginLeft: "auto" }}>
           {isWeb
             ? context!.sourceHost
             : isScreener
@@ -4726,7 +4892,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
             style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, #ffffff)", textDecoration: "none", lineHeight: 1.3, display: "block", marginBottom: 8 }}>
             {context!.title}
           </a>
-          <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+          <p style={{ ...MONO, fontSize: "0.74rem", lineHeight: 1.6, color: "var(--card-text-dim)", margin: 0 }}>
             {context!.excerpt}
           </p>
         </div>
@@ -4736,7 +4902,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
           <p style={{ ...MONO, fontSize: "1.15rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.2 }}>
             Smart money is buying
           </p>
-          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim)", margin: 0 }}>
             {DESC.screener}
           </p>
         </div>
@@ -4746,7 +4912,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
           <p style={{ ...MONO, fontSize: "1.15rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.2 }}>
             {token!.symbol ? `$${token!.symbol}` : (token!.address ? shorten(token!.address) : "Token")}
           </p>
-          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+          <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim)", margin: 0 }}>
             {DESC[read ?? "smart-money"] ?? DESC["smart-money"]}
           </p>
         </div>
@@ -4757,7 +4923,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
         <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "var(--card-surface)" }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>{premium.label}</p>
-            <p style={{ ...MONO, fontSize: "0.58rem", color: smState === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: smState === "error" ? "#ef4444" : "var(--card-text-faint)", margin: 0 }}>
               {smMessage ?? premium.note}
             </p>
           </div>
@@ -4766,7 +4932,7 @@ function IntelDisplay({ result }: { result: IntelResult }) {
             disabled={!premium.available || smState === "loading"}
             style={{
               ...MONO, fontSize: "0.66rem", fontWeight: 700,
-              color: premium.available ? ACCENT : "var(--card-text-faint, rgba(255,255,255,0.28))",
+              color: premium.available ? ACCENT : "var(--card-text-faint)",
               background: premium.available ? `${ACCENT}18` : "transparent",
               border: `1px solid ${premium.available ? `${ACCENT}40` : "var(--card-border)"}`,
               borderRadius: 8, padding: "6px 12px", whiteSpace: "nowrap",
@@ -4946,14 +5112,14 @@ function X402CheckDisplay({ result }: { result: X402CheckResult }) {
           <rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
         </svg>
         <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.14em", color: ACCENT }}>x402 ENDPOINT</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginLeft: "auto" }}>{host}</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)", marginLeft: "auto" }}>{host}</span>
       </div>
 
       <div style={{ padding: "0 18px 14px" }}>
         <p style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: "0 0 4px", lineHeight: 1.3, wordBreak: "break-word" }}>
           {discovery.ok ? (discovery.description ?? "Paid endpoint") : "Couldn't reach this endpoint"}
         </p>
-        <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+        <p style={{ ...MONO, fontSize: "0.72rem", lineHeight: 1.6, color: "var(--card-text-dim)", margin: 0 }}>
           {discovery.ok
             ? "This isn't a Skopos-run source — it's a third-party x402 endpoint you named. Paying it uses your own connected wallet, not Skopos's."
             : (discovery.error ?? "Unknown error.")}
@@ -4966,7 +5132,7 @@ function X402CheckDisplay({ result }: { result: X402CheckResult }) {
             <p style={{ ...MONO, fontSize: "0.72rem", fontWeight: 600, color: "var(--card-text, #ffffff)", margin: "0 0 2px" }}>
               ${discovery.priceUsd ?? "?"} · {discovery.network ?? "base"}
             </p>
-            <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
+            <p style={{ ...MONO, fontSize: "0.58rem", color: state === "error" ? "#ef4444" : "var(--card-text-faint)", margin: 0 }}>
               {message ?? "Paid per call, from your wallet."}
             </p>
           </div>
@@ -4987,12 +5153,12 @@ function X402CheckDisplay({ result }: { result: X402CheckResult }) {
 
       {discovery.ok && needsCover && (
         <div style={{ padding: "12px 18px 16px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-          <p style={{ ...MONO, fontSize: "0.66rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 8px" }}>
+          <p style={{ ...MONO, fontSize: "0.66rem", lineHeight: 1.6, color: "var(--card-text-dim)", margin: "0 0 8px" }}>
             You're ${shortfall.toFixed(2)} short of the ${priceUsd.toFixed(2)} USDC needed on Base.
           </p>
 
           {swapFetching && (
-            <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0 }}>
+            <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint)", margin: 0 }}>
               Checking if your ETH can cover it…
             </p>
           )}
@@ -5030,7 +5196,7 @@ function X402CheckDisplay({ result }: { result: X402CheckResult }) {
       )}
 
       {state === "done" && data != null && (
-        <pre style={{ ...MONO, fontSize: "0.68rem", lineHeight: 1.6, color: "var(--card-text-dim, rgba(255,255,255,0.6))", margin: 0, padding: "12px 18px 16px", borderTop: "1px solid var(--card-border-faint)", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        <pre style={{ ...MONO, fontSize: "0.68rem", lineHeight: 1.6, color: "var(--card-text-dim)", margin: 0, padding: "12px 18px 16px", borderTop: "1px solid var(--card-border-faint)", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           {JSON.stringify(data, null, 2)}
         </pre>
       )}
@@ -5053,7 +5219,7 @@ function HoldersPanel({ data, chain }: { data: unknown; chain: string | null }) 
   if (rows.length === 0) {
     return (
       <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", margin: 0 }}>
           No holder data found for this token.
         </p>
       </div>
@@ -5071,10 +5237,10 @@ function HoldersPanel({ data, chain }: { data: unknown; chain: string | null }) 
   if (parsed.length === 0) {
     return (
       <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: "0 0 6px" }}>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", margin: "0 0 6px" }}>
           Read complete — {rows.length} record(s), unrecognized shape.
         </p>
-        <pre style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 160, overflow: "auto" }}>
+        <pre style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint)", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 160, overflow: "auto" }}>
           {JSON.stringify(data, null, 2).slice(0, 600)}
         </pre>
       </div>
@@ -5087,11 +5253,11 @@ function HoldersPanel({ data, chain }: { data: unknown; chain: string | null }) 
   return (
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 2 }}>
-        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint)" }}>
           TOP HOLDERS · {sorted.length} SHOWN
         </span>
         {shownOwnership > 0 && (
-          <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: "var(--card-text-dim, rgba(255,255,255,0.6))", whiteSpace: "nowrap" }}>
+          <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: "var(--card-text-dim)", whiteSpace: "nowrap" }}>
             {(shownOwnership * 100).toFixed(1)}% of supply
           </span>
         )}
@@ -5104,7 +5270,7 @@ function HoldersPanel({ data, chain }: { data: unknown; chain: string | null }) 
           <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             {href ? (
               <a href={href} target="_blank" rel="noopener noreferrer" title={p.id ?? undefined}
-                style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", textDecoration: "none", borderBottom: "1px dotted var(--card-text-faint, rgba(255,255,255,0.3))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text, #ffffff)", textDecoration: "none", borderBottom: "1px dotted var(--card-text-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {display}
               </a>
             ) : (
@@ -5114,7 +5280,7 @@ function HoldersPanel({ data, chain }: { data: unknown; chain: string | null }) 
             )}
             <span style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
               {p.ownership != null && (
-                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.5))" }}>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)" }}>
                   {(p.ownership * 100).toFixed(2)}%
                 </span>
               )}
@@ -5147,7 +5313,7 @@ function FlowsPanel({ data }: { data: unknown }) {
   if (rows.length < 2) {
     return (
       <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>Not enough flow history for a trend yet.</p>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", margin: 0 }}>Not enough flow history for a trend yet.</p>
       </div>
     );
   }
@@ -5163,7 +5329,7 @@ function FlowsPanel({ data }: { data: unknown }) {
   return (
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>
+        <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint)" }}>
           SMART MONEY · {rows.length}D
         </span>
         <span style={{ ...MONO, fontSize: "0.66rem", fontWeight: 700, color: up ? "#22c55e" : "#ef4444", whiteSpace: "nowrap" }}>
@@ -5177,9 +5343,9 @@ function FlowsPanel({ data }: { data: unknown }) {
         ))}
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>{first.date}</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)" }}>{first.date}</span>
         <span style={{ ...MONO, fontSize: "0.62rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>{fmtUsdShort(last.value ?? 0)} held</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.4))" }}>{last.date}</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)" }}>{last.date}</span>
       </div>
     </div>
   );
@@ -5209,14 +5375,14 @@ function FlowIntelPanel({ data, tf }: { data: unknown; tf?: string }) {
   if (segs.length === 0) {
     return (
       <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>No segment flow data for this token.</p>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", margin: 0 }}>No segment flow data for this token.</p>
       </div>
     );
   }
 
   return (
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))", marginBottom: 2 }}>
+      <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint)", marginBottom: 2 }}>
         NET FLOW · {tf ? ((["30m", "1h", "4h", "24h"].includes(tf) ? "1D" : "7D")) : "7D"}
       </span>
       {segs.map((s, i) => {
@@ -5232,7 +5398,7 @@ function FlowIntelPanel({ data, tf }: { data: unknown; tf?: string }) {
           </div>
         );
       })}
-      <span style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint, rgba(255,255,255,0.35))", marginTop: 4 }}>
+      <span style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint)", marginTop: 4 }}>
         Exchange outflows (▼) = leaving exchanges = less sell pressure.
       </span>
     </div>
@@ -5255,14 +5421,14 @@ function ScreenerPanel({ data, tf }: { data: unknown; tf?: string }) {
   if (rows.length === 0) {
     return (
       <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)" }}>
-        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.55))", margin: 0 }}>No screener results right now.</p>
+        <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", margin: 0 }}>No screener results right now.</p>
       </div>
     );
   }
 
   return (
     <div style={{ padding: "12px 18px", borderTop: "1px solid var(--card-border-faint)", background: "var(--card-surface)", display: "flex", flexDirection: "column", gap: 7 }}>
-      <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.4))", marginBottom: 2 }}>
+      <span style={{ ...MONO, fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", color: "var(--card-text-faint)", marginBottom: 2 }}>
         TOP NET INFLOW · {(tf ?? "24h").toUpperCase()}
       </span>
       {rows.map((p, i) => {
@@ -5277,7 +5443,7 @@ function ScreenerPanel({ data, tf }: { data: unknown; tf?: string }) {
               ) : (
                 <span style={{ ...MONO, fontSize: "0.68rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>${p.symbol}</span>
               )}
-              <span style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint, rgba(255,255,255,0.35))" }}>{p.chain}</span>
+              <span style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint)" }}>{p.chain}</span>
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
               {p.change != null && (
@@ -5338,7 +5504,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
       <div style={{ padding: "14px 18px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <span style={{ ...MONO, fontSize: "1.05rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>{risk.symbol}</span>
-          <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))", marginLeft: 8 }}>{risk.name}</span>
+          <span style={{ ...MONO, fontSize: "0.65rem", color: "var(--card-text-dim)", marginLeft: 8 }}>{risk.name}</span>
         </div>
         <span style={{ ...MONO, fontSize: "0.65rem", fontWeight: 700, color: riskColor, background: `${riskColor}18`, border: `1px solid ${riskColor}35`, borderRadius: 6, padding: "3px 10px" }}>
           {risk.label} {t("risk")}
@@ -5382,7 +5548,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
           ...(risk.top10HolderPct != null ? [[t("stats.top10Hold"), `${risk.top10HolderPct.toFixed(1)}%`]] : []),
         ].map(([label, val]) => (
           <div key={label} style={{ padding: "11px 16px", background: "var(--card-container-bg, #0D0D0D)" }}>
-            <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: "0 0 3px", letterSpacing: "0.07em" }}>{label!.toUpperCase()}</p>
+            <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint)", margin: "0 0 3px", letterSpacing: "0.07em" }}>{label!.toUpperCase()}</p>
             <p style={{ ...MONO, fontSize: "0.82rem", color: "var(--card-text, #ffffff)", margin: 0 }}>{val}</p>
           </div>
         ))}
@@ -5391,7 +5557,7 @@ function TokenRiskDisplay({ result }: { result: TokenRiskResult }) {
       {/* Risk flags */}
       {risk.flags.length > 0 && (
         <div style={{ padding: "12px 18px", borderTop: `1px solid ${riskColor}20` }}>
-          <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", marginBottom: 8, letterSpacing: "0.07em" }}>{t("riskFlags")}</p>
+          <p style={{ ...MONO, fontSize: "0.57rem", color: "var(--card-text-faint)", marginBottom: 8, letterSpacing: "0.07em" }}>{t("riskFlags")}</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {risk.flags.map(f => (
               <div key={f} style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -5453,7 +5619,7 @@ function PrebuyDisplay({ result, connectedAddress }: { result: PrebuyResult; con
 
       <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, overflow: "hidden", maxWidth: 400, background: "var(--card-container-bg, #0D0D0D)" }}>
         <div style={{ padding: "10px 18px", borderBottom: "1px solid var(--card-border-faint)" }}>
-          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint)", margin: 0 }}>
             SMART MONEY · 30D
           </p>
         </div>
@@ -5463,7 +5629,7 @@ function PrebuyDisplay({ result, connectedAddress }: { result: PrebuyResult; con
               {smartMoney.buyerCount} smart-money {smartMoney.buyerCount === 1 ? "wallet" : "wallets"} bought {fmtUsd(smartMoney.totalBoughtUsd)} worth
             </p>
           ) : (
-            <p style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+            <p style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint)", margin: 0 }}>
               No smart-money data available for this token yet.
             </p>
           )}
@@ -5472,14 +5638,14 @@ function PrebuyDisplay({ result, connectedAddress }: { result: PrebuyResult; con
 
       {quote ? (
         <div>
-          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 6px 2px" }}>
+          <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint)", margin: "0 0 6px 2px" }}>
             ENTRY ROUTE · $100 REFERENCE
           </p>
           <QuoteDisplay result={quote} connectedAddress={connectedAddress} />
         </div>
       ) : (
         <div style={{ border: "1px solid var(--card-border)", borderRadius: 16, padding: "13px 18px", background: "var(--card-container-bg, #0D0D0D)" }}>
-          <p style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+          <p style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint)", margin: 0 }}>
             {quoteUnavailable ?? "No entry route available right now."}
           </p>
         </div>
@@ -5514,7 +5680,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
     }}>
       {result.heading && (
         <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
-          <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint, rgba(255,255,255,0.3))", textTransform: "uppercase" }}>
+          <span style={{ ...MONO, fontSize: "0.62rem", letterSpacing: "0.09em", color: "var(--card-text-faint)", textTransform: "uppercase" }}>
             {result.heading}
           </span>
         </div>
@@ -5527,7 +5693,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
             <span style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "var(--card-text, rgba(255,255,255,0.9))" }}>
               {it.tokenSymbol}
             </span>
-            <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>⇄</span>
+            <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-faint)" }}>⇄</span>
             <span style={{ ...MONO, fontSize: "0.95rem", fontWeight: 700, color: "#F5B800" }}>
               {it.stockSymbol}
             </span>
@@ -5539,7 +5705,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
               {it.stockVerified ? t("verified") : t("unverified")}
             </span>
           </div>
-          <p style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))", margin: "6px 0 0" }}>
+          <p style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim)", margin: "6px 0 0" }}>
             {t("pairedWith", { stock: it.stockSymbol })}
           </p>
 
@@ -5558,7 +5724,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
           <div style={{ margin: "10px 0 0", padding: "10px 12px", background: "var(--card-bg)", border: "1px solid var(--card-border-faint)", borderRadius: 10 }}>
             {it.priceInStockTerms && (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
-                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("ratio")}</span>
+                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim)" }}>{t("ratio")}</span>
                 <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>
                   1 {it.tokenSymbol} = {it.priceInStockTerms} {it.stockSymbol}
                 </span>
@@ -5566,12 +5732,12 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
             )}
             {it.tokenPriceUsd && (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
-                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{it.tokenSymbol}</span>
+                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim)" }}>{it.tokenSymbol}</span>
                 <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>${it.tokenPriceUsd}</span>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
-              <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{it.stockSymbol}</span>
+              <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim)" }}>{it.stockSymbol}</span>
               <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>
                 {it.stockPriceUsd !== null
                   ? `${fmtUsd(it.stockPriceUsd)}${it.stockPriceStale ? ` · ${t("lastClose")}` : ""}`
@@ -5579,7 +5745,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
-              <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("poolLiquidity")}</span>
+              <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim)" }}>{t("poolLiquidity")}</span>
               <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>
                 {it.pairLiquidityUsd > 0 ? fmtUsd(it.pairLiquidityUsd) : t("liquidityNotIndexed")}
               </span>
@@ -5593,7 +5759,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
                 {t("flywheelTitle")}
               </p>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
-                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("dailyEst")}</span>
+                <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim)" }}>{t("dailyEst")}</span>
                 <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>
                   ~{fmtUsd(it.dailyStockValueEstimate)}/d
                   {it.dailyStockTokensEstimate !== null ? ` (~${it.dailyStockTokensEstimate.toFixed(2)} ${it.stockSymbol}/d)` : ""}
@@ -5601,7 +5767,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
               </div>
               {it.totalAccumulatedEstimate !== null && it.daysOld !== null && (
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
-                  <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim, rgba(255,255,255,0.4))" }}>{t("sinceLaunch", { days: it.daysOld.toFixed(1) })}</span>
+                  <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim)" }}>{t("sinceLaunch", { days: it.daysOld.toFixed(1) })}</span>
                   <span style={{ ...MONO, fontSize: "0.7rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))" }}>~{fmtUsd(it.totalAccumulatedEstimate)}</span>
                 </div>
               )}
@@ -5610,7 +5776,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
 
           <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
             <a href={it.pairUrl} target="_blank" rel="noopener noreferrer"
-               style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>
+               style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)" }}>
               dexscreener ↗
             </a>
           </div>
@@ -5618,7 +5784,7 @@ function StockPairedDisplay({ result }: { result: StockPairedResult }) {
       ))}
 
       <div style={{ padding: "9px 16px" }}>
-        <p style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint, rgba(255,255,255,0.28))", margin: 0, lineHeight: 1.5 }}>
+        <p style={{ ...MONO, fontSize: "0.56rem", color: "var(--card-text-faint)", margin: 0, lineHeight: 1.5 }}>
           {result.note || t("estimateNote")}
         </p>
       </div>
@@ -5644,7 +5810,7 @@ function CopyableAddress({ address }: { address: string }) {
       }}
       title={address}
       style={{
-        ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.5))",
+        ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)",
         background: "transparent", border: "1px solid var(--card-border-faint)", borderRadius: 6,
         padding: "2px 7px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5,
       }}
@@ -5661,7 +5827,7 @@ function RiskBadge({ risk }: { risk: RobinhoodLaunchCard["risk"] }) {
   const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
   if (!risk) {
     return (
-      <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, color: "var(--card-text-faint, rgba(255,255,255,0.35))", background: "rgba(255,255,255,0.06)", border: "1px solid var(--card-border-faint)", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+      <span style={{ ...MONO, fontSize: "0.6rem", fontWeight: 700, color: "var(--card-text-faint)", background: "rgba(255,255,255,0.06)", border: "1px solid var(--card-border-faint)", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
         ⏳ NOT SCANNED
       </span>
     );
@@ -5691,7 +5857,7 @@ function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult 
 
   // Liquidity is the single most dangerous signal on this card — color it
   // instead of letting it blend into the rest of the stats line.
-  const liqColor = (usd: number) => (usd <= 5_000 ? "#ef4444" : usd > 50_000 ? "#22c55e" : "var(--card-text-dim, rgba(255,255,255,0.6))");
+  const liqColor = (usd: number) => (usd <= 5_000 ? "#ef4444" : usd > 50_000 ? "#22c55e" : "var(--card-text-dim)");
 
   const LinkPill = ({ href, label }: { href: string; label: string }) => (
     <a href={href} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", textDecoration: "none", border: "1px solid var(--card-border-faint)", borderRadius: 6, padding: "2px 7px" }}>
@@ -5705,7 +5871,7 @@ function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult 
         <p style={{ ...MONO, fontSize: "0.85rem", fontWeight: 700, color: "var(--card-text, #ffffff)", margin: 0 }}>
           {heading}
         </p>
-        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "4px 0 0" }}>
+        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)", margin: "4px 0 0" }}>
           {subtitle}
         </p>
       </div>
@@ -5720,14 +5886,14 @@ function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult 
                 <RiskBadge risk={l.risk} />
                 {l.hot && <span style={{ fontSize: "0.85rem" }}>🔥</span>}
                 <span style={{ ...MONO, fontSize: "0.8rem", fontWeight: 700, color: "var(--card-text, #ffffff)" }}>
-                  {l.symbol} <span style={{ fontWeight: 400, color: "var(--card-text-dim, rgba(255,255,255,0.45))" }}>({l.name})</span>
+                  {l.symbol} <span style={{ fontWeight: 400, color: "var(--card-text-dim)" }}>({l.name})</span>
                 </span>
-                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+                <span style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-faint)" }}>
                   · {l.ageMinutes}m old
                 </span>
               </div>
 
-              <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.6))", margin: "6px 0 0" }}>
+              <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)", margin: "6px 0 0" }}>
                 {l.marketCapUsd > 0 ? `${fmtUsd(l.marketCapUsd)} mcap` : "no trades yet"}
                 {liq !== null && <> · <span style={{ color: liqColor(liq), fontWeight: 600 }}>{fmtUsd(liq)} liq</span></>}
                 {l.volumeToMcapRatio !== null && ` · ${l.volumeToMcapRatio.toFixed(1)}x vol/mcap`}
@@ -5743,13 +5909,13 @@ function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult 
                 </div>
               )}
               {!l.risk && (
-                <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "7px 0 0" }}>
+                <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)", margin: "7px 0 0" }}>
                   Not indexed by DexScreener yet — too new to scan.
                 </p>
               )}
 
               <p style={{ ...MONO, fontSize: "0.64rem", margin: "7px 0 0" }}>
-                <a href={l.creator.profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--card-text-dim, rgba(255,255,255,0.55))", textDecoration: "none" }}>
+                <a href={l.creator.profileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--card-text-dim)", textDecoration: "none" }}>
                   by @{l.creator.xUsername ?? "unknown"}
                 </a>
                 {repeat && (
@@ -5776,11 +5942,11 @@ function RobinhoodLaunchesDisplay({ result }: { result: RobinhoodLaunchesResult 
 
       <div style={{ padding: "10px 18px 13px", borderTop: "1px solid var(--card-border-faint)" }}>
         {omittedCount > 0 && (
-          <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "0 0 6px" }}>
+          <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)", margin: "0 0 6px" }}>
             +{omittedCount} more fetched but not shown — ask again to see fresh ones as they land.
           </p>
         )}
-        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, lineHeight: 1.6 }}>
+        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)", margin: 0, lineHeight: 1.6 }}>
           Token names are unverified — anyone can launch a token referencing a public figure or brand with zero affiliation. Repeat-launch count and the DexScreener scan above are the only safety signals shown here.
         </p>
       </div>
@@ -5850,15 +6016,15 @@ function ApprovalRowCard({ row, onTxSubmitted }: { row: ApprovalRow; onTxSubmitt
               {t("unlimited")}
             </span>
           )}
-          <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{row.chainName}</span>
+          <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)" }}>{row.chainName}</span>
         </div>
         <a href={`${explorerBase}/address/${row.spender}`} target="_blank" rel="noopener noreferrer"
-          style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.5))", textDecoration: "none" }}
+          style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", textDecoration: "none" }}
           title={row.spender}>
           {t("spender")} {short(row.spender)} ↗
         </a>
         {!row.unlimited && (
-          <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+          <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)" }}>
             {t("allowance")} {row.allowanceDisplay}
           </span>
         )}
@@ -5891,17 +6057,17 @@ function ApprovalScanDisplay({ result, onTxSubmitted }: { result: ApprovalScanRe
   return (
     <div style={{ background: "var(--card-container-bg, #0D0D0D)", border: "1px solid var(--card-border, rgba(255,255,255,0.09))", borderRadius: 16, overflow: "hidden" }}>
       <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0 }}>
+        <p style={{ ...MONO, fontSize: "0.65rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--card-text-faint)", margin: 0 }}>
           {t("header")}
         </p>
-        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)" }}>
           {t("rowCount", { count: result.rows.length })}
         </span>
       </div>
 
       <div style={{ padding: "2px 20px" }}>
         {result.rows.length === 0 ? (
-          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", padding: "16px 0" }}>
+          <p style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)", padding: "16px 0" }}>
             {t("empty")}
           </p>
         ) : (
@@ -5912,7 +6078,7 @@ function ApprovalScanDisplay({ result, onTxSubmitted }: { result: ApprovalScanRe
       </div>
 
       <div style={{ padding: "10px 20px 13px" }}>
-        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: 0, lineHeight: 1.6 }}>
+        <p style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)", margin: 0, lineHeight: 1.6 }}>
           {t("windowCaveat", { days: result.windowDays })}
         </p>
       </div>
@@ -5961,18 +6127,18 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
   return (
     <div style={{ border: "1px solid rgba(245,184,0,0.2)", borderRadius: 14, overflow: "hidden", maxWidth: 480 }}>
       <div style={{ padding: "13px 18px 11px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint, rgba(255,255,255,0.3))" }}>{t("eyebrow")}</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.1em", color: "var(--card-text-faint)" }}>{t("eyebrow")}</span>
         <span style={{ ...MONO, fontSize: "0.72rem", color: "#F5B800", fontWeight: 700 }}>{symbol}</span>
-        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", marginLeft: "auto" }}>{t("viaDefiLlama")}</span>
+        <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)", marginLeft: "auto" }}>{t("viaDefiLlama")}</span>
       </div>
 
       <div>
         {pools.map((pool, i) => (
           <div key={pool.pool} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: i < pools.length - 1 ? "1px solid var(--card-border-faint, rgba(255,255,255,0.05))" : "none" }}>
-            <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", width: 14, flexShrink: 0 }}>{i + 1}</span>
+            <span style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)", width: 14, flexShrink: 0 }}>{i + 1}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ ...MONO, fontSize: "0.75rem", color: "var(--card-text, #ffffff)", margin: 0 }}>{PROJECT_LABELS[pool.project] ?? pool.project}</p>
-              <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: "2px 0 0" }}>
+              <p style={{ ...MONO, fontSize: "0.62rem", color: "var(--card-text-dim)", margin: "2px 0 0" }}>
                 {pool.chain}
                 {pool.apyReward != null && pool.apyReward > 0 && (
                   <span style={{ color: "#F5B800", marginLeft: 6 }}>{t("rewards", { pct: pool.apyReward.toFixed(2) })}</span>
@@ -5981,7 +6147,7 @@ function YieldPoolsDisplay({ result }: { result: YieldPoolsResult }) {
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <p style={{ ...MONO, fontSize: "0.85rem", color: "#22c55e", fontWeight: 700, margin: 0 }}>{pool.apy.toFixed(2)}%</p>
-              <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "2px 0 0" }}>{t("tvl", { value: fmtTvl(pool.tvlUsd) })}</p>
+              <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)", margin: "2px 0 0" }}>{t("tvl", { value: fmtTvl(pool.tvlUsd) })}</p>
             </div>
             {PROJECT_URLS[pool.project] && (
               <a
@@ -6031,7 +6197,7 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
   return (
     <div style={{ width: "100%" }}>
       <div style={{ marginBottom: 12 }}>
-        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+        <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
           {topic ? t("headerTopic", { topic: topic.toUpperCase() }) : t("headerTrending")}
         </span>
       </div>
@@ -6044,7 +6210,7 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
           <p style={{ ...MONO, fontSize: "0.58rem", color: "rgba(245,184,0,0.7)", letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 8px" }}>
             {deposit.amount ? t("depositWithAmount", { amount: deposit.amount }) : t("deposit")}
           </p>
-          <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", margin: "0 0 8px", lineHeight: 1.5 }}>
+          <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--card-text-dim)", margin: "0 0 8px", lineHeight: 1.5 }}>
             {t("depositInstructions")}
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -6067,7 +6233,7 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
               </div>
             )}
           </div>
-          <p style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "8px 0 0", lineHeight: 1.5 }}>
+          <p style={{ ...MONO, fontSize: "0.55rem", color: "var(--card-text-faint)", margin: "8px 0 0", lineHeight: 1.5 }}>
             {t("checkBalanceHint")}
           </p>
         </div>
@@ -6098,12 +6264,12 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
                 onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--card-border-faint, rgba(255,255,255,0.05))")}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--card-border, rgba(255,255,255,0.09))")}
               >
-                <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", width: 16, flexShrink: 0 }}>{i + 1}</span>
+                <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-faint)", width: 16, flexShrink: 0 }}>{i + 1}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ ...MONO, fontSize: "0.75rem", color: "var(--card-text, #ffffff)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {topMarket.question}
                   </p>
-                  <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint, rgba(255,255,255,0.3))", margin: "3px 0 0" }}>
+                  <p style={{ ...MONO, fontSize: "0.58rem", color: "var(--card-text-faint)", margin: "3px 0 0" }}>
                     {fmtVolume(event.volume)}
                   </p>
                 </div>
@@ -6118,7 +6284,7 @@ function PolymarketDisplay({ result }: { result: PolymarketResult }) {
                       <span style={{ ...MONO, fontSize: "0.8rem", fontWeight: 700, color: j === 0 ? "#22c55e" : "#ef4444" }}>
                         {fmtPrice(topMarket.outcomePrices[j] ?? "0")}
                       </span>
-                      <span style={{ ...MONO, fontSize: "0.5rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", marginTop: 1 }}>{outcome}</span>
+                      <span style={{ ...MONO, fontSize: "0.5rem", color: "var(--card-text-dim)", marginTop: 1 }}>{outcome}</span>
                     </div>
                   ))}
                 </div>
@@ -6142,7 +6308,7 @@ function SuggestionsDisplay({ result, onSelect }: { result: SuggestionsResult; o
   const t = useTranslations("app.suggestions");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim, rgba(255,255,255,0.45))", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+      <span style={{ ...MONO, fontSize: "0.6rem", color: "var(--card-text-dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
         {t("tryOneOfThese")}
       </span>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

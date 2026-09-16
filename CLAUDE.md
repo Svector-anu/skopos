@@ -33,7 +33,7 @@ The POST handler executes checks in strict order. Each layer short-circuits on m
 **Pre-layer: fast-paths** (run before structural checks)
 - Guided buy/sell (`buy TOKEN on CHAIN` / `sell TOKEN on CHAIN`) → conversational prompt asking for amount
 - Price fast-path (`queryType === "price"`) → CoinGecko/DexScreener price card
-- FX / Metal / Equity → Pyth Hermes rate
+- FX / Metal / Equity → rate lookup (`lib/pyth.ts` — no longer Pyth, see External Services)
 
 **Layer 1 — STRUCTURAL** (format-based, no intent classification, no wallet required)
 - ENS name (`*.eth`) → resolveENS → address card
@@ -201,16 +201,16 @@ A2A_KPI_SEED             # optional — pre-counter A2A call history (~900), add
 | DexScreener | Price fallback + token risk | none |
 | DeFiLlama | Yield pools | none |
 | Polymarket Gamma | Prediction markets | none |
-| Pyth Hermes (`hermes.pyth.network`) | FX rates, metals, equities | none |
+| open.er-api.com / gold-api.com / Yahoo chart | FX rates, metals, equities (`lib/pyth.ts`) — Pyth Hermes moved these behind commercial entitlements 2026-09 and now returns 403 `Not entitled` for every one | none |
 
 **Price source ownership** — never duplicate across sources:
 | Query type | Source |
 |---|---|
 | Crypto spot price | CoinGecko → DexScreener (`priceCache.ts`) |
 | 7-day sparkline | CoinGecko (`priceCache.ts`) |
-| FX conversion / rate | Pyth (`lib/pyth.ts`) |
-| Gold / silver | Pyth (`lib/pyth.ts`) |
-| Equity price | Pyth (`lib/pyth.ts`) |
+| FX conversion / rate | open.er-api.com (`lib/pyth.ts`) |
+| Gold / silver | gold-api.com (`lib/pyth.ts`) |
+| Equity price | Yahoo chart API (`lib/pyth.ts`) — unofficial, see the module header |
 
 All external fetches use an 8s `AbortController` timeout via `fetchWithTimeout()`.
 
@@ -220,7 +220,7 @@ All external fetches use an 8s `AbortController` timeout via `fetchWithTimeout()
 
 `docs/skopos-system.md` — authoritative architecture reference, update when anything structural changes.
 `docs/skopos-core.md` — deeper architecture and routing waterfall detail.
-`docs/pyth-integration.md` — verified feed IDs, Hermes API endpoints, cross-rate math, staleness rules. Update when adding new Pyth feeds.
+`docs/pyth-integration.md` — **superseded 2026-09-16**, kept as the record of what Pyth served before it moved these feeds behind commercial entitlements. The live sources and their staleness rules are documented in `lib/pyth.ts` itself.
 `docs/headless-text-mode.md` — `/api/chat` `format:"text"` for agents/bots (imessage-i, CLI, MCP): request/response contract, per-type text, the fail-closed intel cost cap. Update when adding card types or changing the text projection (`lib/cardToText.ts`).
 `skills/skopos/SKILL.md` + `mcp/` — Skopos as an installable agent skill (Agent Skills SKILL.md standard) and an MCP server (`skopos-mcp`), both thin wrappers over the headless API. `skills/README.md` has per-tool install paths. Keep the skill's capability list in sync with what text mode actually returns.
 `docs/paid-data-sources.md` — every external x402 endpoint **Skopos itself pays as a client** (Nansen, Robinhood Chain launches) — the opposite direction from the Agent-payable API below. Add a new source here whenever Skopos starts paying for another one; reuse `lib/x402Agent.ts`, don't re-derive a signer per source.

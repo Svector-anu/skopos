@@ -42,6 +42,10 @@ export function HeroTitle() {
     if (!wrap || !canvas) return;
 
     const ctx = canvas.getContext("2d")!;
+    // Stays at effect scope while dpr/mobile/fgStep/bgStep moved into build():
+    // those describe the viewport and have to be re-read on every resize, this
+    // describes the user and does not change when the window does.
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let alive = true;
     let buildId = 0;
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -211,7 +215,7 @@ export function HeroTitle() {
         }
 
         ctx.globalAlpha = 1;
-        raf.current = requestAnimationFrame(tick);
+        if (!reduceMotion) raf.current = requestAnimationFrame(tick);
       }
 
       tick();
@@ -252,11 +256,11 @@ export function HeroTitle() {
     >
       <canvas
         ref={canvasRef}
+        aria-hidden="true"
         style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 2 }}
       />
-      {/* Invisible spacer — gives wrapper its dimensions for canvas sizing */}
-      <div
-        aria-hidden="true"
+      {/* Accessible heading also gives the wrapper its dimensions for canvas sizing. */}
+      <h1
         style={{
           fontFamily: "var(--font-display), serif",
           fontWeight: 700,
@@ -269,7 +273,7 @@ export function HeroTitle() {
         }}
       >
         SKOPOS
-      </div>
+      </h1>
     </div>
   );
 }

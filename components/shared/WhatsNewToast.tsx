@@ -1,43 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslations } from "next-intl";
 
-const DEFAULT_KEY     = "skopos-whatsnew-v2";
 const TTL_MS          = 3 * 24 * 60 * 60 * 1000;
 
-const DEFAULT_CHANGES = [
-  "Ask Skopos anything — bridges, swaps, gas, yields, market odds",
-  "Live prediction market odds directly in chat",
-  "Responses are 2× faster",
-];
-
 interface WhatsNewToastProps {
-  storageKey?: string;
-  changes?: string[];
+  storageKey: string;
+  changes: string[];
 }
 
-export function WhatsNewToast({ storageKey = DEFAULT_KEY, changes = DEFAULT_CHANGES }: WhatsNewToastProps) {
+export function WhatsNewToast({ storageKey, changes }: WhatsNewToastProps) {
   const t = useTranslations("app.whatsNew");
-  const [isMobile] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 600 : false
-  );
-  const [visible, setVisible] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw === "dismissed") return false;
-      if (raw) {
-        if (Date.now() - Number(raw) > TTL_MS) { localStorage.removeItem(storageKey); return false; }
-        return true;
+  const [isMobile, setIsMobile] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setIsMobile(window.innerWidth < 600);
+
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw === "dismissed") return;
+        if (raw) {
+          if (Date.now() - Number(raw) > TTL_MS) {
+            localStorage.removeItem(storageKey);
+            return;
+          }
+          setVisible(true);
+          return;
+        }
+        localStorage.setItem(storageKey, String(Date.now()));
+        setVisible(true);
+      } catch {
+        // Keep the toast hidden when storage is unavailable.
       }
-      localStorage.setItem(storageKey, String(Date.now()));
-      return true;
-    } catch {
-      return false;
-    }
-  });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [storageKey]);
 
   function dismiss() {
     localStorage.setItem(storageKey, "dismissed");

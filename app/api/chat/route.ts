@@ -48,7 +48,7 @@ import { discoverX402Endpoint } from "@/lib/x402Discover";
 import { findFundingChains, type FundingScan } from "@/lib/flashChainPicker";
 import { buildStockPairedItem, findStockPairedTokens, topPairLooksStockPaired, STOCK_PAIR_TICKERS, type StockPairedItem } from "@/lib/stockPaired";
 import { parseTimeframe } from "@/lib/timeframe";
-import { cardToText, executeLinkFor, chartImageFor } from "@/lib/cardToText";
+import { cardToText, executeLinkFor, chartImageFor, headlessHandoffFields } from "@/lib/cardToText";
 import { sanitizeForPrompt } from "@/lib/sanitizeForPrompt";
 
 // ── price query token recognition ────────────────────────────────────────────
@@ -970,12 +970,12 @@ export type FlashOrderLegOk = {
 // capability, not a redundant one. Solana is deliberately excluded — Flash
 // supports it, but nothing in Skopos has a Solana signing path for Flash
 // (Ed25519/Phantom, not EIP-712), so it stays out of scope here.
-const FLASH_ADVANCED_ORDER_CHAINS: Record<number, FlashChain> = {
+export const FLASH_ADVANCED_ORDER_CHAINS: Record<number, FlashChain> = {
   1: "ethereum", 8453: "base", 42161: "arbitrum", 10: "optimism",
   137: "polygon", 56: "bsc", 43114: "avalanche",
   [ROBINHOOD_CHAIN_ID]: "robinhood",
 };
-const FLASH_CHAIN_DISPLAY_NAME: Record<FlashChain, string | undefined> = {
+export const FLASH_CHAIN_DISPLAY_NAME: Record<FlashChain, string | undefined> = {
   ethereum: "Ethereum", base: "Base", arbitrum: "Arbitrum", optimism: "Optimism",
   polygon: "Polygon", bsc: "BSC", avalanche: "Avalanche", robinhood: "Robinhood Chain",
   solana: undefined, hyperevm: undefined, plasma: undefined, monad: undefined,
@@ -1513,7 +1513,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const text = await cardToText(card, { anonId, senderAddress, sparkline });
   const link = executeLinkFor(card, message);
   const image = chartImageFor(card);
-  return json({ type, text, ...(link ? { link } : {}), ...(image ? { image } : {}) }, { status: res.status });
+  const handoff = headlessHandoffFields(card);
+  return json({ type, text, ...handoff, ...(link ? { link } : {}), ...(image ? { image } : {}) }, { status: res.status });
 }
 
 // /api/chat is POST-only. A browser click sends GET — instead of a bare error,
@@ -2122,26 +2123,41 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   const orderText = bracketParse?.remainder ?? trimmed;
 
   if (textMode) {
-    // Headless clients have no wallet — same handoff shape as the single-leg
-    // intent block below, just without a resolved quote to hand off.
-    const parsed = parseFlashOrderIntent(orderText);
-    if (parsed && "order" in parsed) {
-      return json({
-        type: "text",
-        text: `Advanced Flash orders (${parsed.order.orderType}) aren't available in headless mode yet — open the Skopos app to place this order.`,
-      });
-    }
-    // Headless has no LLM order parse (issue #80), so phrasings the regexes
-    // miss used to fall through to the swap pipeline, which read "buy 0.05 ETH
-    // at $2800 on arbitrum" as a same-token swap and handed back "ETH on
-    // arbitrum → ETH on arbitrum". Say what's actually true instead.
+    // A protected entry needs two signatures, so it remains app-only. Issue
+    // #80 covers the four single advanced-order types, not bracket execution.
     if (bracketParse) {
-      // Four wallet interactions and two signatures — nothing a headless
-      // client can complete. Say what it is rather than reusing the generic
-      // advanced-order line, so the caller knows the pair was understood.
       return json({
         type: "text",
         text: `That's an order with a stop-loss ($${bracketParse.bracket.stopLoss.price}) and take-profit ($${bracketParse.bracket.takeProfit.price}) attached. Protected orders need two signatures, so they're app-only for now — open the Skopos app to place it.`,
+      });
+    }
+
+    // Mirror the browser's strict-regex -> structured-LLM -> loose-ask
+    // pipeline, but stop before wallet lookup and quote construction. The
+    // returned card contains intent only; POST allowlists these fields and
+    // never exposes calldata, approvals, or EIP-712 signing payloads.
+    let orderParse = parseFlashOrderStrict(orderText);
+    if (!orderParse && flashOrderLlmGate(orderText)) {
+      const llm = await llmParseFlashOrder(orderText, tier, meterMeta);
+      if (llm && llm.orderType !== "market") {
+        orderParse = mapLlmFlashOrder(llm);
+        if (orderParse) await recordSmart();
+      }
+    }
+    if (!orderParse) orderParse = parseFlashOrderLoose(orderText);
+    if (orderParse) {
+      if ("ask" in orderParse) return json({ type: "text", text: orderParse.ask });
+      const order = orderParse.order;
+      return json({
+        type: "quote",
+        mode: "handoff",
+        orderType: order.orderType,
+        side: order.side,
+        qty: order.qty,
+        ...(order.priceLevel ? { price: order.priceLevel } : {}),
+        ...(order.durationSeconds ? { duration: order.durationSeconds } : {}),
+        token: order.token.toUpperCase(),
+        ...(order.chain ? { chain: order.chain } : {}),
       });
     }
     if (looksLikeAdvancedOrder(orderText)) {
