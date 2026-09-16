@@ -201,16 +201,16 @@ A2A_KPI_SEED             # optional — pre-counter A2A call history (~900), add
 | DexScreener | Price fallback + token risk | none |
 | DeFiLlama | Yield pools | none |
 | Polymarket Gamma | Prediction markets | none |
-| Pyth Hermes (`hermes.pyth.network`) | FX rates, metals, equities | none |
+| open.er-api.com / gold-api.com / Yahoo chart | FX rates, metals, equities (`lib/pyth.ts`) — Pyth Hermes moved these behind commercial entitlements 2026-09 and now returns 403 `Not entitled` for every one | none |
 
 **Price source ownership** — never duplicate across sources:
 | Query type | Source |
 |---|---|
 | Crypto spot price | CoinGecko → DexScreener (`priceCache.ts`) |
 | 7-day sparkline | CoinGecko (`priceCache.ts`) |
-| FX conversion / rate | Pyth (`lib/pyth.ts`) |
-| Gold / silver | Pyth (`lib/pyth.ts`) |
-| Equity price | Pyth (`lib/pyth.ts`) |
+| FX conversion / rate | open.er-api.com (`lib/pyth.ts`) |
+| Gold / silver | gold-api.com (`lib/pyth.ts`) |
+| Equity price | Yahoo chart API (`lib/pyth.ts`) — unofficial, see the module header |
 
 All external fetches use an 8s `AbortController` timeout via `fetchWithTimeout()`.
 
