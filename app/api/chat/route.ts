@@ -970,12 +970,12 @@ export type FlashOrderLegOk = {
 // capability, not a redundant one. Solana is deliberately excluded — Flash
 // supports it, but nothing in Skopos has a Solana signing path for Flash
 // (Ed25519/Phantom, not EIP-712), so it stays out of scope here.
-const FLASH_ADVANCED_ORDER_CHAINS: Record<number, FlashChain> = {
+export const FLASH_ADVANCED_ORDER_CHAINS: Record<number, FlashChain> = {
   1: "ethereum", 8453: "base", 42161: "arbitrum", 10: "optimism",
   137: "polygon", 56: "bsc", 43114: "avalanche",
   [ROBINHOOD_CHAIN_ID]: "robinhood",
 };
-const FLASH_CHAIN_DISPLAY_NAME: Record<FlashChain, string | undefined> = {
+export const FLASH_CHAIN_DISPLAY_NAME: Record<FlashChain, string | undefined> = {
   ethereum: "Ethereum", base: "Base", arbitrum: "Arbitrum", optimism: "Optimism",
   polygon: "Polygon", bsc: "BSC", avalanche: "Avalanche", robinhood: "Robinhood Chain",
   solana: undefined, hyperevm: undefined, plasma: undefined, monad: undefined,
