@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { SealPublishPanel, type SealSeed } from "./SealPublishPanel";
 import { useTranslations } from "next-intl";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet, useWallets, useConnectWallet, useSignMessage } from "@privy-io/react-auth";
@@ -2472,6 +2473,30 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     return parseFloat(net.toFixed(6)).toString();
   })();
 
+  // A Seal is FlashOrderIntent minus qty, and every one of those fields is
+  // already on this card. Market orders are excluded: a Seal's whole value is a
+  // standing instruction, and an unprotected market order is not one.
+  const sealSeed: SealSeed | null = (() => {
+    const f = result.flash;
+    if (!f || f.orderType === "market") return null;
+    if (f.orderType !== "limit" && f.orderType !== "stop-loss"
+        && f.orderType !== "take-profit" && f.orderType !== "twap") return null;
+    return {
+      side: f.side,
+      orderType: f.orderType,
+      // qty is denominated in the asset being SPENT, so the token the policy is
+      // ABOUT is the other side of the pair on a buy.
+      token: f.side === "buy" ? intent.to.token : intent.from.token,
+      chain: intent.from.chain,
+      qty: f.qty,
+      ...(f.triggerPrice     !== undefined ? { priceLevel:      f.triggerPrice } : {}),
+      ...(f.triggerType      !== undefined ? { triggerType:     f.triggerType } : {}),
+      ...(f.durationSeconds  !== undefined ? { durationSeconds: f.durationSeconds } : {}),
+      ...(f.twapBucketCount  !== undefined ? { twapBucketCount: f.twapBucketCount } : {}),
+      ...(f.bracket ? { bracket: { takeProfit: f.bracket.takeProfit, stopLoss: f.bracket.stopLoss } } : {}),
+    };
+  })();
+
   const recipient = intent.to.receiver ?? connectedAddress;
   const summaryRows: { label: string; value: string }[] = [
     { label: t("summary.via"),           value: route.tool },
@@ -2726,6 +2751,17 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
                 {isRevalidating ? t("recheckingRoute") : isSending ? t("confirmInWallet") : isExpired ? t("quoteExpiredRefresh") : t("executeArrow")}
               </button>
             )}
+          </div>
+        )}
+
+        {/* Offered once the order is priced and before anything is signed: the
+            parsed intent on screen is exactly what a Seal stores, so publishing
+            is a name and a range rather than a form. Never on a card that IS a
+            Seal — re-sharing someone else's policy under your own name is a
+            different feature with different questions. */}
+        {sealSeed && connectedAddress && !executionMode && !result.seal && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
+            <SealPublishPanel seed={sealSeed} creator={connectedAddress} />
           </div>
         )}
       </div>
