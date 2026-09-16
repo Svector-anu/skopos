@@ -35,6 +35,8 @@ export const CHAIN_IDS: Record<string, number> = {
   plasma: 9745,
   // Arbitrum
   arbitrum: 42161, arb: 42161, "arbitrum one": 42161,
+  // Circle's Arc. Gas is USDC, which is why nothing here quotes against ETH.
+  arc: 5042, "arc network": 5042,
   // Celo
   celo: 42220,
   // Avalanche

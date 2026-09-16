@@ -359,6 +359,7 @@ const EXPLORER_URLS: Record<string, string> = {
   Blast: "https://blastscan.io/tx/", Scroll: "https://scrollscan.com/tx/",
   MegaETH: "https://mega.etherscan.io/tx/",
   "Robinhood Chain": "https://robinhoodchain.blockscout.com/tx/",
+  Arc: "https://explorer.arc.io/tx/",
 };
 
 // Matches lib/chains.ts's CHAIN_IDS "robinhood" entry — Flash (Definitive)
