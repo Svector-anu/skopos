@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { SealPublishPanel, type SealSeed } from "./SealPublishPanel";
 import { useTranslations } from "next-intl";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
 import { usePrivy, useFundWallet, useWallets, useConnectWallet, useSignMessage } from "@privy-io/react-auth";
@@ -132,6 +133,11 @@ type QuoteResult = {
   flash?: FlashLegInfo;
   relay?: RelayLegInfo;
   analysis?: string;
+  // Present when this quote came from a Seal. Its only job is to route the
+  // submit at the bottom of FlashExecuteButton to the bound endpoint — a Seal's
+  // order body is rebuilt server-side from the stored policy, so the browser
+  // sends a quoteId and a signature and never names an order field.
+  seal?: { id: string; title: string; creator: string; size: string };
 };
 
 type TextResult      = { type: "text";      text: string; suggestions?: { label: string; command: string }[] };
@@ -859,6 +865,47 @@ export default function AppPage() {
     setSidebarExpanded(false);
   }
 
+  // ── Seal instantiation ──────────────────────────────────────────────────────
+  // A Seal opened at /s/<id> hands off here with an id and a size. The policy is
+  // never re-parsed from text: /api/seal/<id>/quote reads the stored record,
+  // compiles it with this wallet's size and returns the same quote card shape
+  // the chat path produces, so QuoteDisplay and FlashExecuteButton render and
+  // sign it with no new component.
+  const [pendingSeal, setPendingSeal] = useState<{ id: string; size: string } | null>(null);
+
+  function openSeal(sealId: string, size: string) {
+    setMessages(prev => [...prev, { role: "user", text: `Use Seal ${sealId} at ${size}` }]);
+    setPendingSeal({ id: sealId, size });
+    // The Seal page has no wallet context — Web3Provider is mounted only under
+    // /app — so connecting is this page's job, and the quote waits for it.
+    if (!authenticated) login();
+  }
+
+  useEffect(() => {
+    if (!pendingSeal || !connectedAddress) return;
+    const seal = pendingSeal;
+    setPendingSeal(null);
+    setLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`/api/seal/${encodeURIComponent(seal.id)}/quote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ size: seal.size, senderAddress: connectedAddress }),
+        });
+        const data = await res.json();
+        setMessages(prev => [...prev, { role: "assistant", result: data }]);
+      } catch {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          result: { type: "error", text: "Couldn't reach Skopos to price this Seal. Check your connection and try again." },
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [pendingSeal, connectedAddress, authenticated, login]);
+
   async function submit(msg?: string) {
     const text = (msg ?? value).trim();
     if (!text) return;
@@ -1021,7 +1068,7 @@ export default function AppPage() {
   return (
     <>
     <Suspense>
-      <AutoSubmit onSubmit={submit} />
+      <AutoSubmit onSubmit={submit} onSeal={openSeal} />
     </Suspense>
     <main style={{ position: "relative", height: "100vh", width: "100vw", background: T.bg, display: "flex", overflow: "hidden" }}>
 
@@ -1946,16 +1993,37 @@ export default function AppPage() {
 
 // ─── AutoSubmit ───────────────────────────────────────────────────────────────
 
-function AutoSubmit({ onSubmit }: { onSubmit: (q: string) => void }) {
+function AutoSubmit({ onSubmit, onSeal }: {
+  onSubmit: (q: string) => void;
+  onSeal: (sealId: string, size: string) => void;
+}) {
   const searchParams = useSearchParams();
   // Hold the latest onSubmit in a ref so it isn't an effect dependency — otherwise
   // the effect re-runs on every render (onSubmit is recreated each render).
   const onSubmitRef = useRef(onSubmit);
   onSubmitRef.current = onSubmit;
+  // Held in an effect rather than assigned during render like the line above:
+  // react-hooks/refs flags the older pattern, and a new occurrence of an
+  // existing lint error is still a new lint error.
+  const onSealRef = useRef(onSeal);
+  useEffect(() => { onSealRef.current = onSeal; });
   const fired = useRef(false);
 
   useEffect(() => {
     if (fired.current) return;
+
+    // A Seal arrives as a structured reference, never as a sentence. Compiling
+    // it to English and reusing ?q= would work today — restate() is round-trip
+    // tested — but it would make every future parser change a silent,
+    // retroactive edit to every Seal ever published.
+    const sealId = searchParams.get("seal");
+    const size = searchParams.get("size");
+    if (sealId && size) {
+      fired.current = true;
+      onSealRef.current(sealId, size);
+      return;
+    }
+
     const q = searchParams.get("q");
     if (!q) return;
     fired.current = true;
@@ -2405,6 +2473,30 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
     return parseFloat(net.toFixed(6)).toString();
   })();
 
+  // A Seal is FlashOrderIntent minus qty, and every one of those fields is
+  // already on this card. Market orders are excluded: a Seal's whole value is a
+  // standing instruction, and an unprotected market order is not one.
+  const sealSeed: SealSeed | null = (() => {
+    const f = result.flash;
+    if (!f || f.orderType === "market") return null;
+    if (f.orderType !== "limit" && f.orderType !== "stop-loss"
+        && f.orderType !== "take-profit" && f.orderType !== "twap") return null;
+    return {
+      side: f.side,
+      orderType: f.orderType,
+      // qty is denominated in the asset being SPENT, so the token the policy is
+      // ABOUT is the other side of the pair on a buy.
+      token: f.side === "buy" ? intent.to.token : intent.from.token,
+      chain: intent.from.chain,
+      qty: f.qty,
+      ...(f.triggerPrice     !== undefined ? { priceLevel:      f.triggerPrice } : {}),
+      ...(f.triggerType      !== undefined ? { triggerType:     f.triggerType } : {}),
+      ...(f.durationSeconds  !== undefined ? { durationSeconds: f.durationSeconds } : {}),
+      ...(f.twapBucketCount  !== undefined ? { twapBucketCount: f.twapBucketCount } : {}),
+      ...(f.bracket ? { bracket: { takeProfit: f.bracket.takeProfit, stopLoss: f.bracket.stopLoss } } : {}),
+    };
+  })();
+
   const recipient = intent.to.receiver ?? connectedAddress;
   const summaryRows: { label: string; value: string }[] = [
     { label: t("summary.via"),           value: route.tool },
@@ -2420,6 +2512,19 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
       border: `1px solid ${executionMode ? "rgba(245,184,0,0.2)" : "var(--card-border, rgba(255,255,255,0.09))"}`,
       borderRadius: 16, overflow: "hidden", maxWidth: 400,
     }}>
+
+      {/* A Seal's policy was written by someone else, so the card says so and
+          names them. Without it the order looks like one the user composed. */}
+      {result.seal && (
+        <div style={{ padding: "9px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", background: "rgba(245,184,0,0.06)" }}>
+          <p style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.09em", textTransform: "uppercase", color: "rgba(245,184,0,0.9)", margin: 0 }}>
+            Seal — {result.seal.title}
+          </p>
+          <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--card-text-dim)", margin: "3px 0 0" }}>
+            policy by {shortAddr(result.seal.creator)} · your size {result.seal.size} · your order, your wallet
+          </p>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ padding: "11px 16px", borderBottom: "1px solid var(--card-border, rgba(255,255,255,0.09))", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -2523,7 +2628,11 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{value}</span>
           </div>
         ))}
-        {/* Slippage — adjustable before execution (re-quotes on change), read-only after */}
+        {/* Slippage — adjustable before execution (re-quotes on change), read-only after.
+            Hidden on Flash legs: maxSlippage/maxPriceImpact are declared on
+            FlashQuoteRequest but never assigned, so nothing here reaches Flash.
+            The control was offering a protection the order does not carry. */}
+        {!flashLeg && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: "1px solid var(--card-bg)" }}>
           <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)" }}>{t("slippage")}</span>
           {!executionMode && onSlippageChange ? (
@@ -2553,6 +2662,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{(slippage * 100).toFixed(1)}%</span>
           )}
         </div>
+        )}
       </div>
 
       {/* Action area */}
@@ -2641,6 +2751,17 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
                 {isRevalidating ? t("recheckingRoute") : isSending ? t("confirmInWallet") : isExpired ? t("quoteExpiredRefresh") : t("executeArrow")}
               </button>
             )}
+          </div>
+        )}
+
+        {/* Offered once the order is priced and before anything is signed: the
+            parsed intent on screen is exactly what a Seal stores, so publishing
+            is a name and a range rather than a form. Never on a card that IS a
+            Seal — re-sharing someone else's policy under your own name is a
+            different feature with different questions. */}
+        {sealSeed && connectedAddress && !executionMode && !result.seal && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--card-border, rgba(255,255,255,0.09))" }}>
+            <SealPublishPanel seed={sealSeed} creator={connectedAddress} />
           </div>
         )}
       </div>
@@ -2933,7 +3054,23 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       }
 
       setIsSubmitting(true);
-      const res = await fetch("/api/flash/submit", {
+
+      // A Seal's order was derived server-side from the stored policy and parked
+      // under this quoteId, so here we send only what this wallet produced. The
+      // browser naming the token, chain, price or size is exactly what must not
+      // be possible when the policy came from a stranger.
+      const seal = result.seal;
+      const res = seal
+        ? await fetch(`/api/seal/${encodeURIComponent(seal.id)}/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              quoteId: flash.quoteId,
+              userSignature: signature,
+              ...(bracketSignature ? { bracketSignature } : {}),
+            }),
+          })
+        : await fetch("/api/flash/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

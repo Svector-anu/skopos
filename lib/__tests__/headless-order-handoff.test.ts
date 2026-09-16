@@ -24,9 +24,33 @@ describe("advanced-order headless handoff", () => {
     chain: "base",
   };
 
-  it("renders a useful plain-text confirmation", async () => {
-    expect(await cardToText(handoff)).toBe(
-      "limit order ready: buy 2000 ETH at $1800 on base. Tap to review and sign in the Skopos app.",
+  // Flash prices every order in the asset being SPENT, so a buy's qty is a
+  // dollar amount and a sell's is a token count. This surface used to print it
+  // bare, which turned a $2,000 order into "buy 2000 ETH" — off by the price of
+  // ETH, and the only description of the order a headless caller ever sees.
+  it("should price a buy in the dollars it spends, not in tokens", async () => {
+    // #given a limit buy, whose qty is a dollar spend
+    // #when it is rendered for a headless caller
+    const text = await cardToText(handoff);
+
+    // #then the amount reads as money
+    expect(text).toBe(
+      "limit order ready: buy $2000 of ETH at $1800 on base. Tap to review and sign in the Skopos app.",
+    );
+  });
+
+  it("should price a sell in the tokens it sells", async () => {
+    // #given a stop-loss sell, whose qty is a token count
+    // #when it is rendered
+    const text = await cardToText({
+      type: "quote", mode: "handoff", orderType: "stop-loss",
+      side: "sell", qty: "2", price: "2000", token: "ETH",
+    });
+
+    // #then the amount keeps token units — a dollar sign here would be the
+    // same bug in the other direction
+    expect(text).toBe(
+      "stop-loss order ready: sell 2 ETH at $2000. Tap to review and sign in the Skopos app.",
     );
   });
 

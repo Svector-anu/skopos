@@ -72,7 +72,7 @@ fields they don't handle.
 | `text`, `error` | passthrough of the existing message |
 | `price` | summary line + a unicode 7d sparkline line (e.g. `ETH (Ethereum): $1.6K · -1.05% 24h · mcap $196.96B` / `▂▂▃▅▆▇█  7d +11.6% · $1.6K–$1.8K`), **plus an `image`** chart-PNG url (`/api/og/chart`) |
 | `intel` (smart-money / holders / screener / flows / flow-intel) | executes the read inline (see **Cost**) → named-wallet summary |
-| `quote` (swap/bridge/advanced order) | route or order summary + a **`link`** to sign (never a signable payload). Advanced-order handoffs also return inert `orderType`, `side`, `qty`, and `token`, plus `price`, `duration`, or `chain` when supplied. |
+| `quote` (swap/bridge/advanced order) | route or order summary + a **`link`** to sign (never a signable payload). Advanced-order handoffs also return inert `orderType`, `side`, `qty`, and `token`, plus `price`, `duration`, or `chain` when supplied. **`qty` is the asset being spent** — a dollar amount when `side` is `buy`, a token count when it is `sell` — matching Flash's own field. The `text` line states the unit; the JSON does not, so a caller reading `qty` must branch on `side`. |
 | `rebalance` | multi-leg summary + a **`link`** to sign |
 | `pay` | intent explanation + a **`link`** to sign — **never a signable payload** |
 | `address`, `tx` | the card's existing `summary` |
