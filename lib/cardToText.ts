@@ -286,7 +286,12 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
           ? ` at $${price}`
           : duration !== null ? ` over ${duration} seconds` : "";
         const where = chain ? ` on ${chain}` : "";
-        return `${clean(c.orderType, 16)} order ready: ${side} ${qty} ${token}${detail}${where}. Tap to review and sign in the Skopos app.`;
+        // Flash prices a BUY in the asset being spent, so qty on a buy is a
+        // dollar amount and on a sell is a token count. Printing it bare read
+        // "buy 140 ETH" for a $140 order — the same mistake restate() was
+        // written to stop, on the one surface where the sentence IS the order.
+        const amount = side === "buy" ? `$${qty} of ${token}` : `${qty} ${token}`;
+        return `${clean(c.orderType, 16)} order ready: ${side} ${amount}${detail}${where}. Tap to review and sign in the Skopos app.`;
       }
       const qi = c.intent as { from?: { token?: string; amount?: string; chain?: string }; to?: { token?: string; chain?: string } } | undefined;
       const route = c.route as { outputAmount?: string; tool?: string } | undefined;

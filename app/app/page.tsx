@@ -2523,7 +2523,11 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{value}</span>
           </div>
         ))}
-        {/* Slippage — adjustable before execution (re-quotes on change), read-only after */}
+        {/* Slippage — adjustable before execution (re-quotes on change), read-only after.
+            Hidden on Flash legs: maxSlippage/maxPriceImpact are declared on
+            FlashQuoteRequest but never assigned, so nothing here reaches Flash.
+            The control was offering a protection the order does not carry. */}
+        {!flashLeg && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: "1px solid var(--card-bg)" }}>
           <span style={{ ...MONO, fontSize: "0.68rem", color: "var(--card-text-dim)" }}>{t("slippage")}</span>
           {!executionMode && onSlippageChange ? (
@@ -2553,6 +2557,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             <span style={{ ...MONO, fontSize: "0.72rem", color: "var(--card-text-muted, rgba(255,255,255,0.75))", fontWeight: 500 }}>{(slippage * 100).toFixed(1)}%</span>
           )}
         </div>
+        )}
       </div>
 
       {/* Action area */}
