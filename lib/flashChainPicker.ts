@@ -2,7 +2,7 @@ import { fetchWithTimeout } from "./http";
 import { ALCHEMY_CHAINS } from "./alchemy";
 import { NATIVE_ADDRESS } from "./chains";
 import { getToken } from "./delora";
-import { resolveRobinhoodToken, RH_CHAIN_STABLECOIN } from "./flash";
+import { resolveRobinhoodToken, RH_CHAIN_STABLECOIN, ARC_CHAIN_ID } from "./flash";
 
 // Picks which chain a chain-less advanced order should run on, by reading the
 // wallet's actual balance of the asset it would spend. Advanced orders used to
@@ -13,6 +13,7 @@ import { resolveRobinhoodToken, RH_CHAIN_STABLECOIN } from "./flash";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const ROBINHOOD_RPC = "https://rpc.mainnet.chain.robinhood.com";
+const ARC_RPC = "https://rpc.mainnet.arc.io";
 
 // Same eight chains as FLASH_ADVANCED_ORDER_CHAINS in the chat route. Kept as
 // a plain map of RPC endpoints because this module only needs to read
@@ -26,16 +27,20 @@ const FLASH_ORDER_RPCS: Record<number, string> = {
   56: ALCHEMY_CHAINS[56].rpc,
   43114: ALCHEMY_CHAINS[43114].rpc,
   [ROBINHOOD_CHAIN_ID]: ROBINHOOD_RPC,
+  [ARC_CHAIN_ID]: ARC_RPC,
 };
 
 const CHAIN_DISPLAY: Record<number, string> = {
   1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism",
+  [ARC_CHAIN_ID]: "Arc",
   137: "Polygon", 56: "BSC", 43114: "Avalanche",
   [ROBINHOOD_CHAIN_ID]: "Robinhood Chain",
 };
 
 const NATIVE_SYMBOL: Record<number, string> = {
   1: "ETH", 8453: "ETH", 42161: "ETH", 10: "ETH",
+  // Arc pays gas in USDC — Circle's whole point.
+  [ARC_CHAIN_ID]: "USDC",
   137: "POL", 56: "BNB", 43114: "AVAX",
   [ROBINHOOD_CHAIN_ID]: "ETH",
 };

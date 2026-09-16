@@ -252,7 +252,132 @@ export function flashApiKey(): string {
 
 export type FlashChain =
   | "arbitrum" | "avalanche" | "base" | "bsc" | "ethereum" | "optimism"
-  | "polygon" | "solana" | "hyperevm" | "plasma" | "monad" | "robinhood";
+  | "polygon" | "solana" | "hyperevm" | "plasma" | "monad" | "robinhood"
+  // Circle's Arc (5042). Added when Flash listed it as a day-one venue; the
+  // chain enum in their published OpenAPI also carries "ink", which is left
+  // out here deliberately — an untested chain in this union reads as support
+  // we do not have.
+  | "arc";
+
+// ── Arc (Circle, chain 5042) ────────────────────────────────────────────────
+// Delora does not route Arc, so the advanced-order path cannot resolve its
+// tokens the way it does on the other seven chains. Same situation Robinhood
+// Chain is in, and it gets the same treatment: a resolver of its own.
+//
+// The index used here is Flash's own /search rather than DexScreener, because
+// Flash is the venue that will actually fill the order — an asset it cannot
+// see is an asset it cannot trade, whatever DexScreener says about it.
+//
+// Arc's native gas token is USDC, which is why nothing on this chain is quoted
+// against ETH.
+export const ARC_CHAIN_ID = 5042;
+export const ARC_CHAIN_STABLECOIN = "USDC";
+// PINNED, never searched. Flash's Arc index already carries four separate
+// tokens calling themselves "USDC", two "CRCL" and three "PEG" — day-one
+// ticker impersonation, the same hazard that made RH_STOCK_TOKENS a pinned
+// registry. Verified against the chain itself: decimals() at this address
+// returns 6 (eth_call on rpc.mainnet.arc.io, 2026-09-16).
+export const ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
+const ARC_ADDRESS_ALIASES: Record<string, string> = {
+  USDC: ARC_USDC_ADDRESS,
+  USD:  ARC_USDC_ADDRESS,
+};
+
+export interface FlashSearchAsset {
+  chain:        string;
+  address:      string;
+  symbol:       string;
+  name:         string;
+  decimals:     number;
+  liquidity?:   string;
+  volume24h?:   string;
+  riskFlagged?: boolean;
+}
+
+/**
+ * Flash's own asset index for a chain.
+ *
+ * Exists because Delora covers neither Robinhood Chain nor Arc, and asking the
+ * venue what it can trade beats inferring it from a DEX aggregator that may
+ * see pools Flash will not route.
+ */
+async function searchFlashAssets(query: string, chain: FlashChain, limit = 20): Promise<FlashSearchAsset[]> {
+  const url = `${FLASH_BASE_URL}/search?query=${encodeURIComponent(query)}&chain=${chain}&limit=${limit}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { [FLASH_API_KEY_HEADER]: flashApiKey() } });
+    if (!res.ok) return [];
+    const data = await res.json() as { assets?: FlashSearchAsset[] };
+    return Array.isArray(data.assets) ? data.assets : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Chooses which of several same-named Arc tokens, if any, is the real one.
+ *
+ * Pure and exported because this is the part that can get someone's money into
+ * the wrong contract, and it is the only part testable without a network.
+ *
+ * Three refusals, each earned from what Arc's index actually contains on its
+ * first day: assets Flash itself flags as risky, symbol matches that are merely
+ * similar rather than identical ("USD" vs "USD//COIN" — both exist here), and
+ * books too thin to fill against. Among what survives, the deepest book wins.
+ * That is a heuristic, not proof of authenticity, which is exactly why USDC is
+ * pinned by address upstream and never reaches this function.
+ */
+export function pickArcAsset(assets: FlashSearchAsset[], symbol: string): FlashSearchAsset | null {
+  // Normalized here rather than trusted from the caller. Arc's real assets
+  // include "cirBTC", so a function that quietly required pre-upper-cased input
+  // would resolve "buy cirbtc" to nothing and look like a missing token.
+  const wanted = symbol.trim().toUpperCase();
+  const candidates = assets
+    .filter(a => a.chain === "arc")
+    .filter(a => a.riskFlagged !== true)
+    .filter(a => a.symbol.toUpperCase() === wanted)
+    .filter(a => Number(a.liquidity ?? 0) > MIN_LIQUIDITY_USD)
+    .sort((a, b) => Number(b.liquidity ?? 0) - Number(a.liquidity ?? 0));
+  return candidates[0] ?? null;
+}
+
+/**
+ * Symbol or address → an Arc contract address.
+ *
+ * Mirrors resolveRobinhoodToken's shape: raw addresses pass through, pinned
+ * aliases win before any lookup, and everything else is searched with a
+ * liquidity floor and cached for a day.
+ *
+ * Two refusals that are not in the Robinhood version, both because Arc's index
+ * hands us the information and it would be negligent not to use it: an asset
+ * Flash itself flags as risky is never resolved, and a symbol match has to be
+ * exact. "USD" matching "USD//COIN" is precisely how an impersonator gets
+ * picked, and there is one on this chain already.
+ */
+export async function resolveArcToken(symbolOrAddress: string): Promise<string | null> {
+  const q = symbolOrAddress.trim();
+  if (/^0x[0-9a-fA-F]{40}$/.test(q)) return q;
+  if (!q) return null;
+
+  const upper = q.toUpperCase();
+  if (ARC_ADDRESS_ALIASES[upper]) return ARC_ADDRESS_ALIASES[upper];
+
+  const key = `arc:token:${upper.toLowerCase()}`;
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const cached = await redis.get<string>(key);
+      if (cached) return cached;
+    } catch { /* cache miss path — fall through to live lookup */ }
+  }
+
+  const address = pickArcAsset(await searchFlashAssets(q, "arc"), upper)?.address;
+  if (!address) return null;
+
+  if (redis) {
+    try { await redis.set(key, address, { ex: CACHE_TTL_SECONDS }); } catch { /* non-fatal */ }
+  }
+  return address;
+}
 
 export type FlashOrderSide = "buy" | "sell";
 

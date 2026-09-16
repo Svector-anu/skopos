@@ -4,7 +4,7 @@ import { getToken, getQuote, getChainById,} from "@/lib/delora";
 import { FLASH_UPDATE_INTENT_RE } from "@/lib/flashUpdate";
 import { validateBracket, isBracketableOrderType, extractBracket, toFlashBracketWire, type AttachedBracket } from "@/lib/flashBracket";
 import { normalizeFlashPrice } from "@/lib/flashUpdate";
-import { resolveRobinhoodToken, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashChain, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
+import { resolveRobinhoodToken, resolveArcToken, ARC_CHAIN_ID, ARC_CHAIN_STABLECOIN, getFlashQuote, listFlashOrders, RH_CHAIN_STABLECOIN, RH_STOCK_TOKENS, RH_CHAIN_WETH, type FlashChain, type FlashOrderType, type FlashOrderSide, type FlashPriceTrigger } from "@/lib/flash";
 import { getRelayQuote, RELAY_NATIVE_ADDRESS, type RelayTransactionData } from "@/lib/relay";
 import {
   parseIntent,
@@ -974,10 +974,12 @@ export const FLASH_ADVANCED_ORDER_CHAINS: Record<number, FlashChain> = {
   1: "ethereum", 8453: "base", 42161: "arbitrum", 10: "optimism",
   137: "polygon", 56: "bsc", 43114: "avalanche",
   [ROBINHOOD_CHAIN_ID]: "robinhood",
+  [ARC_CHAIN_ID]: "arc",
 };
 export const FLASH_CHAIN_DISPLAY_NAME: Record<FlashChain, string | undefined> = {
   ethereum: "Ethereum", base: "Base", arbitrum: "Arbitrum", optimism: "Optimism",
   polygon: "Polygon", bsc: "BSC", avalanche: "Avalanche", robinhood: "Robinhood Chain",
+  arc: "Arc",
   solana: undefined, hyperevm: undefined, plasma: undefined, monad: undefined,
 };
 // Delora represents each chain's native coin with a zero-address placeholder
@@ -989,6 +991,11 @@ const FLASH_NATIVE_WRAP_SYMBOL: Record<FlashChain, string | undefined> = {
   ethereum: "WETH", base: "WETH", arbitrum: "WETH", optimism: "WETH",
   polygon: "WPOL", bsc: "WBNB", avalanche: "WAVAX", robinhood: undefined,
   solana: undefined, hyperevm: undefined, plasma: undefined, monad: undefined,
+  // Arc needs no wrap entry: its assets resolve through resolveArcToken, which
+  // returns real contracts and never Delora's zero-address placeholder. USDC is
+  // Arc's gas AND a normal ERC-20 at 0x3600…0000, so the native/wrapped split
+  // this map exists to paper over simply does not arise here.
+  arc: undefined,
 };
 
 // A sell spends the token being sold; a buy spends the contra stablecoin,
@@ -1103,11 +1110,21 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
   // Robinhood Chain's own stablecoin is USDG (Delora doesn't cover this
   // chain at all); everywhere else, USDC is the contra asset — same
   // resolver Delora-based swaps already use, not a second implementation.
+  // Arc resolves like Robinhood Chain and for the same reason: Delora routes
+  // neither, so getToken() below has nothing to answer with. Flash routes both.
+  const isArc = flashChain === "arc";
   const stablecoinSymbol = isRobinhood ? RH_CHAIN_STABLECOIN : "USDC";
 
   let targetAsset: string | null;
   let contraAsset: string | null;
-  if (isRobinhood) {
+  if (isArc) {
+    // Contra is pinned inside resolveArcToken rather than searched — Flash's
+    // Arc index carries four different tokens calling themselves USDC.
+    [targetAsset, contraAsset] = await Promise.all([
+      resolveArcToken(order.token),
+      resolveArcToken(ARC_CHAIN_STABLECOIN),
+    ]);
+  } else if (isRobinhood) {
     // No supported phrasing names a contra asset — same "no contra asset
     // specified" default RH_CHAIN_STABLECOIN's own header comment (lib/flash.ts)
     // anticipated for exactly this caller.
