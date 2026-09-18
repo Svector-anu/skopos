@@ -301,6 +301,7 @@
       "connectWallet": "Kết nối ví",
       "switching": "Đang chuyển mạng…",
       "switchToRobinhoodChain": "Chuyển sang Robinhood Chain",
+        "switchTo": "Chuyển sang {chain}",
       "wrapping": "Đang wrap…",
       "confirming": "Đang xác nhận…",
       "wrapToken": "Wrap {token}",

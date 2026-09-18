@@ -3161,7 +3161,12 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       onTxSubmitted?.({
         hash: data.orderId,
         label: `${result.intent.from.amount} ${result.intent.from.token} → ${result.intent.to.token}`,
-        explorerUrl: `https://robinhoodchain.blockscout.com/address/${flash.funderAddress}`,
+        // The funder's page on the chain the order is actually on. This was
+        // hardcoded to Robinhood's explorer from when Flash was Robinhood-only,
+        // so a Base or Arc order linked to the wrong chain the moment it
+        // succeeded. A Flash order has no tx hash at submit — it is a signed
+        // off-chain order — so the address page is the honest link.
+        explorerUrl: (EXPLORER_URLS[result.intent.from.chain] ?? "").replace(/\/tx\/$/, "/address/") + flash.funderAddress,
         chainId: originChainId, chain: result.intent.from.chain, timestamp: Date.now(),
       });
     } catch (e) {
@@ -3209,7 +3214,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       ) : !onCorrectChain ? (
         <button onClick={handleSwitchChain} disabled={isSwitching}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
-          {isSwitching ? t("switching") : t("switchToRobinhoodChain")}
+          {isSwitching ? t("switching") : t("switchTo", { chain: result.intent.from.chain })}
         </button>
       ) : needsWrap ? (
         <button onClick={wrap} disabled={isApproving || (!!wrapHash && !wrapConfirmed)}

@@ -301,6 +301,7 @@
       "connectWallet": "Connect Wallet",
       "switching": "Switching…",
       "switchToRobinhoodChain": "Switch to Robinhood Chain",
+        "switchTo": "Switch to {chain}",
       "wrapping": "Wrapping…",
       "confirming": "Confirming…",
       "wrapToken": "Wrap {token}",
