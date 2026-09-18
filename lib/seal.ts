@@ -309,6 +309,45 @@ export function typedDataMismatch(
   return null;
 }
 
+// Arc and Robinhood Chain quote against their own stablecoins. Duplicated from
+// RH_CHAIN_STABLECOIN rather than imported, because this module is imported by
+// client components (the size panel) and lib/flash drags @upstash/redis into
+// whatever imports it. A test asserts the two stay equal so the duplication
+// cannot silently drift.
+const ROBINHOOD_CHAIN_ID = 4663;
+const ARC_CHAIN_ID = 5042;
+
+export function contraSymbolForChain(chain: string): string {
+  const id = resolveChainId(chain);
+  if (id === ROBINHOOD_CHAIN_ID) return "USDG";
+  if (id === ARC_CHAIN_ID) return "USDC";
+  return "USDC";
+}
+
+/**
+ * The policy as one sentence.
+ *
+ * Shared by the Seal page and its share card. Those are the two places a
+ * stranger reads what they are about to sign, and a policy that says one thing
+ * on the card and another on the page is worse than having no card.
+ */
+export function sealPolicyLine(policy: SealPolicy, contraSymbol: string): string {
+  const sym = policy.token.toUpperCase();
+  const money = policy.side === "buy" ? contraSymbol : sym;
+
+  const head =
+    policy.orderType === "limit"        ? `${policy.side} ${sym} at $${policy.priceLevel}`
+    : policy.orderType === "stop-loss"  ? `sell ${sym} if it drops below $${policy.priceLevel}`
+    : policy.orderType === "take-profit" ? `sell ${sym} when it hits $${policy.priceLevel}`
+    : `${policy.side} ${sym} evenly over ${Math.round((policy.durationSeconds ?? 0) / 3600)}h`;
+
+  const protection = policy.bracket
+    ? `, protected by a stop at $${policy.bracket.stopLoss.price} and a target at $${policy.bracket.takeProfit.price}`
+    : "";
+
+  return `${head} on ${policy.chain}${protection} — sized by you, in ${money}.`;
+}
+
 /**
  * The exact bytes a creator signs to publish.
  *
