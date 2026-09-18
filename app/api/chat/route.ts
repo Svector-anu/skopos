@@ -1210,7 +1210,13 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       // a Seal is a policy written by someone else, and "sign an unlimited USDC
       // approval to run a stranger's policy" is a different proposition from
       // "approve exactly the amount you chose".
-      forceMinimalAllowance: true,
+      //
+      // Flash refuses the two together — "forceMinimalAllowance is not supported
+      // with attachedBracket" — so a protected entry keeps the unlimited grant
+      // rather than failing to quote at all. Sending it unconditionally broke
+      // every bracketed order for a few hours; the pair needs its own allowance
+      // on the asset the exits sell, and Flash will not size both.
+      ...(order.bracket ? {} : { forceMinimalAllowance: true }),
       // A limit entry carrying a bracket must be priced in CROSS basis. Flash
       // rejects the notional field outright with "attached_bracket limit
       // entries require limit_cross_price in v1" — confirmed live 2026-08-21
