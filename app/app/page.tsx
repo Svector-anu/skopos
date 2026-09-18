@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback, Component, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { SUPPORTED_CHAINS } from "@/lib/wagmi";
 import { SealPublishPanel, type SealSeed } from "./SealPublishPanel";
 import { useTranslations } from "next-intl";
 import type { TxData, AddressData } from "@/lib/alchemy-types";
@@ -362,10 +363,6 @@ const EXPLORER_URLS: Record<string, string> = {
   Arc: "https://explorer.arc.io/tx/",
 };
 
-// Matches lib/chains.ts's CHAIN_IDS "robinhood" entry — Flash (Definitive)
-// trades happen here instead of through Delora, which doesn't support this
-// chain. See resolveFlashLeg() in app/api/chat/route.ts.
-const ROBINHOOD_CHAIN_ID = 4663;
 
 // `label` is the translated display text (looked up via t() at the render
 // site); `prompt` is sent verbatim to the backend's English-only regex intent
@@ -2166,12 +2163,13 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
   // signed on the EVM side (the Solana address is just the destination), so it must
   // use the normal EVM execute path, not the Phantom-signing button.
   const isSolanaOrigin    = originChainId === SOLANA_CHAIN_ID;
-  // Checked separately from (and takes priority over) isRobinhoodOrigin below:
-  // a Relay leg moving funds OFF Robinhood Chain also has originChainId ===
-  // ROBINHOOD_CHAIN_ID, but it's a plain multi-step tx sequence, not a Flash
-  // same-chain swap — result.relay (not the chain ID alone) is the real signal.
+  // Checked before the Flash branch below: a Relay leg moving funds OFF
+  // Robinhood Chain also has originChainId === 4663, but it's a
+  // plain multi-step tx sequence, not a Flash order — result.relay, not the
+  // chain id, is the real signal. The same lesson applies to Flash itself:
+  // the chain id stopped identifying a Flash leg once orders reached eight
+  // chains, which is why the dispatch now reads result.flash.
   const isRelayLeg        = !!result.relay;
-  const isRobinhoodOrigin = !isRelayLeg && originChainId === ROBINHOOD_CHAIN_ID;
   const isSwap        = originChainId === destChainId;
 
   // Track the real MetaMask chain via window.ethereum — wagmi's useChainId() reads
@@ -2713,7 +2711,15 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
           <RelayExecuteSteps result={result} onTxSubmitted={onTxSubmitted} onCorrectChain={onCorrectChain} onResultUpdate={onResultUpdate} />
         ) : isSolanaOrigin ? (
           <SolanaExecuteButton result={result} onTxSubmitted={onTxSubmitted} onRevalidate={onRevalidate} />
-        ) : isRobinhoodOrigin ? (
+        ) : result.flash ? (
+          // Any Flash leg, on any chain. This used to be isRobinhoodOrigin,
+          // from when Flash was Robinhood-only; advanced orders later reached
+          // eight chains and this line never followed. A Flash order on Base
+          // fell through to the Delora swap ladder below, whose Execute sends
+          // calldata a Flash order does not have — so every non-Robinhood
+          // advanced order and every Base Seal rendered a button that could not
+          // sign. result.flash is the same discriminator the expiry badge and
+          // the slippage row already use.
           <FlashExecuteButton result={result} onTxSubmitted={onTxSubmitted} onCorrectChain={onCorrectChain} onResultUpdate={onResultUpdate} />
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
@@ -2938,11 +2944,41 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSwitching, setIsSwitching]   = useState(false);
 
+  // Switch the provider the chain CHECK reads, not Privy's first EVM wallet.
+  // onCorrectChain comes from window.ethereum; switchToChain targets
+  // wallets[0]. With two accounts connected those differ, so the switch
+  // succeeded silently on the wrong one and the button did nothing visible.
+  async function switchCheckedProvider(chainId: number) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const eth = (window as any).ethereum;
+    if (!eth?.request) return switchToChain(chainId);
+    const hex = `0x${chainId.toString(16)}`;
+    try {
+      await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
+    } catch (e) {
+      // 4902: the wallet has never seen this chain — Robinhood Chain and Arc
+      // are new enough that most wallets won't have them yet.
+      if ((e as { code?: number })?.code !== 4902) throw e;
+      const chain = SUPPORTED_CHAINS.find(c => c.id === chainId);
+      if (!chain) throw e;
+      await eth.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: hex,
+          chainName: chain.name,
+          nativeCurrency: chain.nativeCurrency,
+          rpcUrls: chain.rpcUrls.default.http,
+          ...(chain.blockExplorers?.default ? { blockExplorerUrls: [chain.blockExplorers.default.url] } : {}),
+        }],
+      });
+    }
+  }
+
   async function handleSwitchChain() {
     setErr(null);
     setIsSwitching(true);
     try {
-      await switchToChain(originChainId);
+      await switchCheckedProvider(originChainId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErr(msg.toLowerCase().includes("user rejected") ? t("rejectedInWalletShort") : t("switchFailed", { msg: msg.slice(0, 80) }));
