@@ -43,6 +43,7 @@ const bodySchema = z.object({
   durationSeconds: z.number().int().positive().optional(),
   twapBucketCount: z.number().int().positive().optional(),
   bracket:         z.object({ takeProfit: bracketLeg, stopLoss: bracketLeg }).optional(),
+  maxImpact:       z.string().min(1).max(16).optional(),
   sizing: z.object({
     min:       z.string().min(1).max(32),
     max:       z.string().min(1).max(32),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  compileSeal, validateSealPolicy, validateSize, sanitizeTitle, sizeUnitLabel,
+  compileSeal, validateSealPolicy, validateSize, sanitizeTitle, sizeUnitLabel, impactRejection, sealPublishMessage,
   type SealDraft, type SealPolicy,
 } from "@/lib/seal";
 import { FLASH_ADVANCED_ORDER_CHAINS } from "@/app/api/chat/route";
@@ -230,5 +230,59 @@ describe("sizeUnitLabel", () => {
       buy:  sizeUnitLabel(policy(), "USDC"),
       sell: sizeUnitLabel(policy({ side: "sell" }), "USDC"),
     }).toEqual({ buy: "USDC", sell: "NVDA" });
+  });
+});
+
+describe("impact cap", () => {
+  it("should carry the creator's cap into the compiled intent", () => {
+    // #given a Seal with a cap
+    // #when compiled
+    const intent = compileSeal(policy({ maxImpact: "0.05" }), "5");
+
+    // #then it reaches Flash as the request's maxPriceImpact
+    expect(intent.maxImpact).toBe("0.05");
+  });
+
+  it("should refuse a quote whose impact exceeded the cap", () => {
+    // #given Flash returned a worse impact than the request asked for — its
+    // spec says explicitly that this can happen
+    const issue = impactRejection("0.081", "0.05");
+
+    // #then the take is refused, and the message names both numbers so the
+    // consumer knows to go smaller rather than just that it failed
+    expect(issue?.code).toBe("impact_too_high");
+    expect(issue?.message).toContain("8.10%");
+    expect(issue?.message).toContain("5.00%");
+  });
+
+  it("should allow an impact exactly at the cap", () => {
+    expect(impactRejection("0.05", "0.05")).toBeNull();
+  });
+
+  it("should not refuse when the Seal set no cap", () => {
+    // #given a policy with no cap, which is the pre-existing shape
+    // #then nothing is enforced — absence is not a zero
+    expect(impactRejection("0.9", undefined)).toBeNull();
+  });
+
+  it("should not refuse when Flash produced no estimate", () => {
+    // #given a null estimate, which Flash's schema allows
+    // #then we do not invent a rejection from a missing number
+    expect(impactRejection(null, "0.05")).toBeNull();
+  });
+
+  it.each(["5", "0", "-0.1", "abc", "1.5"])("should refuse %j as a cap at publish", (bad) => {
+    // #given a cap that isn't a decimal fraction — "5" reads as 500% and caps
+    // nothing, which is worse than no cap because the page would claim one
+    expect(validateSealPolicy({ ...base, maxImpact: bad }, SUPPORTED)?.code).toBe("impact_invalid");
+  });
+
+  it("should attest the cap in the signature the creator gives", () => {
+    // #given a Seal with a cap
+    const withCap = sealPublishMessage({ ...base, maxImpact: "0.05" });
+
+    // #then the cap is in the signed bytes. a field absent from the message is
+    // a field someone else could have set
+    expect(withCap).toContain("Max impact: 0.05");
   });
 });

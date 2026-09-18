@@ -472,6 +472,10 @@ export interface FlashQuoteResponse {
   from: FlashQuoteLeg;
   to: FlashQuoteLeg;
   fees: FlashQuoteFees;
+  // Decimal, not percent — 0.0042 is 0.42%. Null when Flash produced no
+  // estimate, and per their spec it CAN exceed the maxPriceImpact the request
+  // asked for, so reading it back is the only way to enforce a cap.
+  estimatedPriceImpact: string | null;
   wrap: FlashWrapAction | null;
   evm: {
     approveTx: { to: string; data: string } | null;

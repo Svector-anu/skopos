@@ -65,6 +65,17 @@ export interface SealPolicy {
   durationSeconds?: number;
   twapBucketCount?: number;
   bracket?:         AttachedBracket;
+  /**
+   * Largest price impact the creator will let a take accept, as a decimal
+   * ("0.05" = 5%).
+   *
+   * A Seal is sized by the consumer, so the creator cannot know how thin the
+   * book will be when someone takes it. Without a cap, a policy written against
+   * a liquid pair can be executed into a bad one by a size its author never
+   * imagined — and the consumer, who did not write the policy, is the one who
+   * eats it.
+   */
+  maxImpact?:       string;
   sizing:           SealSizing;
 }
 
@@ -80,7 +91,7 @@ export type SealIssueCode =
   | "bucket_count_invalid"
   | "bracket_not_allowed" | "bracket_invalid"
   | "sizing_invalid" | "sizing_unordered"
-  | "creator_invalid";
+  | "creator_invalid" | "impact_invalid";
 
 export interface SealIssue {
   code:    SealIssueCode;
@@ -191,6 +202,15 @@ export function validateSealPolicy(
     }
   }
 
+  if (draft.maxImpact !== undefined) {
+    const cap = Number(draft.maxImpact);
+    // A decimal, not a percent. "5" would read as 500% and cap nothing, which
+    // is worse than having no cap because the page would claim one.
+    if (!Number.isFinite(cap) || cap <= 0 || cap > 1) {
+      return { code: "impact_invalid", message: "Max price impact is a decimal between 0 and 1 — 0.05 is 5%." };
+    }
+  }
+
   const min = positive(draft.sizing?.min);
   const max = positive(draft.sizing?.max);
   const suggested = positive(draft.sizing?.suggested);
@@ -251,6 +271,28 @@ export function compileSeal(policy: SealPolicy, size: string): FlashOrderIntent 
     ...(policy.durationSeconds !== undefined ? { durationSeconds: policy.durationSeconds } : {}),
     ...(policy.twapBucketCount !== undefined ? { twapBucketCount: policy.twapBucketCount } : {}),
     ...(policy.bracket         !== undefined ? { bracket:         policy.bracket } : {}),
+    ...(policy.maxImpact       !== undefined ? { maxImpact:       policy.maxImpact } : {}),
+  };
+}
+
+export type ImpactIssue = { code: "impact_too_high"; message: string };
+
+/**
+ * Checks Flash's own impact estimate against the creator's cap.
+ *
+ * Flash's spec is explicit that the returned estimate can exceed the
+ * maxPriceImpact the request asked for, so sending the cap is necessary and not
+ * sufficient — the answer has to be read back and refused here.
+ */
+export function impactRejection(estimated: string | null | undefined, maxImpact: string | undefined): ImpactIssue | null {
+  if (!maxImpact) return null;
+  const cap = Number(maxImpact);
+  const got = Number(estimated);
+  if (!Number.isFinite(cap) || !Number.isFinite(got)) return null;
+  if (got <= cap) return null;
+  return {
+    code: "impact_too_high",
+    message: `That size would move the price ${(got * 100).toFixed(2)}%, past this Seal's ${(cap * 100).toFixed(2)}% limit. Try a smaller amount.`,
   };
 }
 
@@ -378,6 +420,7 @@ export function sealPublishMessage(draft: SealDraft): string {
     const { takeProfit: tp, stopLoss: sl } = draft.bracket;
     lines.push(`Bracket: take-profit ${tp.price} (${tp.basis}) / stop-loss ${sl.price} (${sl.basis})`);
   }
+  if (draft.maxImpact !== undefined) lines.push(`Max impact: ${draft.maxImpact}`);
   lines.push(`Size: ${draft.sizing.min}-${draft.sizing.max}, suggested ${draft.sizing.suggested}`);
   lines.push(`Creator: ${draft.creator.toLowerCase()}`);
   return lines.join("\n");
