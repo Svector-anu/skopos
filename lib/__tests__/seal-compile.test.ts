@@ -286,3 +286,83 @@ describe("impact cap", () => {
     expect(withCap).toContain("Max impact: 0.05");
   });
 });
+
+describe("percentage protection", () => {
+  const pct = policy({ priceLevel: "2400", slPct: "0.08", tpPct: "0.20" });
+
+  it("should compile percentages into absolute triggers at the entry", () => {
+    // #given 8% down and 20% up on a $2,400 entry
+    // #when the Seal is compiled
+    const intent = compileSeal(pct, "5");
+
+    // #then Flash gets prices, never percentages — it has no concept of one
+    expect(intent.bracket).toEqual({
+      stopLoss:   { price: "2208", basis: "notional" },
+      takeProfit: { price: "2880", basis: "notional" },
+    });
+  });
+
+  it("should give two takes of one Seal identical protection", () => {
+    // #given two wallets taking the same policy at different sizes
+    const a = compileSeal(pct, "5");
+    const b = compileSeal(pct, "10");
+
+    // #then the protection is the same shape AND the same prices, because it
+    // is measured from the entry the policy names rather than from whatever
+    // the market happened to be doing when each of them clicked
+    expect(a.bracket).toEqual(b.bracket);
+    expect([a.qty, b.qty]).toEqual(["5", "10"]);
+  });
+
+  it("should measure a market entry against the mark instead", () => {
+    // #given a market policy, which has no entry price of its own
+    const market = policy({ orderType: "limit", priceLevel: undefined, slPct: "0.10", tpPct: "0.10" });
+
+    // #when a mark is supplied at take time
+    const intent = compileSeal(market, "5", 2000);
+
+    // #then the levels come off the mark
+    expect(intent.bracket).toEqual({
+      stopLoss:   { price: "1800", basis: "notional" },
+      takeProfit: { price: "2200", basis: "notional" },
+    });
+  });
+
+  it("should leave an order unprotected rather than invent a base price", () => {
+    // #given percentages with no entry and no mark
+    const market = policy({ priceLevel: undefined, slPct: "0.10", tpPct: "0.10" });
+
+    // #then no bracket is produced. guessing a base would put a real stop at a
+    // made-up price, which is worse than no stop because the page claims one
+    expect(compileSeal(market, "5").bracket).toBeUndefined();
+  });
+
+  it("should keep an explicit bracket untouched", () => {
+    // #given a Seal that names absolute prices
+    const abs = policy({
+      bracket: {
+        takeProfit: { price: "3200", basis: "notional" },
+        stopLoss:   { price: "2000", basis: "notional" },
+      },
+    });
+
+    // #then percentages never override what the creator wrote
+    expect(compileSeal(abs, "5").bracket).toEqual(abs.bracket);
+  });
+
+  it.each([
+    ["protection_conflict", { slPct: "0.08", tpPct: "0.2", bracket: { takeProfit: { price: "3000", basis: "notional" as const }, stopLoss: { price: "2000", basis: "notional" as const } } }],
+    ["pct_incomplete",      { slPct: "0.08" }],
+    ["pct_invalid",         { slPct: "8", tpPct: "20" }],
+    ["pct_invalid",         { slPct: "0", tpPct: "0.2" }],
+  ])("should refuse %s at publish", (code, over) => {
+    // #given percentages a creator could plausibly get wrong — "8" reads as
+    // 700% below the entry, a negative price, after they believed they set 8%
+    expect(validateSealPolicy({ ...base, ...over } as SealDraft, SUPPORTED)?.code).toBe(code);
+  });
+
+  it("should attest the percentages in the publish signature", () => {
+    expect(sealPublishMessage({ ...base, slPct: "0.08", tpPct: "0.20" }))
+      .toContain("Protection: stop -0.08, target +0.20");
+  });
+});
