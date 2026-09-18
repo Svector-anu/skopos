@@ -48,9 +48,35 @@ describe("advanced-order headless handoff", () => {
     });
 
     // #then the amount keeps token units — a dollar sign here would be the
-    // same bug in the other direction
+    // same bug in the other direction — and a trigger reads as a trigger, not
+    // as a limit price the order does not have
     expect(text).toBe(
-      "stop-loss order ready: sell 2 ETH at $2000. Tap to review and sign in the Skopos app.",
+      "stop-loss order ready: sell 2 ETH if it drops below $2000. Tap to review and sign in the Skopos app.",
+    );
+  });
+
+  it("should read a take-profit as a level it rises to", () => {
+    // #given a take-profit, which fires on the way up
+    // #when it is rendered
+    const text = cardToText({
+      type: "quote", mode: "handoff", orderType: "take-profit",
+      side: "sell", qty: "2", price: "5000", token: "ETH",
+    });
+
+    // #then the direction is in the sentence. "at $5000" on a take-profit and
+    // "at $2000" on a stop-loss are indistinguishable, and they are opposite
+    // orders
+    return expect(text).resolves.toBe(
+      "take-profit order ready: sell 2 ETH when it hits $5000. Tap to review and sign in the Skopos app.",
+    );
+  });
+
+  it("should still say \"at\" for a limit order, which does have a price", () => {
+    return expect(cardToText({
+      type: "quote", mode: "handoff", orderType: "limit",
+      side: "sell", qty: "2", price: "3000", token: "ETH",
+    })).resolves.toBe(
+      "limit order ready: sell 2 ETH at $3000. Tap to review and sign in the Skopos app.",
     );
   });
 
