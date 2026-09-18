@@ -3007,7 +3007,13 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   // since "scan my wallet for risky approvals" also matches that block's
   // bare \bwallet\b pattern and would otherwise get misrouted to a portfolio
   // lookup instead.
-  const APPROVAL_SCAN_RE = /\b(?:scan|check|revoke)\b[\s\S]{0,40}\b(?:approvals?|allowances?)\b|\b(?:approvals?|allowances?)\b[\s\S]{0,40}\b(?:scan|check)\b|\b(?:risky|dangerous|unlimited)\s+approvals?\b/i;
+  // The adjective can land on either side of the noun. "unlimited approvals"
+  // matched; "is my approval unlimited?" did not, because the third
+  // alternative below only read adjective-then-noun. That phrasing is the one
+  // our own partner writeup uses as its example, so the people most likely to
+  // type it are the people seeing Skopos for the first time — they got a
+  // generic LLM reply telling them to check their portfolio instead.
+  const APPROVAL_SCAN_RE = /\b(?:scan|check|revoke)\b[\s\S]{0,40}\b(?:approvals?|allowances?)\b|\b(?:approvals?|allowances?)\b[\s\S]{0,40}\b(?:scan|check)\b|\b(?:risky|dangerous|unlimited)\s+approvals?\b|\b(?:approvals?|allowances?)\b[\s\S]{0,40}\b(?:risky|dangerous|unlimited)\b/i;
   if (APPROVAL_SCAN_RE.test(trimmed)) {
     if (!senderAddress) {
       return json({ type: "text", text: "Connect your wallet first — I'll scan it for risky token approvals." });
