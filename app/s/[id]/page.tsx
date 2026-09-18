@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getSeal, getInstantiationCount } from "@/lib/sealStore";
-import { sizeUnitLabel, isSizeInContraUnits, type SealPolicy } from "@/lib/seal";
-import { RH_CHAIN_STABLECOIN } from "@/lib/flash";
-import { resolveChainId } from "@/lib/chains";
+import { sizeUnitLabel, isSizeInContraUnits, contraSymbolForChain, sealPolicyLine } from "@/lib/seal";
 import { SealSizePanel } from "./SealSizePanel";
 
 // A Seal's public face. Server-rendered on purpose: it must be readable with no
@@ -14,31 +12,7 @@ import { SealSizePanel } from "./SealSizePanel";
 // one, /address/[addr], is a ten-line redirect) and its first generateMetadata,
 // so a shared Seal link finally has a title worth reading in a preview.
 
-const ROBINHOOD_CHAIN_ID = 4663;
 const MONO: React.CSSProperties = { fontFamily: "var(--font-jetbrains-mono), monospace" };
-
-function contraSymbolFor(chain: string): string {
-  return resolveChainId(chain) === ROBINHOOD_CHAIN_ID ? RH_CHAIN_STABLECOIN : "USDC";
-}
-
-/** The policy as one sentence, the way the chat surface restates an order. */
-function policyLine(p: SealPolicy): string {
-  const sym = p.token.toUpperCase();
-  const contra = contraSymbolFor(p.chain);
-  const amount = p.side === "buy" ? `${contra}` : `${sym}`;
-
-  const head =
-    p.orderType === "limit"       ? `${p.side} ${sym} at $${p.priceLevel}`
-    : p.orderType === "stop-loss" ? `sell ${sym} if it drops below $${p.priceLevel}`
-    : p.orderType === "take-profit" ? `sell ${sym} when it hits $${p.priceLevel}`
-    : `${p.side} ${sym} evenly over ${Math.round((p.durationSeconds ?? 0) / 3600)}h`;
-
-  const protection = p.bracket
-    ? `, protected by a stop at $${p.bracket.stopLoss.price} and a target at $${p.bracket.takeProfit.price}`
-    : "";
-
-  return `${head} on ${p.chain}${protection} — sized by you, in ${amount}.`;
-}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -46,10 +20,16 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   if (!read.ok) return { title: "Seal not found — Skopos" };
 
   const p = read.policy;
+  const line = sealPolicyLine(p, contraSymbolForChain(p.chain));
+  // Per-Seal card, not the site banner every other page falls back to. The use
+  // count on it moves while the link travels, so a preview shared at zero and
+  // reposted later shows the difference — the image is a scoreboard.
+  const card = `/api/og/seal?id=${encodeURIComponent(p.id)}`;
   return {
     title: `${p.title} — a Skopos Seal`,
-    description: policyLine(p),
-    openGraph: { title: p.title, description: policyLine(p) },
+    description: line,
+    openGraph: { title: p.title, description: line, images: [{ url: card, width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image", title: p.title, description: line, images: [card] },
   };
 }
 
@@ -81,7 +61,7 @@ export default async function SealPage({ params }: { params: Promise<{ id: strin
 
   const p = read.policy;
   const uses = await getInstantiationCount(p.id);
-  const contra = contraSymbolFor(p.chain);
+  const contra = contraSymbolForChain(p.chain);
   const unit = sizeUnitLabel(p, contra);
 
   return (
@@ -94,7 +74,7 @@ export default async function SealPage({ params }: { params: Promise<{ id: strin
           </span>
           <h1 style={{ fontSize: "1.65rem", fontWeight: 600, margin: 0, lineHeight: 1.2 }}>{p.title}</h1>
           <p style={{ ...MONO, fontSize: "0.82rem", color: "var(--card-text-dim)", margin: 0, lineHeight: 1.6 }}>
-            {policyLine(p)}
+            {sealPolicyLine(p, contraSymbolForChain(p.chain))}
           </p>
         </div>
 
