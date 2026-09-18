@@ -244,7 +244,8 @@ export type LegOk = {
 // `ask` marks a result that is a question to the user rather than a failure —
 // missing information, not something that went wrong. Callers render it as a
 // normal reply instead of an error card.
-export type LegErr = { ok: false; text: string; ask?: true };
+export type ErrorCode = "wallet_required" | "notifications_required";
+export type LegErr = { ok: false; text: string; code?: ErrorCode; ask?: true };
 
 const SOLANA_CHAIN_ID = 1000000001;
 
@@ -392,7 +393,7 @@ export async function resolveLeg(intent: ParsedIntent, senderAddress?: string, s
   const amountWei = toWei(intent.amount, originDecimals);
 
   if (!senderAddress || !senderAddress.startsWith("0x")) {
-    return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
+    return { ok: false, code: "wallet_required", text: "Invalid or missing wallet. Reconnect your wallet." };
   }
 
   const isSolanaOrigin = originChainId === SOLANA_CHAIN_ID;
@@ -544,7 +545,7 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
     return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
   }
   if (!senderAddress || !senderAddress.startsWith("0x")) {
-    return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
+    return { ok: false, code: "wallet_required", text: "Invalid or missing wallet. Reconnect your wallet." };
   }
 
   const originChainId = resolveChainId(intent.originChain);
@@ -1081,7 +1082,7 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
     return { ok: false, text: `Invalid amount "${order.qty}". Amount must be greater than 0.` };
   }
   if (!senderAddress || !senderAddress.startsWith("0x")) {
-    return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
+    return { ok: false, code: "wallet_required", text: "Invalid or missing wallet. Reconnect your wallet." };
   }
 
   // An unstated chain is resolved from the wallet's own balances rather than
@@ -1373,7 +1374,7 @@ export async function resolveRelayLeg(intent: ParsedIntent, senderAddress?: stri
     return { ok: false, text: `Invalid amount "${intent.amount}". Amount must be greater than 0.` };
   }
   if (!senderAddress || !senderAddress.startsWith("0x")) {
-    return { ok: false, text: "Invalid or missing wallet. Reconnect your wallet." };
+    return { ok: false, code: "wallet_required", text: "Invalid or missing wallet. Reconnect your wallet." };
   }
 
   const originChainId = resolveChainId(intent.originChain);
@@ -2028,7 +2029,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
         token: RH_CHAIN_STABLECOIN, amount: spend, destinationToken: stockSymbol,
       };
       const result = await resolveFlashLeg(stockIntent, senderAddress);
-      if (!result.ok) return json({ type: "error", text: result.text });
+      if (!result.ok) return json({ type: "error", code: result.code, text: result.text });
       return json({
         type: "quote", mode: "preview", quotedAt: Date.now(),
         intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
@@ -2228,7 +2229,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
             token: RH_CHAIN_STABLECOIN, amount: String(llm.qty), destinationToken: stockSym,
           };
           const result = await resolveFlashLeg(stockIntent, senderAddress);
-          if (!result.ok) return json({ type: "error", text: result.text });
+          if (!result.ok) return json({ type: "error", code: result.code, text: result.text });
           return json({
             type: "quote", mode: "preview", quotedAt: Date.now(),
             intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
@@ -2265,7 +2266,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       }
       if (bracketParse) orderParse.order.bracket = bracketParse.bracket;
       const result = await resolveFlashOrderLeg(orderParse.order, senderAddress);
-      if (!result.ok) return json({ type: result.ask ? "text" : "error", text: result.text });
+      if (!result.ok) return json({ type: result.ask ? "text" : "error", code: result.code, text: result.text });
       return json({
         type: "quote", mode: "preview", quotedAt: Date.now(),
         intent: result.intent, route: result.route, approval: null, calldata: null, flash: result.flash,
@@ -2458,7 +2459,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
 
     const identity = (senderAddress ?? anonId ?? "").toLowerCase();
     if (!identity) {
-      return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
+      return json({ type: "error", code: "wallet_required", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
     }
 
     const watcher = await registerWatcher("price", identity, { symbol, targetPrice, direction });
@@ -2498,7 +2499,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
 
     const identity = (senderAddress ?? anonId ?? "").toLowerCase();
     if (!identity) {
-      return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
+      return json({ type: "error", code: "wallet_required", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
     }
 
     const watcher = await registerWatcher("polymarket", identity, { slug: market.slug, title: market.title, baselineVolume: market.volume });
@@ -2520,7 +2521,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     const watchAddress = onchainMatch[1];
     const identity = (senderAddress ?? anonId ?? "").toLowerCase();
     if (!identity) {
-      return json({ type: "error", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
+      return json({ type: "error", code: "wallet_required", text: "I need a stable way to identify you first — connect your wallet or keep using the app, then try again." });
     }
 
     const data = await lookupAddress(watchAddress);
@@ -3077,7 +3078,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   const POLY_BALANCE_RE = /\b(did\s+my\s+(?:deposit|funds?)\s+(?:land|arrive|go\s+through|show\s+up)|my\s+polymarket\s+(?:balance|funds?|account|money)|polymarket\s+balance|check\s+polymarket|is\s+my\s+(?:deposit|money)\s+(?:ready|there|on\s+polymarket)|how\s+much\s+(?:is\s+)?on\s+polymarket|polymarket\s+funds?)\b/i;
   if (POLY_BALANCE_RE.test(trimmed)) {
     if (!senderAddress) {
-      return json({ type: "error", text: "Connect your wallet — I'll check your Polymarket balance automatically." });
+      return json({ type: "error", code: "wallet_required", text: "Connect your wallet — I'll check your Polymarket balance automatically." });
     }
     const balance = await getPolymarketBalance(senderAddress);
     if (balance === null) {
@@ -3199,7 +3200,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
   const PAYMENTS_RE = /\b(payments?\s+(?:received|inbox|to\s+me)|who\s+(?:paid|has\s+paid)\s+me|did\s+i\s+get\s+paid|my\s+payments|memo\s+payments|payment\s+inbox|incoming\s+payments|reconcile\s+payments)\b/i;
   if (PAYMENTS_RE.test(trimmed)) {
     if (!senderAddress || !senderAddress.startsWith("0x")) {
-      return json({ type: "error", text: "Connect a wallet to see payments tagged to you." }, { headers: corsHeaders });
+      return json({ type: "error", code: "wallet_required", text: "Connect a wallet to see payments tagged to you." }, { headers: corsHeaders });
     }
     const [sepolia, mainnet] = await Promise.all([
       getMemoPayments(84532, senderAddress),
@@ -3219,7 +3220,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       return json({ type: "text", text: `Tell me the name, e.g. "launch a token called Skopos ($SKO) on base".` });
     }
     if (!senderAddress || !senderAddress.startsWith("0x")) {
-      return json({ type: "error", text: "Connect your wallet first — creator fees route to your address." });
+      return json({ type: "error", code: "wallet_required", text: "Connect your wallet first — creator fees route to your address." });
     }
     const symbol = launch.symbol ?? launch.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 6).toUpperCase();
     if (launch.chain !== "base") {
@@ -3363,7 +3364,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       const amount   = betAmountMatch?.[1]?.replace(/,/g, "") ?? undefined;
 
       if (!senderAddress) {
-        return json({ type: "error", text: "Connect your wallet — I need your address to generate a Polymarket deposit address." });
+        return json({ type: "error", code: "wallet_required", text: "Connect your wallet — I need your address to generate a Polymarket deposit address." });
       }
 
       let markets: PolymarketEvent[];
@@ -3602,7 +3603,7 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
       : originIsRobinhood !== destIsRobinhood
         ? await resolveRelayLeg(intent, senderAddress)
         : await resolveLeg(intent, senderAddress, safeSlippage, solanaAddress, message);
-    if (!result.ok) return json({ type: "error", text: result.text });
+    if (!result.ok) return json({ type: "error", code: result.code, text: result.text });
     // Use the resolved display symbols (e.g. CBBTC, not the raw parsed WBTC) so the
     // analysis text never contradicts what the card actually shows.
     const analysisIntent = { ...intent, token: result.intent.from.token, destinationToken: result.intent.to.token };
