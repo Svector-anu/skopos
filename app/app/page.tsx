@@ -141,7 +141,7 @@ type QuoteResult = {
 };
 
 type TextResult      = { type: "text";      text: string; suggestions?: { label: string; command: string }[] };
-type ErrorResult     = { type: "error";     text: string };
+type ErrorResult     = { type: "error";     text: string; code?: "wallet_required" | "notifications_required" };
 type PriceResult     = { type: "price"; symbol: string; name: string | null; image: string | null; price: number; change24h: number | null; sparkline: number[]; marketCap: number | null; volume24h: number | null; circulatingSupply: number | null; maxSupply: number | null };
 type RebalanceResult = { type: "rebalance"; mode: "preview"; legs: Array<QuoteResult | ErrorResult> };
 type TxResult        = { type: "tx";        tx: TxData;      summary: string };
@@ -695,7 +695,7 @@ export default function AppPage() {
       if (
         last?.role === "assistant" &&
         last.result?.type === "error" &&
-        /wallet|reconnect/i.test(last.result.text) &&
+        last.result.code === "wallet_required" &&
         secondLast?.role === "user"
       ) {
         clearPendingWalletRetry();
@@ -1017,7 +1017,7 @@ export default function AppPage() {
         // JSON response (quote, rebalance, address, tx, error)
         const data: AssistantResult = await res.json();
         if (data.type === "quote") data.originMessage = text;
-        if (data.type === "error" && /wallet|reconnect/i.test(data.text)) {
+        if (data.type === "error" && data.code === "wallet_required") {
           savePendingWalletRetry(text);
         } else {
           clearPendingWalletRetry();
@@ -1666,7 +1666,7 @@ export default function AppPage() {
                       <AeonMarkdown text={msg.result.text} accent="#F5B800" />
                     )}
                     {msg.result.type === "error" && (
-                      /enable.*(?:alerts|notifications)/i.test(msg.result.text) ? (
+                      msg.result.code === "notifications_required" ? (
                         <div style={{ background: isDark ? "rgba(245,184,0,0.04)" : "rgba(245,184,0,0.07)", border: "1px solid rgba(245,184,0,0.18)", borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 360 }}>
                           <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                             <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(245,184,0,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
@@ -1692,7 +1692,7 @@ export default function AppPage() {
                             {pushLoading ? t("alerts.enabling") : t("alerts.enableButton")}
                           </button>
                         </div>
-                      ) : /wallet|reconnect/i.test(msg.result.text) ? (
+                      ) : msg.result.code === "wallet_required" ? (
                         <div style={{ background: isDark ? "rgba(245,184,0,0.04)" : "rgba(245,184,0,0.07)", border: "1px solid rgba(245,184,0,0.18)", borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 360 }}>
                           <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                             <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(245,184,0,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
