@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAddress } from "viem";
 import { NATIVE_ADDRESS, resolveChainId, toWei } from "@/lib/chains";
 import { getToken, getQuote, getChainById,} from "@/lib/delora";
 import { FLASH_UPDATE_INTENT_RE } from "@/lib/flashUpdate";
@@ -1603,7 +1604,19 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     return json({ type: "error", text: "Too many requests — slow down and try again in a minute." }, { status: 429, headers: corsHeaders });
   }
 
-  const { message, senderAddress, solanaAddress: rawSolanaAddress, history, slippage, llmTier, anonId, format } = await req.json();
+  const { message, senderAddress: rawSenderAddress, solanaAddress: rawSolanaAddress, history, slippage, llmTier, anonId, format } = await req.json();
+
+  // Delora enforces EIP-55 strictly — a mixed-case address whose checksum does
+  // not match is rejected with a 400 whose message names the quote, not the
+  // address, so the failure reads as "no route" to whoever hit it. Browser
+  // callers are safe because wagmi hands over a checksummed address; the
+  // headless API, agents, and anything pasting an address by hand are not.
+  // Normalised once here so no downstream path has to think about it. Left
+  // as-is when it is not a well-formed address at all, so the existing
+  // "reconnect your wallet" guards still produce their own errors.
+  const senderAddress = typeof rawSenderAddress === "string"
+    ? (() => { try { return getAddress(rawSenderAddress.trim()); } catch { return rawSenderAddress; } })()
+    : rawSenderAddress;
   const textMode = format === "text";
   // Localization phase 1 (system prompt only): auto-detected from the browser's
   // Accept-Language header, zh/vi only. Headless/text-mode clients (agents,

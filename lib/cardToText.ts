@@ -218,6 +218,16 @@ async function renderIntel(c: Card, ctx: CardTextCtx): Promise<string> {
   if (!premium?.available) return premium?.note || "Not available for this token yet.";
 
   // Spend guards — per-anonId (fail-closed) then global.
+  //
+  // The two reasons this refuses are not the same thing, and saying "limit
+  // reached — try later" for both is wrong advice for one of them. A caller
+  // with no anonId has spent nothing and waiting will never clear it: the id
+  // IS the cap key, so without one there is nothing to count against and the
+  // read fails closed by design. That caller is usually an agent developer on
+  // their first request, told they are rate-limited before they have made one.
+  if (!ctx.anonId) {
+    return `Intel reads need an "anonId" in the request — it's the per-caller key these paid reads are capped against. Send any stable id for your conversation and retry. See ${SITE}/llms.txt`;
+  }
   if (!(await checkAgentTextIntelCap(ctx.anonId))) {
     return `Daily intel limit reached — try later or open Skopos: ${SITE}`;
   }
@@ -282,8 +292,15 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
         const chain = clean(c.chain, 24);
         const price = clean(c.price, 32);
         const duration = num(c.duration);
+        // A trigger order is not priced "at" its level — it fires when the
+        // market reaches it. restate() has always said "if it drops below" /
+        // "when it hits"; this surface said "at", which reads as a limit price
+        // on an order that has none.
+        const ot = clean(c.orderType, 16).toLowerCase();
         const detail = price
-          ? ` at $${price}`
+          ? ot === "stop-loss"   ? ` if it drops below $${price}`
+          : ot === "take-profit" ? ` when it hits $${price}`
+          : ` at $${price}`
           : duration !== null ? ` over ${duration} seconds` : "";
         const where = chain ? ` on ${chain}` : "";
         // Flash prices a BUY in the asset being spent, so qty on a buy is a
@@ -291,7 +308,7 @@ export async function cardToText(card: unknown, ctx: CardTextCtx = {}): Promise<
         // "buy 140 ETH" for a $140 order — the same mistake restate() was
         // written to stop, on the one surface where the sentence IS the order.
         const amount = side === "buy" ? `$${qty} of ${token}` : `${qty} ${token}`;
-        return `${clean(c.orderType, 16)} order ready: ${side} ${amount}${detail}${where}. Tap to review and sign in the Skopos app.`;
+        return `${ot} order ready: ${side} ${amount}${detail}${where}. Tap to review and sign in the Skopos app.`;
       }
       const qi = c.intent as { from?: { token?: string; amount?: string; chain?: string }; to?: { token?: string; chain?: string } } | undefined;
       const route = c.route as { outputAmount?: string; tool?: string } | undefined;
