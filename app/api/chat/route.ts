@@ -2090,6 +2090,49 @@ async function handleChat(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // ── Market buy/sell of a tokenized stock — must run BEFORE the price
+  // fast-path, for the same reason the guided block above does.
+  //
+  // Every ticker in RH_STOCK_TOKENS is a token classifyIntent reads as a price
+  // query, so "buy $50 of NVDA" was answered with NVDA's price. Not an error, a
+  // different question — the user asked to buy and got a quote card for reading.
+  // It only worked if they wrote "on robinhood", and nobody does.
+  //
+  // The chain is defaulted rather than inferred from balances: these tickers
+  // trade on Robinhood Chain and nowhere else, so pickOrderChain would spend a
+  // multi-chain balance scan to reach the only possible answer.
+  //
+  // parseMarketEntry anchors on end-of-string, so a priced or triggered order
+  // ("buy $50 of NVDA at $200", "sell 2 NVDA if it drops below $200") does not
+  // match here and still reaches the advanced-order block below.
+  const stockMarketEntry = parseMarketEntry(trimmed);
+  if (stockMarketEntry && stockMarketEntry.token.toUpperCase() in RH_STOCK_TOKENS) {
+    const order: FlashOrderIntent = {
+      ...stockMarketEntry,
+      chain: stockMarketEntry.chain ?? "robinhood",
+    };
+    const sym = order.token.toUpperCase();
+    if (textMode) {
+      // Intent only, never a signable payload — same contract as every other
+      // headless order handoff.
+      return json({
+        type: "quote", mode: "handoff",
+        orderType: order.orderType, side: order.side, qty: order.qty,
+        token: sym, chain: order.chain,
+      });
+    }
+    if (!senderAddress) {
+      return json({ type: "text", text: `Connect your wallet and I'll price that ${sym} order.` });
+    }
+    const result = await resolveFlashOrderLeg(order, senderAddress);
+    if (!result.ok) return json({ type: result.ask ? "text" : "error", code: result.code, text: result.text });
+    return json({
+      type: "quote", mode: "preview", quotedAt: Date.now(),
+      intent: result.intent, route: result.route, approval: null, calldata: null,
+      flash: result.flash, raw: null,
+    });
+  }
+
   // ── Reprice an existing Flash order — must run BEFORE both the guided
   // Robinhood-bridge block just below and the order-placement block after it.
   // The bridge block fires on "robinhood" + a move/bridge/send verb with no
