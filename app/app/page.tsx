@@ -872,6 +872,13 @@ export default function AppPage() {
   const [pendingSeal, setPendingSeal] = useState<{ id: string; size: string } | null>(null);
 
   function openSeal(sealId: string, size: string) {
+    // A fresh chat, not an append. /app restores the last conversation on load,
+    // so a take used to land at the bottom of whatever was there — including an
+    // earlier unsigned quote card for the very order the Seal was published
+    // from. Two signable cards on one screen, and only one of them counts as a
+    // take: signing the older one places a plain order that never appears on
+    // the Seal page. The previous chat is not lost; it stays in the sidebar.
+    newChat();
     setMessages(prev => [...prev, { role: "user", text: `Use Seal ${sealId} at ${size}` }]);
     setPendingSeal({ id: sealId, size });
     // The Seal page has no wallet context — Web3Provider is mounted only under
@@ -2018,7 +2025,10 @@ function AutoSubmit({ onSubmit, onSeal }: {
     const size = searchParams.get("size");
     if (sealId && size) {
       fired.current = true;
-      onSealRef.current(sealId, size);
+      // Same defer as ?q= below, for the same reason: the last conversation is
+      // restored on mount, and a take that runs first gets overwritten by it.
+      // openSeal now starts a fresh chat, which made the ordering load-bearing.
+      setTimeout(() => onSealRef.current(sealId, size), 150);
       return;
     }
 
