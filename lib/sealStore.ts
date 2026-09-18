@@ -151,6 +151,69 @@ export async function bumpInstantiations(id: string): Promise<void> {
   }
 }
 
+// ── takes ───────────────────────────────────────────────────────────────────
+// What a Seal actually produced. One row per wallet that signed, appended at
+// submit and never mutated.
+//
+// This is the thing that makes a Seal legible: a counter says "7 people used
+// this", a take list says which orders exist, at what size, protected at which
+// prices. Two rows with different funders and different orderIds is the whole
+// claim of the product in one view — and it is the only way to show it without
+// asking a viewer to trust two screenshots.
+//
+// The funder is stored truncated. A Seal page is public, and an address is a
+// permanent link between a wallet and a policy someone chose to run; the
+// demonstration needs to show the two takes are DIFFERENT, which a prefix does.
+
+const TAKES_KEY_PREFIX = "seal:takes:";
+// Enough to show a Seal is being used without turning the page into a ledger.
+const TAKES_MAX = 50;
+
+export interface SealTake {
+  orderId:  string;
+  /** Truncated funder — enough to prove two takes differ, not enough to dox. */
+  funder:   string;
+  size:     string;
+  at:       number;
+  entry?:   string;
+  stopAbs?: string;
+  tpAbs?:   string;
+}
+
+export function shortFunder(address: string): string {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+export async function recordTake(sealId: string, take: SealTake): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    const key = `${TAKES_KEY_PREFIX}${sealId}`;
+    await redis.lpush(key, JSON.stringify(take));
+    await redis.ltrim(key, 0, TAKES_MAX - 1);
+  } catch {
+    // A lost receipt must never fail an order that already has a signature on
+    // it and an orderId back from Flash.
+    console.error("[seal] take not recorded for", sealId, take.orderId);
+  }
+}
+
+export async function listTakes(sealId: string): Promise<SealTake[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    const raw = await redis.lrange<string | SealTake>(`${TAKES_KEY_PREFIX}${sealId}`, 0, TAKES_MAX - 1);
+    return (raw ?? [])
+      .map(r => {
+        try { return (typeof r === "string" ? JSON.parse(r) : r) as SealTake; }
+        catch { return null; }
+      })
+      .filter((t): t is SealTake => !!t && typeof t.orderId === "string");
+  } catch {
+    return [];
+  }
+}
+
 // ── pending orders ───────────────────────────────────────────────────────────
 // The order body is built ONCE, at quote time, from the stored policy, and
 // parked here under Flash's own quoteId. At submit the browser sends a quoteId

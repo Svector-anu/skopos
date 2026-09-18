@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { submitFlashOrder } from "@/lib/flash";
-import { getPendingOrder, clearPendingOrder, bumpInstantiations } from "@/lib/sealStore";
+import { getPendingOrder, clearPendingOrder, bumpInstantiations, recordTake, shortFunder } from "@/lib/sealStore";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +87,23 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     await clearPendingOrder(quoteId);
     // Counted at submit, never at quote — a quote is a look, an order is a use.
     await bumpInstantiations(id);
+    // The receipt. Derived from the order that was actually submitted, not from
+    // the Seal, so it records what this wallet signed rather than what the
+    // policy said — those are the same thing today and the receipt is the only
+    // place that would show it if they ever stopped being.
+    await recordTake(id, {
+      orderId:  result.orderId,
+      funder:   shortFunder(pending.funderAddress),
+      size:     pending.size,
+      at:       Date.now(),
+      ...(pending.submit.limitCrossPrice ?? pending.submit.limitNotionalPrice
+        ? { entry: pending.submit.limitCrossPrice ?? pending.submit.limitNotionalPrice }
+        : {}),
+      ...(pending.bracket?.wire.stopLoss.notionalPrice
+        ? { stopAbs: pending.bracket.wire.stopLoss.notionalPrice } : {}),
+      ...(pending.bracket?.wire.takeProfit.notionalPrice
+        ? { tpAbs: pending.bracket.wire.takeProfit.notionalPrice } : {}),
+    });
 
     return Response.json({ orderId: result.orderId, sealId: id, size: pending.size });
   } catch (err) {
