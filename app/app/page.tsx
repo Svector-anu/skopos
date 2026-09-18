@@ -3214,7 +3214,7 @@ function FlashExecuteButton({ result, onTxSubmitted, onCorrectChain, onResultUpd
       ) : !onCorrectChain ? (
         <button onClick={handleSwitchChain} disabled={isSwitching}
           style={{ ...MONO, width: "100%", padding: "11px 0", fontSize: "0.76rem", fontWeight: 700, letterSpacing: "0.03em", background: "#F5B800", border: "none", borderRadius: 10, color: "#000", cursor: isSwitching ? "wait" : "pointer", opacity: isSwitching ? 0.65 : 1 }}>
-          {isSwitching ? t("switching") : t("switchToRobinhoodChain")}
+          {isSwitching ? t("switching") : t("switchTo", { chain: result.intent.from.chain })}
         </button>
       ) : needsWrap ? (
         <button onClick={wrap} disabled={isApproving || (!!wrapHash && !wrapConfirmed)}

@@ -42,6 +42,18 @@ describe("flash across chains", () => {
     expect(PAGE).not.toContain("explorerUrl: `https://robinhoodchain.blockscout.com/address/");
   });
 
+  it("should label the Flash switch button with the order's own chain", () => {
+    // #given the Flash ladder now serves every chain, not just Robinhood
+    // #then its switch button names the chain it is switching to. it read
+    // "Switch to Robinhood Chain" unconditionally — harmless while only
+    // Robinhood orders reached it, wrong on every Base order the moment the
+    // dispatch was fixed
+    const start = PAGE.indexOf("function FlashExecuteButton(");
+    const body = PAGE.slice(start, PAGE.indexOf("function RelayExecuteSteps(", start));
+    expect(body).not.toContain('t("switchToRobinhoodChain")');
+    expect(body).toContain('t("switchTo", { chain: result.intent.from.chain })');
+  });
+
   it("should have an explorer for every chain Flash orders can run on", () => {
     // #given the chains advanced orders reach
     const names = [...new Set(Object.values(FLASH_ADVANCED_ORDER_CHAINS))]

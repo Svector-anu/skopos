@@ -301,6 +301,7 @@
       "connectWallet": "连接钱包",
       "switching": "切换中…",
       "switchToRobinhoodChain": "切换到 Robinhood Chain",
+        "switchTo": "切换到 {chain}",
       "wrapping": "包装中…",
       "confirming": "确认中…",
       "wrapToken": "包装 {token}",
