@@ -576,6 +576,7 @@ export async function resolveFlashLeg(intent: ParsedIntent, senderAddress?: stri
       orderType: "market",
       funderAddress: senderAddress,
       flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
+      forceMinimalAllowance: true,
     });
   } catch (err) {
     console.error(`[resolveFlashLeg] getFlashQuote failed: ${err instanceof Error ? err.message : err}`);
@@ -1205,6 +1206,11 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       orderType: order.orderType,
       funderAddress: senderAddress,
       flashIntegratorFeeBps: FLASH_INTEGRATOR_FEE_BPS,
+      // Exact-sized approval rather than an unlimited grant. Matters most here:
+      // a Seal is a policy written by someone else, and "sign an unlimited USDC
+      // approval to run a stranger's policy" is a different proposition from
+      // "approve exactly the amount you chose".
+      forceMinimalAllowance: true,
       // A limit entry carrying a bracket must be priced in CROSS basis. Flash
       // rejects the notional field outright with "attached_bracket limit
       // entries require limit_cross_price in v1" — confirmed live 2026-08-21

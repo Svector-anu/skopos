@@ -399,6 +399,16 @@ export interface FlashQuoteRequest {
   // combination — see resolveFlashOrderLeg.
   limitCrossPrice?: string;
   funderAddress?: string;
+  // Sizes the ERC-20 approval to exactly this order (plus the funder's other
+  // outstanding orders) instead of asking for an unlimited grant, and replaces
+  // an oversized existing one rather than reusing it.
+  //
+  // Flash's docs recommend pairing it with evmUsePermit2, which we cannot sign
+  // (issue #98) — so it was tested without. Verified on two wallets, both
+  // chains of the demo: the approval drops from 0xffff… to the exact amount and
+  // permitTypedData stays absent, i.e. it does NOT move a funder onto the
+  // Permit2 flow. The recommendation is a recommendation, not a requirement.
+  forceMinimalAllowance?: boolean;
   svmUseNativeSOL?: boolean;
   flashIntegratorFeeBps?: string;
   expireTime?: string;
