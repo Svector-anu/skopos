@@ -2579,7 +2579,7 @@ function QuoteDisplay({ result, connectedAddress, onTxSubmitted, onRefresh, onRe
             {t("bracketBanner.cap", { amount: Number(bracket.signedMaxFromAmount).toLocaleString(undefined, { maximumFractionDigits: 8 }), token: intent.to.token })}
           </span>
           <span style={{ ...MONO, display: "block", marginTop: 2, fontSize: "0.62rem", color: "var(--card-text-faint)" }}>
-            {t("bracketBanner.keepFunds")}
+            {t("bracketBanner.keepFunds", { token: intent.to.token })}
           </span>
         </div>
       )}
