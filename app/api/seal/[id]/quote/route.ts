@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { checkRateLimit, trustedIp } from "@/lib/rateLimit";
 import { getSeal, putPendingOrder } from "@/lib/sealStore";
-import { compileSeal, validateSize, typedDataMismatch } from "@/lib/seal";
+import { compileSeal, validateSize, typedDataMismatch, impactRejection } from "@/lib/seal";
 import { toFlashBracketWire } from "@/lib/flashBracket";
 import { resolveFlashOrderLeg } from "@/app/api/chat/route";
 
@@ -64,6 +64,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const result = await resolveFlashOrderLeg(intent, parsed.data.senderAddress);
   if (!result.ok) {
     return Response.json({ type: result.ask ? "text" : "error", text: result.text }, { status: 422 });
+  }
+
+  // Sending maxPriceImpact is necessary and not sufficient — Flash's spec says
+  // the estimate it returns can exceed the cap the request asked for. A Seal is
+  // sized by someone who did not write it, so a size the author never imagined
+  // must be refused here rather than signed.
+  const impact = impactRejection(result.route.priceImpact, policy.maxImpact);
+  if (impact) {
+    return Response.json({ type: "error", text: impact.message, code: impact.code }, { status: 422 });
   }
 
   // Checked before the payload is handed to a wallet, not after. A Seal is

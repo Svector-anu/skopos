@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  compileSeal, validateSealPolicy, validateSize, sanitizeTitle, sizeUnitLabel,
+  compileSeal, validateSealPolicy, validateSize, sanitizeTitle, sizeUnitLabel, impactRejection, sealPublishMessage,
   type SealDraft, type SealPolicy,
 } from "@/lib/seal";
 import { FLASH_ADVANCED_ORDER_CHAINS } from "@/app/api/chat/route";
@@ -230,5 +230,139 @@ describe("sizeUnitLabel", () => {
       buy:  sizeUnitLabel(policy(), "USDC"),
       sell: sizeUnitLabel(policy({ side: "sell" }), "USDC"),
     }).toEqual({ buy: "USDC", sell: "NVDA" });
+  });
+});
+
+describe("impact cap", () => {
+  it("should carry the creator's cap into the compiled intent", () => {
+    // #given a Seal with a cap
+    // #when compiled
+    const intent = compileSeal(policy({ maxImpact: "0.05" }), "5");
+
+    // #then it reaches Flash as the request's maxPriceImpact
+    expect(intent.maxImpact).toBe("0.05");
+  });
+
+  it("should refuse a quote whose impact exceeded the cap", () => {
+    // #given Flash returned a worse impact than the request asked for — its
+    // spec says explicitly that this can happen
+    const issue = impactRejection("0.081", "0.05");
+
+    // #then the take is refused, and the message names both numbers so the
+    // consumer knows to go smaller rather than just that it failed
+    expect(issue?.code).toBe("impact_too_high");
+    expect(issue?.message).toContain("8.10%");
+    expect(issue?.message).toContain("5.00%");
+  });
+
+  it("should allow an impact exactly at the cap", () => {
+    expect(impactRejection("0.05", "0.05")).toBeNull();
+  });
+
+  it("should not refuse when the Seal set no cap", () => {
+    // #given a policy with no cap, which is the pre-existing shape
+    // #then nothing is enforced — absence is not a zero
+    expect(impactRejection("0.9", undefined)).toBeNull();
+  });
+
+  it("should not refuse when Flash produced no estimate", () => {
+    // #given a null estimate, which Flash's schema allows
+    // #then we do not invent a rejection from a missing number
+    expect(impactRejection(null, "0.05")).toBeNull();
+  });
+
+  it.each(["5", "0", "-0.1", "abc", "1.5"])("should refuse %j as a cap at publish", (bad) => {
+    // #given a cap that isn't a decimal fraction — "5" reads as 500% and caps
+    // nothing, which is worse than no cap because the page would claim one
+    expect(validateSealPolicy({ ...base, maxImpact: bad }, SUPPORTED)?.code).toBe("impact_invalid");
+  });
+
+  it("should attest the cap in the signature the creator gives", () => {
+    // #given a Seal with a cap
+    const withCap = sealPublishMessage({ ...base, maxImpact: "0.05" });
+
+    // #then the cap is in the signed bytes. a field absent from the message is
+    // a field someone else could have set
+    expect(withCap).toContain("Max impact: 0.05");
+  });
+});
+
+describe("percentage protection", () => {
+  const pct = policy({ priceLevel: "2400", slPct: "0.08", tpPct: "0.20" });
+
+  it("should compile percentages into absolute triggers at the entry", () => {
+    // #given 8% down and 20% up on a $2,400 entry
+    // #when the Seal is compiled
+    const intent = compileSeal(pct, "5");
+
+    // #then Flash gets prices, never percentages — it has no concept of one
+    expect(intent.bracket).toEqual({
+      stopLoss:   { price: "2208", basis: "notional" },
+      takeProfit: { price: "2880", basis: "notional" },
+    });
+  });
+
+  it("should give two takes of one Seal identical protection", () => {
+    // #given two wallets taking the same policy at different sizes
+    const a = compileSeal(pct, "5");
+    const b = compileSeal(pct, "10");
+
+    // #then the protection is the same shape AND the same prices, because it
+    // is measured from the entry the policy names rather than from whatever
+    // the market happened to be doing when each of them clicked
+    expect(a.bracket).toEqual(b.bracket);
+    expect([a.qty, b.qty]).toEqual(["5", "10"]);
+  });
+
+  it("should measure a market entry against the mark instead", () => {
+    // #given a market policy, which has no entry price of its own
+    const market = policy({ orderType: "limit", priceLevel: undefined, slPct: "0.10", tpPct: "0.10" });
+
+    // #when a mark is supplied at take time
+    const intent = compileSeal(market, "5", 2000);
+
+    // #then the levels come off the mark
+    expect(intent.bracket).toEqual({
+      stopLoss:   { price: "1800", basis: "notional" },
+      takeProfit: { price: "2200", basis: "notional" },
+    });
+  });
+
+  it("should leave an order unprotected rather than invent a base price", () => {
+    // #given percentages with no entry and no mark
+    const market = policy({ priceLevel: undefined, slPct: "0.10", tpPct: "0.10" });
+
+    // #then no bracket is produced. guessing a base would put a real stop at a
+    // made-up price, which is worse than no stop because the page claims one
+    expect(compileSeal(market, "5").bracket).toBeUndefined();
+  });
+
+  it("should keep an explicit bracket untouched", () => {
+    // #given a Seal that names absolute prices
+    const abs = policy({
+      bracket: {
+        takeProfit: { price: "3200", basis: "notional" },
+        stopLoss:   { price: "2000", basis: "notional" },
+      },
+    });
+
+    // #then percentages never override what the creator wrote
+    expect(compileSeal(abs, "5").bracket).toEqual(abs.bracket);
+  });
+
+  it.each([
+    ["protection_conflict", { slPct: "0.08", tpPct: "0.2", bracket: { takeProfit: { price: "3000", basis: "notional" as const }, stopLoss: { price: "2000", basis: "notional" as const } } }],
+    ["pct_incomplete",      { slPct: "0.08" }],
+    ["pct_invalid",         { slPct: "8", tpPct: "20" }],
+    ["pct_invalid",         { slPct: "0", tpPct: "0.2" }],
+  ])("should refuse %s at publish", (code, over) => {
+    // #given percentages a creator could plausibly get wrong — "8" reads as
+    // 700% below the entry, a negative price, after they believed they set 8%
+    expect(validateSealPolicy({ ...base, ...over } as SealDraft, SUPPORTED)?.code).toBe(code);
+  });
+
+  it("should attest the percentages in the publish signature", () => {
+    expect(sealPublishMessage({ ...base, slPct: "0.08", tpPct: "0.20" }))
+      .toContain("Protection: stop -0.08, target +0.20");
   });
 });

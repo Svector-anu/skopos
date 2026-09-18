@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getSeal, getInstantiationCount } from "@/lib/sealStore";
+import { getSeal, getInstantiationCount, listTakes } from "@/lib/sealStore";
 import { sizeUnitLabel, isSizeInContraUnits, contraSymbolForChain, sealPolicyLine } from "@/lib/seal";
 import { SealSizePanel } from "./SealSizePanel";
 
@@ -60,7 +60,7 @@ export default async function SealPage({ params }: { params: Promise<{ id: strin
   }
 
   const p = read.policy;
-  const uses = await getInstantiationCount(p.id);
+  const [uses, takes] = await Promise.all([getInstantiationCount(p.id), listTakes(p.id)]);
   const contra = contraSymbolForChain(p.chain);
   const unit = sizeUnitLabel(p, contra);
 
@@ -104,6 +104,41 @@ export default async function SealPage({ params }: { params: Promise<{ id: strin
             retired={p.retired === true}
           />
         </section>
+
+        {/* The takes. Two rows with different funders and different order ids is
+            the entire claim of the product — one policy, separate orders, no
+            shared funds — and this is the only place it can be seen at once
+            rather than inferred from two screenshots. */}
+        {takes.length > 0 && (
+          <section style={{ border: "1px solid var(--card-border-faint)", borderRadius: 12, padding: "14px 16px", background: "var(--card-bg)" }}>
+            <p style={{ ...MONO, fontSize: "0.58rem", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--card-text-faint)", margin: "0 0 10px" }}>
+              {takes.length === 1 ? "1 wallet has run this" : `${takes.length} wallets have run this`}
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {takes.map((t) => (
+                <div key={t.orderId} style={{ display: "flex", flexDirection: "column", gap: 3, paddingTop: 10, borderTop: "1px solid var(--card-bg)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <span style={{ ...MONO, fontSize: "0.76rem", color: "var(--card-text)", fontWeight: 500 }}>
+                      {t.funder} · {t.size} {unit}
+                    </span>
+                    <span style={{ ...MONO, fontSize: "0.7rem", color: "rgba(245,184,0,0.85)" }}>
+                      order {t.orderId.slice(0, 8)}
+                    </span>
+                  </div>
+                  <span style={{ ...MONO, fontSize: "0.66rem", color: "var(--card-text-dim)" }}>
+                    {t.entry ? `entry $${t.entry}` : "market"}
+                    {t.stopAbs ? ` · stop $${t.stopAbs}` : ""}
+                    {t.tpAbs ? ` · target $${t.tpAbs}` : ""}
+                    {` · ${new Date(t.at).toISOString().slice(0, 16).replace("T", " ")}Z`}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p style={{ ...MONO, fontSize: "0.63rem", color: "var(--card-text-faint)", margin: "12px 0 0", lineHeight: 1.6 }}>
+              Separate orders, separate wallets, separate funds. Nothing moved between them.
+            </p>
+          </section>
+        )}
 
         <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <Row label="published by" value={`${p.creator.slice(0, 6)}…${p.creator.slice(-4)}`} />

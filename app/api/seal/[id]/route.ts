@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getSeal, getInstantiationCount } from "@/lib/sealStore";
+import { getSeal, getInstantiationCount, listTakes } from "@/lib/sealStore";
 
 export const dynamic = "force-dynamic";
 
@@ -42,5 +42,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     ...(p.bracket         !== undefined ? { bracket:         p.bracket } : {}),
     sizing:         p.sizing,
     instantiations: await getInstantiationCount(p.id),
+    // Public on purpose: two rows with different funders and different orderIds
+    // is the product's whole claim, and it is not a claim a reader should have
+    // to take on trust.
+    takes: await listTakes(p.id),
   });
 }

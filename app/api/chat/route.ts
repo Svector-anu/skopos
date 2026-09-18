@@ -236,7 +236,7 @@ export type LegOk = {
     from: { chain: string; chainId: number; token: string; amount: string };
     to:   { chain: string; chainId: number; token: string; receiver: string };
   };
-  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null; inputUSD: number | null; outputUSD: number | null; etaSec?: number | null };
+  route: { tool: string; outputAmount: string; feesUSD: string | null; gasUSD: string | null; inputUSD: number | null; outputUSD: number | null; etaSec?: number | null; priceImpact?: string | null };
   approval: { tokenAddress: string; spender: string; amount: string } | null;
   calldata: { to: string; value: string; data: string } | null;
   raw: unknown;
@@ -1270,6 +1270,9 @@ export async function resolveFlashOrderLeg(order: FlashOrderIntent, senderAddres
       inputUSD: Number(quote.from.notional) || null,
       outputUSD: Number(quote.to.notional) || null,
       etaSec: null,
+      // Read back rather than trusted: Flash's spec says this estimate can
+      // exceed the maxPriceImpact the request asked for.
+      priceImpact: quote.estimatedPriceImpact ?? null,
     },
     flash: {
       quoteId: quote.quoteId,
