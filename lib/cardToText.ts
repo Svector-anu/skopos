@@ -218,6 +218,16 @@ async function renderIntel(c: Card, ctx: CardTextCtx): Promise<string> {
   if (!premium?.available) return premium?.note || "Not available for this token yet.";
 
   // Spend guards — per-anonId (fail-closed) then global.
+  //
+  // The two reasons this refuses are not the same thing, and saying "limit
+  // reached — try later" for both is wrong advice for one of them. A caller
+  // with no anonId has spent nothing and waiting will never clear it: the id
+  // IS the cap key, so without one there is nothing to count against and the
+  // read fails closed by design. That caller is usually an agent developer on
+  // their first request, told they are rate-limited before they have made one.
+  if (!ctx.anonId) {
+    return `Intel reads need an "anonId" in the request — it's the per-caller key these paid reads are capped against. Send any stable id for your conversation and retry. See ${SITE}/llms.txt`;
+  }
   if (!(await checkAgentTextIntelCap(ctx.anonId))) {
     return `Daily intel limit reached — try later or open Skopos: ${SITE}`;
   }
