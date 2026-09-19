@@ -6,7 +6,7 @@ export async function HeaderIcons() {
   return (
     <div className="flex items-center gap-3">
       <Link
-        href="https://github.com/Svector-anu/skopos-os"
+        href="https://github.com/Svector-anu/skopos"
         target="_blank"
         rel="noopener noreferrer"
         className="group opacity-40 hover:opacity-100 transition-opacity duration-200"
