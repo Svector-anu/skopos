@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const pending = await getPendingOrder(quoteId);
   if (!pending) {
-    // Either the 180s window elapsed or this quote was already submitted. Both
+    // Either the parking window elapsed or this quote was already submitted. Both
     // mean the same thing to the user, and re-quoting is the fix for both —
     // this is also the quote-expiry enforcement the chat path has never had.
     return Response.json(

@@ -230,9 +230,18 @@ export async function listTakes(sealId: string): Promise<SealTake[]> {
 // record to submit against, so staleness fails closed on its own.
 
 const PENDING_KEY_PREFIX = "seal:pending:";
-// Flash's streamed quote sessions run ~120s; this is that plus room for a user
-// reading the card and a wallet prompt.
-const PENDING_TTL_SECONDS = 180;
+// Sized for a first-time taker, who approves the entry's token and then the
+// pair's before signing either. Two wallet prompts and two confirmations
+// routinely outlasted the 180s this used to be, and the take failed with
+// "expired" on an order Flash would have accepted.
+//
+// Nothing Flash issues goes stale in that time. Both signatures carry the
+// non-expiring deadline sentinel, and Flash's spec gives quoteId one job —
+// fixing a market order's price — while a Seal can only hold limit, stop-loss,
+// take-profit and twap orders. A market Seal would re-price at submit, so
+// adding one means revisiting this; seal-pending-window.test.ts pins the order
+// types for exactly that reason.
+const PENDING_TTL_SECONDS = 20 * 60;
 
 export interface PendingBracket {
   wire:                FlashBracketWire;
