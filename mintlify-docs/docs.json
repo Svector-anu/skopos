@@ -71,7 +71,7 @@
         "label": "",
         "icon": "github",
         "iconType": "brands",
-        "href": "https://github.com/Svector-anu/skopos-os"
+        "href": "https://github.com/Svector-anu/skopos"
       },
       {
         "label": "",
@@ -94,7 +94,7 @@
   "footer": {
     "socials": {
       "x": "https://x.com/tryskopos",
-      "github": "https://github.com/Svector-anu/skopos-os"
+      "github": "https://github.com/Svector-anu/skopos"
     }
   }
 }
